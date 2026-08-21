@@ -1,0 +1,234 @@
+name: Build Windows executable
+
+# Manual trigger (Actions tab / `gh workflow run windows-build.yml`) or on a vX tag.
+# PyInstaller is platform-native, so the Windows .exe must be built on a Windows
+# runner — a Linux machine cannot produce it.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write  # needed to create the GitHub Release on tag builds
+
+jobs:
+  build:
+    # Pinned to windows-2025 (the image label currently resolved behind
+    # `windows-latest`) instead of riding the redirect. A CI notice on run
+    # 27233494881 warned: "windows-latest requests are being redirected to
+    # windows-2025-vs2026 by June 15, 2026". PyInstaller is sensitive to runner
+    # image changes, so we pin the known-good image. Revisit and re-evaluate
+    # `windows-latest` (or the vs2026 image) once that redirect has settled.
+    runs-on: windows-2025
+    steps:
+      # Action majors bumped off the Node 20 runtime (deprecation notice on run
+      # 27233494881; Node 20 forced off June 16, 2026). All run on Node 24 and
+      # our usage is unaffected by their breaking changes (no npm package-manager
+      # caching, plain checkout, default artifact upload).
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code@2.1.154
+
+      - name: Validate Claude plugin metadata
+        run: |
+          claude plugin validate --strict ./plugin/timeassist
+          claude plugin validate --strict ./.claude-plugin/marketplace.json
+
+      - name: Build executable
+        run: python scripts/package_executable.py
+
+      - name: Verify CLI
+        run: dist\timeassist.exe --version
+
+      - name: Smoke-test MCP stdio server
+        shell: pwsh
+        run: |
+          $reqs = @(
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}',
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+          )
+          $out = ($reqs | dist\timeassist.exe --db "$env:RUNNER_TEMP\smoke.sqlite" mcp) -join "`n"
+          Write-Host $out
+          if ($out -notmatch '"tools"') { throw "MCP server did not return a tools list" }
+          if ($out -notmatch '"timeassist"') { throw "MCP server did not initialize" }
+
+      - name: Smoke-test packaged EXE file safety
+        shell: pwsh
+        run: |
+          $data = Join-Path $env:RUNNER_TEMP "timeassist-plugin-data"
+          $outside = Join-Path $env:RUNNER_TEMP "outside.csv"
+          $traversalOutside = Join-Path $env:RUNNER_TEMP "traversal-outside.csv"
+          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $data
+          New-Item -ItemType Directory -Force -Path $data | Out-Null
+          Remove-Item -Force -ErrorAction SilentlyContinue $outside
+          Remove-Item -Force -ErrorAction SilentlyContinue $traversalOutside
+          $db = Join-Path $data "timeassist.sqlite"
+
+          $psi = [System.Diagnostics.ProcessStartInfo]::new()
+          $psi.FileName = (Resolve-Path "dist\timeassist.exe").Path
+          $psi.ArgumentList.Add("--db")
+          $psi.ArgumentList.Add($db)
+          $psi.ArgumentList.Add("mcp")
+          $psi.WorkingDirectory = $data
+          $psi.RedirectStandardInput = $true
+          $psi.RedirectStandardOutput = $true
+          $psi.RedirectStandardError = $true
+          $psi.UseShellExecute = $false
+          $proc = [System.Diagnostics.Process]::Start($psi)
+
+          function Send-Request($id, $method, $params) {
+            $msg = @{ jsonrpc = "2.0"; id = $id; method = $method }
+            if ($null -ne $params) { $msg.params = $params }
+            $proc.StandardInput.WriteLine(($msg | ConvertTo-Json -Depth 20 -Compress))
+            $proc.StandardInput.Flush()
+            $line = $proc.StandardOutput.ReadLine()
+            if (-not $line) { throw "No response for $method" }
+            return ($line | ConvertFrom-Json)
+          }
+
+          function Call-Tool($id, $name, $arguments) {
+            $resp = Send-Request $id "tools/call" @{ name = $name; arguments = $arguments }
+            if ($null -ne $resp.error) { throw "Protocol error for ${name}: $($resp.error.message)" }
+            return $resp.result
+          }
+
+          try {
+            $null = Send-Request 1 "initialize" @{ protocolVersion = "2025-06-18" }
+            $null = Call-Tool 2 "init_state" @{ at = "2026-05-28T08:55:00" }
+            $null = Call-Tool 3 "add_missing" @{
+              client = "Client A"
+              task = "packaged exe file-safety smoke"
+              start = "2026-05-28T10:00:00"
+              end = "2026-05-28T10:30:00"
+            }
+            # "Client A" is not on the roster, so add_missing captures it
+            # needs_info (the #34 approve/export gate). Confirm-as-is with an
+            # edit to return it to draft before the approve below.
+            $null = Call-Tool 4 "edit" @{ entry_id = 1; client = "Client A" }
+
+            $reviewResult = Call-Tool 5 "review" @{ date = "2026-05-28" }
+            $review = $reviewResult.content[0].text | ConvertFrom-Json
+            if (-not $review.review_token) { throw "review did not return review_token" }
+            $approveResult = Call-Tool 6 "approve" @{ entry_id = 1; review_token = $review.review_token; at = "2026-05-28T10:35:00" }
+            if ($approveResult.isError) { throw "approve failed: $($approveResult.content[0].text)" }
+
+            $postApproveReviewResult = Call-Tool 7 "review" @{ date = "2026-05-28" }
+            $postApproveReview = $postApproveReviewResult.content[0].text | ConvertFrom-Json
+            $outsideExport = Call-Tool 8 "export" @{
+              date = "2026-05-28"
+              output = $outside
+              review_token = $postApproveReview.review_token
+            }
+            if (-not $outsideExport.isError) { throw "export outside plugin data unexpectedly succeeded" }
+            $outsideError = ($outsideExport.content[0].text | ConvertFrom-Json).error
+            if ($outsideError -notmatch "artifact path must be under") { throw "unexpected outside export error: $outsideError" }
+            if (Test-Path $outside) { throw "outside export path was created: $outside" }
+
+            $traversalExport = Call-Tool 9 "export" @{
+              date = "2026-05-28"
+              output = "..\traversal-outside.csv"
+              review_token = $postApproveReview.review_token
+            }
+            if (-not $traversalExport.isError) { throw "relative traversal export unexpectedly succeeded" }
+            $traversalError = ($traversalExport.content[0].text | ConvertFrom-Json).error
+            if ($traversalError -notmatch "artifact path must be under") { throw "unexpected traversal export error: $traversalError" }
+            if (Test-Path $traversalOutside) { throw "relative traversal export path was created: $traversalOutside" }
+
+            $safeExport = Call-Tool 10 "export" @{
+              date = "2026-05-28"
+              output = "safe.csv"
+              review_token = $postApproveReview.review_token
+              at = "2026-05-28T10:40:00"
+            }
+            if ($safeExport.isError) { throw "safe export failed: $($safeExport.content[0].text)" }
+            $safePayload = $safeExport.content[0].text | ConvertFrom-Json
+            $expectedSafe = (Join-Path (Join-Path $data "exports") "safe.csv")
+            if (-not (Test-Path $expectedSafe)) { throw "safe export file was not created under plugin data" }
+            # The MCP view reports the data-dir CSV as official_csv when a
+            # user-visible copy exists, else as csv (mcp_views._view_export).
+            $reportedOfficial = if ($safePayload.official_csv) { $safePayload.official_csv } else { $safePayload.csv }
+            if ($reportedOfficial -ne (Resolve-Path $expectedSafe).Path) { throw "safe export reported wrong path: $reportedOfficial" }
+            Write-Host "Packaged EXE file-safety smoke passed"
+          }
+          finally {
+            if ($null -ne $proc -and -not $proc.HasExited) {
+              $proc.StandardInput.Close()
+              if (-not $proc.WaitForExit(5000)) {
+                $proc.Kill()
+                throw "MCP process did not exit after stdin closed"
+              }
+              if ($proc.ExitCode -ne 0) {
+                $stderr = $proc.StandardError.ReadToEnd()
+                throw "MCP process exited with code $($proc.ExitCode): $stderr"
+              }
+            }
+          }
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v7
+        with:
+          name: timeassist-windows
+          path: dist/timeassist.exe
+          if-no-files-found: error
+
+      - name: Package Cowork plugin
+        run: python scripts/package_plugin.py --exe dist/timeassist.exe --out dist/timeassist-plugin.zip
+
+      - name: Upload plugin
+        uses: actions/upload-artifact@v7
+        with:
+          name: timeassist-plugin
+          path: dist/timeassist-plugin.zip
+          if-no-files-found: error
+
+      - name: Publish GitHub Release (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $assets = @("dist/timeassist.exe", "dist/timeassist-plugin.zip")
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag $assets --title "TimeAssist $tag" --notes "Automated Windows build. Install the Cowork plugin (timeassist-plugin.zip) or run timeassist.exe directly."
+          } else {
+            gh release upload $tag $assets --clobber
+          }
+
+      - name: Publish plugin to dist branch (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # The marketplace fetches the plugin from git, so ship the built plugin
+          # (binary included) on a single-commit `dist` branch the marketplace
+          # source points at. Force-push keeps history from accumulating binaries.
+          cp dist/timeassist.exe plugin/timeassist/bin/timeassist.exe
+          work="$RUNNER_TEMP/distrepo"
+          rm -rf "$work"
+          mkdir -p "$work/plugin"
+          cp -r plugin/timeassist "$work/plugin/timeassist"
+          rm -f "$work/plugin/timeassist/bin/.gitignore"
+          cd "$work"
+          git init -q
+          git checkout -q -b dist
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "dist: timeassist plugin ${GITHUB_REF_NAME}"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" dist

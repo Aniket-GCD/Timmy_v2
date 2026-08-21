@@ -1,0 +1,8 @@
+{
+  "timezone": "America/Denver",
+  "default_billable": true,
+  "rounding_rule": "exact",
+  "quickbooks_handoff": "confirm-before-use",
+  "review_time": "16:30",
+  "privacy_mode": "synthetic-or-approved-data-only"
+}

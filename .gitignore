@@ -1,0 +1,42 @@
+# Local agent notes
+CLAUDE.md
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+config/timeassist.local.json
+config/clients.csv
+config/service-codes.csv
+
+# Local state
+*.sqlite
+*.sqlite3
+*.db
+state/*
+!state/.gitkeep
+
+# Real exports
+exports/*
+!exports/.gitkeep
+
+# Generated executable demo output
+demo/generated-exe/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+.packaging-venv/
+build/
+dist/
+*.spec
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/

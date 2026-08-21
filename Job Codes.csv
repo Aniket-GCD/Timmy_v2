@@ -1,0 +1,74 @@
+﻿job_code,description,account
+1098,"Preparation of 1098s for the Tax Year ending December 31, 20",Accounting Services
+940,"Preparation of Employer's Annual Federal Unemployment Tax Return for the Tax Year ending December 31,",Accounting Services
+Annual Report,Annual Report Filing,Accounting Services
+BOI Report,Beneficial Ownership Information Report Filing,Accounting Services
+Client Meeting,,Accounting Services
+Client Training,Training clients in QBO or other accounting,Accounting Services
+Employee Training,Internal staff training or helping - nonbillable,Accounting Services
+Filing Fees,Filing fees paid by GCD for,Accounting Services
+Financial Stmts,Financial Statements for the month of,Accounting Services
+FORM 843,"Form 843 refund claim services, including research, analysis, preparation, and filing support related to IRS interest and penalties",Accounting Services
+IRS Issues,"Fees associated with the assistance of IRS issues for the Tax Year ending December 31,",Accounting Services
+New Client Meeting,,Accounting Services
+Phone,Telephone time with clients,Accounting Services
+REGISTERED AGENT,Registered Agent Services - Annual Fee,Accounting Services
+Special Project,Special Project,Accounting Services
+Consulting,Consulting services during the month of,Accounting Services:Consulting
+ERC Calculation,"Employee Retention Credit Research, Calculation & Application",Accounting Services:Consulting
+EIN Filing,,Accounting Services:Hourly
+Email,Answering client emails,Accounting Services:Hourly
+Hourly,Accounting services during the month of,Accounting Services:Hourly
+Acct,Accounting Services Rendered during the Month of,Accounting Services:Other Write Up
+Acct Related to Tax Prep,Accounting Services Rendered for the Tax Return,Accounting Services:Other Write Up
+Other,,Accounting Services:Other Write Up
+Payroll,Preparation of employee payroll for the period covering,Accounting Services:Payroll Prep
+Payroll Reports,Preparation of Employer's Quarterly Payroll Tax Reports,Accounting Services:Payroll Prep
+Quarterly,Quarterly Accounting services for the,Accounting Services:Quarterly Write Up
+QB Server,Online QuickBooks Administration,Accounting Services:Quickbooks Hosting
+Property Tax Rendition,"Review, Analysis & Preparation of Business Personal Property Tax Rendition",Accounting Services:Renditions
+Sales Tax,Sales Tax Form Preparation,Accounting Services:Sales Tax
+Payroll Reports:1099s,"Preparation of 1099s for the Tax Year ending December 31,",Accounting Services:Year End Payroll
+Payroll Reports:W2,"Preparation of  Wage and Tax Statement(s), Form W-2 for the Tax Year Ending December 31,",Accounting Services:Year End Payroll
+Administrative,,Administrative
+GCD A/R Collection,Time spent collecting monies from clients,Administrative
+IT/QB Issues (Client Fault),Dealing with issues related to QuickBooks - not client specific.,Administrative
+IT/QB Issues (Our Fault),Troubleshooting computers/anything IT related,Administrative
+QBO Conversion,Converting a QB Desktop to QBO,Administrative
+Bad Debt,,Bad Debts
+Refund,Refund,BG Refunds
+Returned Payment,Returned Payment,BG Returned Payments
+Third Party Transaction,Third Party Transaction,BG Third Party Transactions
+Late Fee,Late Fee,Biller Genie Late Fees
+Intercompany - Hollon,,Hollon
+Intercompany - MH,,MH
+720,Preparation of Quarterly Federal Excise Tax Return,Tax Preparation Services Income
+1040:Schedule F,Schedule F - Farm,Tax Services
+990-T,"Preparation of Exempt Organization Business Income Tax Return, Form 990-T for the Tax Year ending December 31,",Tax Services
+1120,"Preparation of Corporation Income Tax Return, Form 1120 for the Tax Year Ending December 31,",Tax Services:Corporate Taxes
+1120S,"Preparation of S Corporation Tax Return, Form 1120S for the Tax Year ending December 31,",Tax Services:Corporate Taxes
+1120X,"Preparation of Amended Federal Corporate Income Tax Return, Form 1120X for the Tax Year ending December 31,",Tax Services:Corporate Taxes
+1139,"Preparation of Corporation Application for Tentative Refund, Form 1139 for the Tax Year ending December 31,",Tax Services:Corporate Taxes
+990,"Preparation of Exempt Organization Business Income Tax Return, Form 990 for the Tax Year ending December 31,",Tax Services:Corporate Taxes
+Sub Chapter S Election,,Tax Services:Corporate Taxes
+Franchise,Preparation of Texas Franchise Tax Report,Tax Services:Franchise Tax
+1040,"Preparation of Individual Income Tax Return, Form 1040 for the Tax Year Ending December 31,",Tax Services:Individual Taxes
+1040:Schedule C,Schedule C Accounting & Reporting,Tax Services:Individual Taxes
+1040:Schedule E,Accounting for Rental Properties,Tax Services:Individual Taxes
+1040ES Payments,,Tax Services:Individual Taxes
+1040X,"Preparation of Amended Individual Income Tax Return, Form 1040X for the Tax Year Ending December 31,",Tax Services:Individual Taxes
+1045,"Preparation of Application for Tentative Refund, Carryback of Net Operating Losses for Individuals, Estates and Trusts-  Form 1045 for the Tax Year ending December 31,",Tax Services:Individual Taxes
+Tax Projections,Tax Projection,Tax Services:Individual Taxes
+1040N,Preparation of Nebraska Form 1040N for the year ending,Tax Services:Other Taxes
+1041,"Preparation of Fiduciary Tax Return, Form 1041 for the Tax Year Ending December 31,",Tax Services:Other Taxes
+1120H,"Preparation of  Income Tax Return for Homeowners Associations, Form1120-H for the Tax Year Ending December 31,",Tax Services:Other Taxes
+5500,"Preparation of  Employee Benefit Plan Return, Form 5500 for the Tax Year ending December 31,",Tax Services:Other Taxes
+706,"Preparation of Federal Estate Tax Return, Form 706 for the Tax Year ending December 31,",Tax Services:Other Taxes
+709,"Preparation of Gift Tax Return, Form 709 for the Tax Year ending December 31,",Tax Services:Other Taxes
+F-BAR,F-BAR Filing,Tax Services:Other Taxes
+Gift Tax,Preparation of Gift Tax Forms for the Tax Year ending,Tax Services:Other Taxes
+SOS BIlling Sheet,Items listed on the SOS Billing Sheet & billed separately,Tax Services:Other Taxes
+State,"Preparation of State Income Tax Return for the Tax Year ending December 31,",Tax Services:Other Taxes
+1065,"Preparation of Partnership Tax Return, Form 1065 for the Tax Year ending December 31,",Tax Services:Partnership Taxes
+Surcharge,Surcharge,Technology_Fees_BG
+Technology Fee,Technology Fee,Technology_Fees_BG

@@ -1,0 +1,21 @@
+{
+  "date": "2026-05-28",
+  "entries": [
+    {
+      "client": "Client A",
+      "task": "monthly cleanup",
+      "billable": true,
+      "start": "09:00",
+      "end": "09:24",
+      "status": "draft"
+    },
+    {
+      "client": "Client B",
+      "task": "tax question",
+      "billable": true,
+      "start": "10:10",
+      "end": "10:28",
+      "status": "draft"
+    }
+  ]
+}

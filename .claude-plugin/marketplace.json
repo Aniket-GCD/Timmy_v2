@@ -1,0 +1,19 @@
+{
+  "name": "timeassist-marketplace",
+  "description": "Guided-pilot marketplace for the Windows Timmy (formerly TimeAssist) Cowork plugin: local, human-reviewed billable-time capture for accountants.",
+  "owner": {
+    "name": "Josh Wihongi"
+  },
+  "plugins": [
+    {
+      "name": "timeassist",
+      "description": "Timmy (formerly TimeAssist): local, human-reviewed billable-time capture for accountants (skill + local MCP server). Nothing is billed without explicit human approval.",
+      "source": {
+        "source": "git-subdir",
+        "url": "0paani/timeassist-local-kit",
+        "path": "plugin/timeassist",
+        "ref": "dist"
+      }
+    }
+  ]
+}

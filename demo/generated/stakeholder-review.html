@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TimeAssist Stakeholder Review</title>
+  <style>
+:root{
+  --dark:#173247; --dark2:#24465D; --light:#F4FBFF; --card:#ffffff;
+  --text:#071421; --muted:#5F7890; --accent:#16C7F7; --accent2:#6F8CFF;
+  --border:#B7E8FA; --eyebrow:#047EA9; --ice:#EAF8FF; --ice2:#DDF4FF;
+  color-scheme:light;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0; color:var(--text);
+  font-family:Inter,"Geist","Geist Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  background:
+    radial-gradient(circle at 88% -2%, rgba(139,234,255,.40), transparent 26%),
+    radial-gradient(circle at 4% 102%, rgba(221,244,255,.70), transparent 30%),
+    linear-gradient(rgba(183,232,250,.30) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(183,232,250,.30) 1px, transparent 1px),
+    linear-gradient(rgba(221,239,248,.16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(221,239,248,.16) 1px, transparent 1px),
+    var(--light);
+  background-size:auto,auto,96px 96px,96px 96px,24px 24px,24px 24px,auto;
+  background-attachment:fixed;
+  -webkit-font-smoothing:antialiased;
+}
+main{max-width:1080px; margin:0 auto; padding:52px 24px 72px;}
+.topline{height:4px; border-radius:999px; background:linear-gradient(90deg,#8BEAFF,var(--accent),var(--accent2)); opacity:.9; margin-bottom:30px;}
+.eyebrow{text-transform:uppercase; letter-spacing:.22em; color:var(--eyebrow); font-size:11px; font-weight:700;}
+.chip{display:inline-block; background:var(--eyebrow); color:#fff; font-weight:700; letter-spacing:.14em; text-transform:uppercase; font-size:11px; padding:6px 12px; border-radius:8px;}
+h1{font-size:clamp(34px,5vw,52px); line-height:1.02; letter-spacing:-.03em; margin:18px 0 14px; max-width:20ch;}
+h2{font-size:25px; letter-spacing:-.02em; margin:0;}
+h3{font-size:16px; margin:0;}
+p{color:var(--muted); line-height:1.6; margin:0;}
+.lead{margin-top:12px; max-width:62ch; color:#466078;}
+.card{background:var(--card); border:1px solid var(--border); border-radius:20px; padding:30px; box-shadow:0 18px 50px rgba(8,126,164,.10);}
+.section{margin-top:24px;}
+.section-head{margin-bottom:16px;}
+.section-head .eyebrow{display:block; margin-bottom:6px;}
+.thesis{margin-top:22px; border-left:4px solid var(--accent); background:var(--dark); color:#F4FBFF; padding:18px 22px; border-radius:0 14px 14px 0; font-size:17px; line-height:1.45;}
+.thesis strong{color:#8BEAFF;}
+.metrics{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-top:22px;}
+.metric{background:var(--card); border:1px solid var(--border); border-radius:16px; padding:18px; box-shadow:0 10px 28px rgba(8,126,164,.06);}
+.metric .val{font-size:30px; font-weight:800; letter-spacing:-.02em; color:var(--eyebrow); font-variant-numeric:tabular-nums;}
+.metric .lbl{display:block; margin-top:6px; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--text);}
+.metric .sub{display:block; margin-top:3px; font-size:12px; color:var(--muted);}
+.loop{display:grid; grid-template-columns:repeat(4,1fr); gap:18px;}
+.loop-step{position:relative; background:var(--ice); border:1px solid var(--border); border-radius:14px; padding:16px;}
+.loop-step .n{display:inline-grid; place-items:center; width:26px; height:26px; border-radius:50%; background:var(--accent); color:#fff; font-size:12px; font-weight:800; margin-bottom:10px;}
+.loop-step strong{display:block; font-size:15px; color:var(--text);}
+.loop-step .d{display:block; margin-top:4px; font-size:13px; color:var(--muted); line-height:1.4;}
+.loop-step:not(:last-child)::after{content:"\2192"; position:absolute; right:-13px; top:50%; transform:translateY(-50%); color:var(--accent); font-weight:700; font-size:18px; z-index:1;}
+.actions{display:flex; flex-wrap:wrap; gap:10px; margin-top:18px;}
+.button{border:1px solid #8cd8f0; background:var(--ice); color:#075f81; border-radius:999px; padding:9px 14px; font-weight:800; font-size:13px;}
+.button.secondary{background:#fff; color:#3d5470; border-color:var(--border);}
+.table-wrap{overflow-x:auto; border-radius:16px;}
+table{width:100%; border-collapse:separate; border-spacing:0; overflow:hidden; border:1px solid var(--border); border-radius:16px; background:#fff;}
+th,td{padding:13px 16px; border-bottom:1px solid #e4f3fb; text-align:left; font-size:14px;}
+th{color:var(--eyebrow); font-size:11px; text-transform:uppercase; letter-spacing:.08em; background:var(--ice); font-weight:700;}
+tr:last-child td{border-bottom:0;}
+td.entry-id{color:var(--muted); font-variant-numeric:tabular-nums;}
+td.client{font-weight:700; color:var(--text);}
+td.window,td.mins{font-variant-numeric:tabular-nums;}
+td.empty{text-align:center; color:var(--muted); padding:30px;}
+.pill{display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:4px 11px; font-size:12px; font-weight:700; border:1px solid transparent; white-space:nowrap;}
+.pill::before{content:""; width:7px; height:7px; border-radius:50%; background:currentColor;}
+.pill.draft{color:#3d5470; background:#eef3f8; border-color:#d7e3ee;}
+.pill.draft::before{opacity:.5;}
+.pill.approved{color:#067a9e; background:#e1f7ff; border-color:#a9e2f4;}
+.pill.exported{color:#1c3a52; background:#dfeaf3; border-color:#bcd2e4;}
+.pill.needs_info{color:#4a51c4; background:#ecefff; border-color:#c9d2ff;}
+.pill.billable{color:#067a9e; background:#e1f7ff; border-color:#a9e2f4;}
+.pill.nonbillable{color:#5F7890; background:#f1f5f9; border-color:#dde6ef;}
+.pill.nonbillable::before{opacity:.45;}
+.note{margin-bottom:16px; display:flex; gap:10px; align-items:flex-start; background:var(--ice2); border:1px solid var(--border); border-radius:12px; padding:12px 16px; font-size:13px; color:#254258; line-height:1.45;}
+.note b{color:var(--eyebrow);}
+.qgrid{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+.qcard{background:var(--ice); border:1px solid var(--border); border-radius:14px; padding:20px;}
+.qcard span{color:var(--eyebrow); font-weight:700; font-size:11px; letter-spacing:.12em;}
+.qcard p{margin-top:8px; color:var(--text); font-size:15px; line-height:1.48;}
+.qcard.gate{grid-column:1/-1; background:#fff; border-color:#8BEAFF; border-width:1.5px;}
+.guard{background:
+    radial-gradient(circle at 90% 0%, rgba(22,199,247,.18), transparent 32%),
+    radial-gradient(circle at 0% 100%, rgba(111,140,255,.12), transparent 34%),
+    var(--dark);
+  color:#F4FBFF; border:1px solid #24465D; border-radius:20px; padding:30px;}
+.guard .eyebrow{color:#8BEAFF;}
+.guard h2{color:#F4FBFF;}
+.guard p{color:#CFE9F7;}
+.guard-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:14px; margin-top:20px;}
+.guard-item{border:1px solid rgba(139,234,255,.22); background:rgba(15,40,60,.45); border-radius:14px; padding:16px;}
+.guard-item strong{display:block; color:#8BEAFF; font-size:14px; margin-bottom:6px;}
+.guard-item span{font-size:13.5px; color:#CFE9F7; line-height:1.5;}
+.guard-line{margin-top:22px; font-size:19px; font-weight:800; color:#8BEAFF; letter-spacing:-.01em;}
+.foot{margin-top:34px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; color:var(--muted); font-size:12px;}
+@media (max-width:880px){
+  .metrics{grid-template-columns:repeat(2,1fr);}
+  .loop{grid-template-columns:1fr 1fr;}
+  .loop-step:nth-child(2)::after{content:"";}
+  .qgrid,.guard-grid{grid-template-columns:1fr;}
+}
+@media (max-width:520px){
+  .metrics,.loop{grid-template-columns:1fr;}
+  .loop-step::after{content:""!important;}
+}
+@media print{
+  body{background:var(--light);}
+  .card,.metric,.guard{box-shadow:none;}
+}
+</style>
+</head>
+<body>
+<main>
+  <div class="topline"></div>
+  <header class="card">
+    <span class="chip">Stakeholder prototype · v1 walkthrough</span>
+    <h1>Human-reviewed billable time, captured without surveillance.</h1>
+    <p class="lead">TimeAssist turns scattered work blocks into clean draft entries an accountant can review at the end of the day. Nothing leaves this machine until a person approves it.</p>
+    <div class="thesis"><strong>Draft first. You decide.</strong> Every entry starts as an editable draft. You stay the authority on what is billable, what gets corrected, and what is ever exported to QuickBooks.</div>
+  </header>
+
+  <section class="metrics">
+    <div class="metric"><div class="val">1h</div><span class="lbl">Tracked today</span><span class="sub">3 entries · 2026-05-28</span></div>
+    <div class="metric"><div class="val">18m</div><span class="lbl">Awaiting review</span><span class="sub">still in draft</span></div>
+    <div class="metric"><div class="val">42m</div><span class="lbl">Cleared</span><span class="sub">approved &amp; exported</span></div>
+    <div class="metric"><div class="val">11</div><span class="lbl">Logged events</span><span class="sub">auditable mutations</span></div>
+  </section>
+
+  <section class="card section">
+    <div class="section-head">
+      <span class="eyebrow">How the workflow runs</span>
+      <h2>Capture → Review → Approve → Export</h2>
+    </div>
+    <p>Human review before export to QuickBooks is the rule, not an optional setting. The loop below is the only path an entry can take.</p>
+    <div class="loop" style="margin-top:18px;">
+      <div class="loop-step"><span class="n">1</span><strong>Capture</strong><span class="d">Start, switch, end, or add missing time as drafts.</span></div>
+      <div class="loop-step"><span class="n">2</span><strong>Review</strong><span class="d">Entries stay editable and visible end-of-day.</span></div>
+      <div class="loop-step"><span class="n">3</span><strong>Approve</strong><span class="d">Approve draft entries one by one; the rest stay open.</span></div>
+      <div class="loop-step"><span class="n">4</span><strong>Export</strong><span class="d">Only approved time becomes a QuickBooks-ready CSV.</span></div>
+    </div>
+    <div class="actions">
+      <span class="button">Approve draft</span>
+      <span class="button secondary">Edit draft</span>
+      <span class="button secondary">Export approved</span>
+    </div>
+  </section>
+
+  <section class="card section">
+    <div class="section-head">
+      <span class="eyebrow">Daily review · 2026-05-28</span>
+      <h2>Today's entries</h2>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Entry</th><th>Client</th><th>Job Type</th><th>Notes</th><th>Window</th><th>Rounded</th><th>Billable</th><th>Status</th></tr></thead>
+        <tbody><tr><td class='entry-id'>#1</td><td class='client'>Client A</td><td class='job-type'>Bookkeeping</td><td class='task'>monthly cleanup</td><td class='window'>09:00–09:24</td><td class='mins'>24 min</td><td><span class='pill billable'>Billable</span></td><td><span class='pill exported'>Exported</span></td></tr>
+<tr><td class='entry-id'>#2</td><td class='client'>Client B</td><td class='job-type'>Tax</td><td class='task'>tax question</td><td class='window'>09:24–09:42</td><td class='mins'>18 min</td><td><span class='pill billable'>Billable</span></td><td><span class='pill exported'>Exported</span></td></tr>
+<tr><td class='entry-id'>#3</td><td class='client'>Client A</td><td class='job-type'>Bookkeeping</td><td class='task'>call notes and follow-up</td><td class='window'>10:00–10:18</td><td class='mins'>18 min</td><td><span class='pill billable'>Billable</span></td><td><span class='pill draft'>Draft</span></td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card section">
+    <div class="section-head">
+      <span class="eyebrow">Before a real pilot</span>
+      <h2>Open questions for you</h2>
+    </div>
+    <div class="qgrid">
+      <div class="qcard"><span>DECISION 1</span><p>Which QuickBooks handoff route should the first export target?</p></div>
+      <div class="qcard"><span>DECISION 2</span><p>What billing increment and rounding rule should this enforce?</p></div>
+      <div class="qcard"><span>DECISION 3</span><p>Which service codes map to each task type?</p></div>
+      <div class="qcard"><span>DECISION 4</span><p>Which data classes are approved for the pilot?</p></div>
+      <div class="qcard gate"><span>GO / NO-GO</span><p>With those answered, are we cleared to run a one-week supervised pilot on real entries?</p></div>
+    </div>
+  </section>
+
+  <section class="guard section">
+    <span class="eyebrow">Privacy boundary · v1 guardrails</span>
+    <h2>What this prototype will not do</h2>
+    <p>The goal is trustworthy capture, not monitoring. These boundaries hold for v1.</p>
+    <div class="guard-grid">
+      <div class="guard-item"><strong>No surveillance</strong><span>No screen recording or keystroke capture. Every change is an explicit, logged action you can audit.</span></div>
+      <div class="guard-item"><strong>Drafts, not records</strong><span>Entries are editable drafts until you approve them — never silent final billing.</span></div>
+      <div class="guard-item"><strong>You stay the authority</strong><span>Approval is required before anything is exported. The accountant decides.</span></div>
+      <div class="guard-item"><strong>No QuickBooks writeback</strong><span>v1 stops at a reviewed, QuickBooks-ready CSV. No direct writeback into your books.</span></div>
+    </div>
+    <div class="guard-line">Draft first. You decide.</div>
+  </section>
+
+  <div class="foot">
+    <span>TimeAssist — local, human-reviewed billable-time prototype</span>
+    <span>Synthetic data · review for 2026-05-28</span>
+  </div>
+</main>
+</body>
+</html>

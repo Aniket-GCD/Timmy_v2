@@ -1,0 +1,3 @@
+# The packaged binary is dropped here by CI, not committed.
+*
+!.gitignore
