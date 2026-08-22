@@ -15,8 +15,10 @@ if str(ROOT) not in sys.path:
 
 from timeassist import actions
 from timeassist import mcp_server
+from timeassist import pay_period
+from timeassist import reception_email_draft
 from timeassist import supabase_ref
-from timeassist.supabase_submit import submit_entry, time_entry_payload
+from timeassist.supabase_submit import submit_entry, time_entry_payload, update_submitted_entry
 
 
 ENV = {
@@ -111,6 +113,60 @@ class MappingTests(unittest.TestCase):
         self.assertTrue(payload["billable"])
         self.assertEqual(payload["source_file"], "timmy")
 
+    def test_unassigned_new_client_forces_payload(self) -> None:
+        payload = time_entry_payload(
+            {
+                "client_name": "Unassigned",
+                "task_text": "NEW CLIENT: Brand New LLC | tax setup",
+                "job_type": "Email",
+                "billable": 1,
+                "start_at": "2026-08-12T09:00:00",
+                "end_at": "2026-08-12T10:00:00",
+                "rounded_minutes": 60,
+            },
+            staff_name="Jane Doe",
+            office="GCD",
+            account="Accounting Services:Hourly",
+        )
+        self.assertEqual(payload["client"], "Unassigned")
+        self.assertTrue(payload["notes"].startswith("NEW CLIENT:"))
+        self.assertIn("Brand New LLC", payload["notes"])
+
+
+class PayPeriodTests(unittest.TestCase):
+    def test_aug_9_23_editable_through_aug_24(self) -> None:
+        self.assertTrue(pay_period.editable_now("2026-08-10", now="2026-08-24T23:59:59"))
+        self.assertFalse(pay_period.editable_now("2026-08-10", now="2026-08-25T00:00:00"))
+
+    def test_aug_24_through_sep_8_editable_through_sep_9(self) -> None:
+        self.assertTrue(pay_period.editable_now("2026-08-24", now="2026-09-09T23:59:59"))
+        self.assertTrue(pay_period.editable_now("2026-09-08", now="2026-09-09T12:00:00"))
+        self.assertFalse(pay_period.editable_now("2026-08-24", now="2026-09-10T00:00:00"))
+
+    def test_superuser_always_can_edit(self) -> None:
+        self.assertTrue(
+            pay_period.can_edit_entry("2026-08-10", "Nathan Moorhead", now="2026-08-25T12:00:00")
+        )
+        self.assertFalse(
+            pay_period.can_edit_entry("2026-08-10", "Jane Doe", now="2026-08-25T12:00:00")
+        )
+
+
+class ReceptionDraftTests(unittest.TestCase):
+    def test_draft_contents(self) -> None:
+        draft = reception_email_draft.draft_reception_email(
+            spoken_client_name="Brand New LLC",
+            staff_name="Jane Doe",
+            office="GCD",
+            to_email="front@gcd.example",
+        )
+        self.assertEqual(draft["to"], "front@gcd.example")
+        self.assertIn("Brand New LLC", draft["subject"])
+        self.assertIn("Brand New LLC", draft["body"])
+        self.assertIn("Jane Doe", draft["body"])
+        self.assertFalse(draft["sent"])
+        self.assertTrue(draft["mailto"].startswith("mailto:"))
+
 
 class SubmitGateTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -151,20 +207,113 @@ class SubmitGateTests(unittest.TestCase):
             if request.method == "GET":
                 return FakeResponse(json.dumps(JOB_CODES))
             self.assertEqual(request.method, "POST")
+            prefer = request.headers.get("Prefer") or request.headers.get("prefer")
+            self.assertEqual(prefer, "return=representation")
             body = json.loads(request.data.decode("utf-8"))
             self.assertEqual(body["job_code"], "Email")
             self.assertEqual(body["account"], "Accounting Services:Hourly")
             self.assertEqual(body["office"], "MH")
-            return FakeResponse(b"", 201)
+            return FakeResponse(json.dumps([{"id": "sb-row-1"}]), 201)
 
         with patch("timeassist.supabase_ref.urlopen", side_effect=fake_urlopen):
             first = submit_entry(self.db, 1, environ=ENV, at="2026-05-28T10:06:00")
             second = submit_entry(self.db, 1, environ=ENV, at="2026-05-28T10:07:00")
         self.assertTrue(first["submitted"])
         self.assertFalse(first["skipped"])
+        self.assertEqual(first["supabase_id"], "sb-row-1")
         self.assertTrue(second["skipped"])
         self.assertEqual(calls.count("POST"), 1)
         self.assertEqual(calls.count("GET"), 1)
+
+    def test_unassigned_seed_and_submit_payload(self) -> None:
+        clients = actions.list_clients(self.db)["clients"]
+        self.assertTrue(any(c["display_name"] == "Unassigned" for c in clients))
+        actions.set_setting(self.db, "staff_name", "Jane Doe")
+        actions.set_setting(self.db, "office", "GCD")
+        entry = actions.add_missing_entry(
+            self.db,
+            "Unassigned",
+            "NEW CLIENT: Brand New LLC | setup",
+            "2026-08-12T09:00:00",
+            "2026-08-12T10:00:00",
+            "yes",
+            job_type="Email",
+        )
+        actions.set_approval(self.db, entry["entry_id"], True, "2026-08-12T10:05:00")
+        seen: list[dict] = []
+
+        def fake_urlopen(request, timeout=30):  # noqa: ANN001
+            if request.method == "GET":
+                return FakeResponse(json.dumps(JOB_CODES))
+            seen.append(json.loads(request.data.decode("utf-8")))
+            return FakeResponse(json.dumps([{"id": "sb-unassigned-1"}]), 201)
+
+        with patch("timeassist.supabase_ref.urlopen", side_effect=fake_urlopen):
+            result = submit_entry(self.db, entry["entry_id"], environ=ENV, at="2026-08-12T10:06:00")
+        self.assertEqual(seen[0]["client"], "Unassigned")
+        self.assertTrue(seen[0]["notes"].startswith("NEW CLIENT:"))
+        self.assertEqual(result["supabase_id"], "sb-unassigned-1")
+
+    def test_update_submitted_uses_patch_not_post(self) -> None:
+        actions.set_setting(self.db, "staff_name", "Jane Doe")
+        actions.set_setting(self.db, "office", "GCD")
+        actions.set_approval(self.db, 1, True, "2026-05-28T10:05:00")
+        methods: list[str] = []
+
+        def fake_urlopen(request, timeout=30):  # noqa: ANN001
+            methods.append(request.method)
+            if request.method == "GET":
+                return FakeResponse(json.dumps(JOB_CODES))
+            if request.method == "POST":
+                return FakeResponse(json.dumps([{"id": "sb-row-9"}]), 201)
+            self.assertEqual(request.method, "PATCH")
+            self.assertIn("id=eq.sb-row-9", request.full_url)
+            return FakeResponse(json.dumps([{"id": "sb-row-9"}]), 200)
+
+        with patch("timeassist.supabase_ref.urlopen", side_effect=fake_urlopen):
+            submit_entry(self.db, 1, environ=ENV, at="2026-05-28T10:06:00")
+            # In-window edit + patch (May 28 is days 24–end → window through June 9)
+            actions.edit_entry(self.db, 1, task="fixed notes", at="2026-05-28T11:00:00")
+            updated = update_submitted_entry(self.db, 1, environ=ENV, at="2026-05-28T11:01:00")
+        self.assertEqual(methods.count("POST"), 1)
+        self.assertEqual(methods.count("PATCH"), 1)
+        self.assertTrue(updated["updated"])
+        self.assertEqual(updated["supabase_id"], "sb-row-9")
+
+    def test_normal_staff_refuses_out_of_window_update(self) -> None:
+        actions.set_setting(self.db, "staff_name", "Jane Doe")
+        actions.set_setting(self.db, "office", "GCD")
+        actions.set_approval(self.db, 1, True, "2026-05-28T10:05:00")
+
+        def fake_urlopen(request, timeout=30):  # noqa: ANN001
+            if request.method == "GET":
+                return FakeResponse(json.dumps(JOB_CODES))
+            return FakeResponse(json.dumps([{"id": "sb-row-2"}]), 201)
+
+        with patch("timeassist.supabase_ref.urlopen", side_effect=fake_urlopen):
+            submit_entry(self.db, 1, environ=ENV, at="2026-05-28T10:06:00")
+        with self.assertRaises(ValueError) as caught:
+            update_submitted_entry(self.db, 1, environ=ENV, at="2026-06-15T12:00:00")
+        self.assertIn("pay-period", str(caught.exception))
+
+    def test_superuser_can_update_out_of_window(self) -> None:
+        actions.set_setting(self.db, "staff_name", "Hannah Curtis")
+        actions.set_setting(self.db, "office", "GCD")
+        actions.set_approval(self.db, 1, True, "2026-05-28T10:05:00")
+        methods: list[str] = []
+
+        def fake_urlopen(request, timeout=30):  # noqa: ANN001
+            methods.append(request.method)
+            if request.method == "GET":
+                return FakeResponse(json.dumps(JOB_CODES))
+            if request.method == "POST":
+                return FakeResponse(json.dumps([{"id": "sb-row-3"}]), 201)
+            return FakeResponse(json.dumps([{"id": "sb-row-3"}]), 200)
+
+        with patch("timeassist.supabase_ref.urlopen", side_effect=fake_urlopen):
+            submit_entry(self.db, 1, environ=ENV, at="2026-05-28T10:06:00")
+            update_submitted_entry(self.db, 1, environ=ENV, at="2026-06-15T12:00:00")
+        self.assertIn("PATCH", methods)
 
     def test_duplicate_unique_violation_is_friendly(self) -> None:
         actions.set_setting(self.db, "staff_name", "Jane Doe")
@@ -205,7 +354,7 @@ class SubmitGateTests(unittest.TestCase):
             seen.append(dict(request.headers))
             if request.method == "GET":
                 return FakeResponse(json.dumps(JOB_CODES))
-            return FakeResponse(b"", 201)
+            return FakeResponse(json.dumps([{"id": "sb-secret-1"}]), 201)
 
         secret_env = {"SUPABASE_URL": "https://example.supabase.co", "SUPABASE_KEY": "sb_secret_test"}
         with patch("timeassist.supabase_ref.urlopen", side_effect=fake_urlopen):

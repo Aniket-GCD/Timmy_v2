@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS time_entries (
     export_path TEXT,
     job_type TEXT NOT NULL DEFAULT '',
     submitted_at TEXT,
+    supabase_id TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -104,11 +105,14 @@ CAPTURE_COLUMN_DEFINITIONS = {
 
 ENTRY_JOB_COLUMN_DEFINITIONS = {"job_type": "TEXT NOT NULL DEFAULT ''"}
 ENTRY_SUBMITTED_COLUMN_DEFINITIONS = {"submitted_at": "TEXT"}
+ENTRY_SUPABASE_ID_COLUMN_DEFINITIONS = {"supabase_id": "TEXT"}
 CLIENT_COLUMN_DEFINITIONS = {
     "default_job_type": "TEXT NOT NULL DEFAULT ''",
     "billable_locked": "INTEGER NOT NULL DEFAULT 0",
 }
 ADMIN_CLIENT_SEEDS = ("Admin", "Early Out", "Holiday", "Staff Meeting")
+# Placeholder for work done before the real QBO client exists. Billable; not locked.
+UNASSIGNED_CLIENT_SEED = "Unassigned"
 
 
 def slugify_client_key(name: str) -> str:
@@ -191,6 +195,7 @@ def initialize(db_path: str | Path, now: str) -> None:
         _ensure_columns(conn, "active_sessions", ENTRY_JOB_COLUMN_DEFINITIONS)
         _ensure_columns(conn, "time_entries", ENTRY_JOB_COLUMN_DEFINITIONS)
         _ensure_columns(conn, "time_entries", ENTRY_SUBMITTED_COLUMN_DEFINITIONS)
+        _ensure_columns(conn, "time_entries", ENTRY_SUPABASE_ID_COLUMN_DEFINITIONS)
         _ensure_columns(conn, "clients", CLIENT_COLUMN_DEFINITIONS)
         # One-time migration: DBs created before raw-by-default have no
         # settings_version marker. If such a legacy DB is still on the old
@@ -255,5 +260,17 @@ def initialize(db_path: str | Path, now: str) -> None:
                 ON CONFLICT(client_key) DO NOTHING
                 """,
                 (key, display_name, now),
+            )
+            label_owner.setdefault(display_name.lower(), key)
+        # Unassigned: new-client holding bucket so approve is not blocked by strict roster.
+        unassigned_key = slugify_client_key(UNASSIGNED_CLIENT_SEED)
+        if label_owner.get(UNASSIGNED_CLIENT_SEED.lower(), unassigned_key) == unassigned_key:
+            conn.execute(
+                """
+                INSERT INTO clients(client_key, display_name, aliases, default_billable, default_job_type, billable_locked, updated_at)
+                VALUES (?, ?, '', 1, '', 0, ?)
+                ON CONFLICT(client_key) DO NOTHING
+                """,
+                (unassigned_key, UNASSIGNED_CLIENT_SEED, now),
             )
         conn.commit()

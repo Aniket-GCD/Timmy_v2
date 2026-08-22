@@ -207,6 +207,8 @@ def set_setting(db_path: str | Path, key: str, value: str, at: str | None = None
         value = normalize_staff_name(value)
     if key == "office":
         value = normalize_office(value)
+    if key == "reception_email":
+        value = normalize_reception_email(value)
     if key == "user_export_dir":
         value = str(paths.resolve_user_export_dir(value))
     with connect(db_path) as conn:
@@ -768,6 +770,33 @@ def normalize_office(value: str) -> str:
     if token not in {"GCD", "MH"}:
         raise ValueError("office must be GCD or MH; run config before submit")
     return token
+
+
+def normalize_reception_email(value: str) -> str:
+    token = (value or "").strip()
+    if not token or "@" not in token:
+        raise ValueError("reception_email must be a non-empty email address")
+    return token
+
+
+def draft_reception_email_for_db(
+    db_path: str | Path,
+    spoken_client_name: str,
+) -> dict[str, Any]:
+    """Build a Reception email draft from local settings. Never sends."""
+    from .reception_email_draft import draft_reception_email
+
+    ensure_initialized(db_path)
+    with connect(db_path) as conn:
+        staff = (get_setting(conn, "staff_name") or "").strip() or "Staff"
+        office = (get_setting(conn, "office") or "").strip() or "GCD"
+        to_email = get_setting(conn, "reception_email")
+    return draft_reception_email(
+        spoken_client_name=spoken_client_name,
+        staff_name=staff,
+        office=office,
+        to_email=to_email,
+    )
 
 
 def normalize_operator_code(value: str) -> str:
@@ -1341,10 +1370,21 @@ def edit_entry(
         before = row_to_dict(conn.execute("SELECT * FROM time_entries WHERE entry_id = ?", (entry_id,)).fetchone())
         if not before:
             raise ValueError(f"entry {entry_id} not found")
+        is_submitted = bool(before.get("submitted_at"))
         if before["review_status"] not in {"draft", "needs_info"}:
             if before["review_status"] == "discarded":
                 raise ValueError(f"entry {entry_id} was discarded; use add_missing to recreate it")
-            raise ValueError(f"entry {entry_id} is {before['review_status']}; only draft entries can be edited (unapprove first)")
+            if is_submitted and before["review_status"] in {"approved", "exported"}:
+                from .pay_period import can_edit_entry, entry_work_date, refuse_edit_message
+
+                staff_name = get_setting(conn, "staff_name") or ""
+                work_date = entry_work_date(before)
+                if not can_edit_entry(work_date, staff_name, now=at or changed_at):
+                    raise ValueError(refuse_edit_message(work_date, now=at or changed_at))
+            else:
+                raise ValueError(
+                    f"entry {entry_id} is {before['review_status']}; only draft entries can be edited (unapprove first)"
+                )
         was_needs_info = before["review_status"] == "needs_info"
         new_task = task if task is not None else before["task_text"]
         if client is not None or was_needs_info:
@@ -1405,6 +1445,9 @@ def edit_entry(
             raw_task_text = before.get("raw_task_text")
             clarified_at = before.get("clarified_at")
         new_review_status = "draft" if was_needs_info and capture_status == "resolved" else before["review_status"]
+        # Submitted rows stay approved/exported; never bounce them to draft via edit.
+        if is_submitted and before["review_status"] in {"approved", "exported"}:
+            new_review_status = before["review_status"]
         new_start = iso(parse_at(start)) if start else before["start_at"]
         new_end = iso(parse_at(end)) if end else before["end_at"]
         duration = minutes_between(new_start, new_end)
@@ -1437,7 +1480,16 @@ def edit_entry(
             ),
         )
         after = row_to_dict(conn.execute("SELECT * FROM time_entries WHERE entry_id = ?", (entry_id,)).fetchone())
-        log_event(conn, "edit", f"edited draft entry {entry_id}", "time_entry", entry_id, before=before, after=after, at=changed_at)
+        log_event(
+            conn,
+            "edit",
+            f"edited {'submitted' if is_submitted else 'draft'} entry {entry_id}",
+            "time_entry",
+            entry_id,
+            before=before,
+            after=after,
+            at=changed_at,
+        )
         conn.commit()
     return after
 
@@ -1661,6 +1713,11 @@ def set_approval(db_path: str | Path, entry_id: int, approved: bool, at: str | N
             if approved:
                 return before
             raise ValueError("exported entries cannot be unapproved in this prototype")
+        if not approved and before.get("submitted_at"):
+            raise ValueError(
+                f"entry {entry_id} was already submitted; do not unapprove — "
+                "edit locally then call update_submitted (never a second INSERT)"
+            )
         if before["review_status"] == "needs_info" or before.get("capture_status") == "needs_info":
             reason = capture_note_text(before.get("capture_note"), before.get("client_name")) or "missing client/task details"
             raise ValueError(

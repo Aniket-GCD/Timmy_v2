@@ -42,7 +42,12 @@ def is_secret_key(key: str) -> bool:
     return key.startswith("sb_secret_")
 
 
-def rest_headers(key: str, *, json_body: bool = False) -> dict[str, str]:
+def rest_headers(
+    key: str,
+    *,
+    json_body: bool = False,
+    prefer: str | None = None,
+) -> dict[str, str]:
     headers = {
         "apikey": key,
         "Accept": "application/json",
@@ -52,7 +57,9 @@ def rest_headers(key: str, *, json_body: bool = False) -> dict[str, str]:
         headers["Authorization"] = f"Bearer {key}"
     if json_body:
         headers["Content-Type"] = "application/json"
-        headers["Prefer"] = "return=minimal"
+        headers["Prefer"] = prefer or "return=minimal"
+    elif prefer:
+        headers["Prefer"] = prefer
     return headers
 
 
@@ -71,11 +78,12 @@ def request_json(
     query: dict[str, str] | None = None,
     environ: dict[str, str] | None = None,
     timeout: float = 30,
+    prefer: str | None = None,
 ) -> Any:
     """HTTP JSON against PostgREST. Never includes the API key in raised errors."""
     url, key = credentials_from_env(environ)
     payload = None if body is None else json.dumps(body).encode("utf-8")
-    headers = rest_headers(key, json_body=payload is not None)
+    headers = rest_headers(key, json_body=payload is not None, prefer=prefer)
     request = Request(
         _table_url(url, table, query),
         data=payload,

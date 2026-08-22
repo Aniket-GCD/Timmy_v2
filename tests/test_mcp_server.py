@@ -62,7 +62,7 @@ class McpServerTests(unittest.TestCase):
         names = {tool["name"] for tool in tools}
         self.assertEqual(
             names,
-            {"init_state", "start", "switch", "clarify_active", "end", "add_missing", "edit", "review", "approve", "approve_all", "unapprove", "export", "sanitize_packet", "config", "reround", "import_clients", "add_client", "list_clients", "list_job_codes", "refresh_clients", "submit", "cancel", "checkin_status", "checkin", "snooze_checkin", "status", "cleanup", "discard_entry"},
+            {"init_state", "start", "switch", "clarify_active", "end", "add_missing", "edit", "review", "approve", "approve_all", "unapprove", "export", "sanitize_packet", "config", "reround", "import_clients", "add_client", "list_clients", "list_job_codes", "refresh_clients", "submit", "update_submitted", "draft_reception_email", "cancel", "checkin_status", "checkin", "snooze_checkin", "status", "cleanup", "discard_entry"},
         )
         switch_tool = next(tool for tool in tools if tool["name"] == "switch")
         minutes_ago_schema = switch_tool["inputSchema"]["properties"]["minutes_ago"]
@@ -623,7 +623,8 @@ class McpServerTests(unittest.TestCase):
                 "add_missing", "edit", "review", "approve", "approve_all",
                 "unapprove", "export", "sanitize_packet", "config", "reround",
                 "cleanup", "status", "list_clients", "list_job_codes",
-                "refresh_clients", "submit", "import_clients",
+                "refresh_clients", "submit", "update_submitted", "draft_reception_email",
+                "import_clients",
                 "add_client", "discard_entry",
             },
         )

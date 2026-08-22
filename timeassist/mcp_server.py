@@ -103,7 +103,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "edit",
-        "description": "Correct a draft or needs_info entry before approval. Omitted fields are left unchanged; changing start/end recomputes the rounded minutes.",
+        "description": "Correct a draft/needs_info entry, or a submitted entry when the pay-period window (or superuser) allows. After editing a submitted row, call update_submitted to PATCH Supabase.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -198,7 +198,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "config",
-        "description": "Show local settings, or set staff_name/office (GCD or MH)/rounding/export copy folder/strict roster/operator initials. Admin action — confirm with the operator before changing settings.",
+        "description": "Show local settings, or set staff_name/office (GCD or MH)/reception_email/rounding/export copy folder/strict roster/operator initials. Admin action — confirm with the operator before changing settings.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -247,6 +247,14 @@ TOOLS: list[dict[str, Any]] = [
                     "type": "boolean",
                     "description": "Clear office (submit will refuse until it is set again).",
                 },
+                "reception_email": {
+                    "type": "string",
+                    "description": "To: address for draft_reception_email (never auto-sent).",
+                },
+                "clear_reception_email": {
+                    "type": "boolean",
+                    "description": "Clear reception_email (drafts fall back to reception@example.com).",
+                },
                 "confirm": {"type": "boolean", "description": "Required true when changing a setting."},
             },
         },
@@ -279,7 +287,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "add_client",
-        "description": "Add ONE new client to the roster. Fails if the client already exists (use import_clients to update). Ask the operator before adding; never add on your own initiative.",
+        "description": "Add ONE client to the LOCAL roster only. Never use this to create a QuickBooks/Supabase client — for new firm clients use Unassigned + draft_reception_email. Fails if the client already exists.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -310,7 +318,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "submit",
-        "description": "POST one locally approved time entry to Supabase. Refuses drafts and missing staff_name/office. Never submit without approve.",
+        "description": "POST one locally approved time entry to Supabase. Refuses drafts and missing staff_name/office. Never submit without approve. Already-submitted rows are skipped (use update_submitted to PATCH).",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -318,6 +326,32 @@ TOOLS: list[dict[str, Any]] = [
                 "at": {"type": "string", "description": "Optional ISO timestamp."},
             },
             "required": ["entry_id"],
+        },
+    },
+    {
+        "name": "update_submitted",
+        "description": "PATCH the existing Supabase time_entries row for a locally submitted entry (by supabase_id). Pay-period/superuser gate applies. Never inserts a second row.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "entry_id": {"type": "integer"},
+                "at": {"type": "string", "description": "Optional ISO timestamp (also used for pay-window check)."},
+            },
+            "required": ["entry_id"],
+        },
+    },
+    {
+        "name": "draft_reception_email",
+        "description": "Build a ready email draft asking Reception to create a QuickBooks client. Returns text only — never sends.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "spoken_client_name": {
+                    "type": "string",
+                    "description": "The client name the operator spoke (not yet in QuickBooks).",
+                },
+            },
+            "required": ["spoken_client_name"],
         },
     },
     {
@@ -511,7 +545,9 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
         clear_staff_name = arguments.get("clear_staff_name") is True
         office = arguments.get("office")
         clear_office = arguments.get("clear_office") is True
-        if sum(1 for value in (rule, strict_roster, user_export_dir, clear_user_export_dir, confirm_default_user_export_dir, operator_code, clear_operator_code, staff_name, clear_staff_name, office, clear_office) if value) > 1:
+        reception_email = arguments.get("reception_email")
+        clear_reception_email = arguments.get("clear_reception_email") is True
+        if sum(1 for value in (rule, strict_roster, user_export_dir, clear_user_export_dir, confirm_default_user_export_dir, operator_code, clear_operator_code, staff_name, clear_staff_name, office, clear_office, reception_email, clear_reception_email) if value) > 1:
             raise ValueError("change one TimeAssist setting at a time")
         if confirm_default_user_export_dir:
             _require_confirm(arguments, "changing TimeAssist settings")
@@ -546,6 +582,12 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
         if clear_office:
             _require_confirm(arguments, "changing TimeAssist settings")
             return actions.clear_setting(db_path, "office")
+        if reception_email:
+            _require_confirm(arguments, "changing TimeAssist settings")
+            return actions.set_setting(db_path, "reception_email", reception_email)
+        if clear_reception_email:
+            _require_confirm(arguments, "changing TimeAssist settings")
+            return actions.clear_setting(db_path, "reception_email")
         return {"settings": actions.list_settings(db_path), "export_folder": actions.export_folder_status(db_path)}
     if name == "reround":
         if arguments.get("rule"):
@@ -579,6 +621,12 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
         from .supabase_submit import submit_entry
 
         return submit_entry(db_path, int(arguments["entry_id"]), at=arguments.get("at"))
+    if name == "update_submitted":
+        from .supabase_submit import update_submitted_entry
+
+        return update_submitted_entry(db_path, int(arguments["entry_id"]), at=arguments.get("at"))
+    if name == "draft_reception_email":
+        return actions.draft_reception_email_for_db(db_path, arguments["spoken_client_name"])
     if name == "cancel":
         return actions.cancel_session(db_path, arguments.get("at"))
     if name == "checkin_status":

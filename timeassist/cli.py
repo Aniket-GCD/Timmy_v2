@@ -83,7 +83,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_missing.add_argument("--billable", type=yes_no, default=None)
     add_missing.add_argument("--dry-run", action="store_true")
 
-    edit = sub.add_parser("edit", help="edit a draft entry before approval")
+    edit = sub.add_parser("edit", help="edit a draft entry, or a submitted entry in the pay window")
     edit.add_argument("--entry-id", required=True, type=int)
     edit.add_argument("--client")
     edit.add_argument("--task", help="notes: what was done")
@@ -135,7 +135,7 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument("--open", dest="open_html", action="store_true", help="open the stakeholder review HTML after generation")
     demo.add_argument("--dry-run", action="store_true")
 
-    config = sub.add_parser("config", help="show local settings, or set staff_name/office/rounding/export folder/strict roster")
+    config = sub.add_parser("config", help="show local settings, or set staff_name/office/reception_email/rounding/export folder/strict roster")
     config.add_argument("--rounding-rule", help="set the billing rounding rule: exact, nearest_<N>_minutes, or up_<N>_minutes (N 1-60)")
     config.add_argument("--strict-roster", dest="strict_roster", choices=["yes", "no"], help="firm policy: when yes, needs_info entries can only resolve to roster names (confirm-as-is is off)")
     config.add_argument("--user-export-dir", help="copy each official export CSV to this operator-visible folder")
@@ -147,6 +147,8 @@ def build_parser() -> argparse.ArgumentParser:
     config.add_argument("--clear-staff-name", dest="clear_staff_name", action="store_true", help="clear staff_name")
     config.add_argument("--office", dest="office", help="office for submit: GCD or MH")
     config.add_argument("--clear-office", dest="clear_office", action="store_true", help="clear office")
+    config.add_argument("--reception-email", dest="reception_email", help="To: address for draft Reception emails (never auto-sent)")
+    config.add_argument("--clear-reception-email", dest="clear_reception_email", action="store_true", help="clear reception_email")
     config.add_argument("--confirm", action="store_true", help="required when changing settings")
     config.add_argument("--dry-run", action="store_true")
 
@@ -187,6 +189,15 @@ def build_parser() -> argparse.ArgumentParser:
     submit.add_argument("--entry-id", required=True, type=int)
     submit.add_argument("--at", help="ISO timestamp for deterministic demos/tests")
     submit.add_argument("--dry-run", action="store_true")
+
+    update_submitted = sub.add_parser("update-submitted", help="PATCH an already-submitted Supabase row by supabase_id")
+    update_submitted.add_argument("--entry-id", required=True, type=int)
+    update_submitted.add_argument("--at", help="ISO timestamp for deterministic demos/tests")
+    update_submitted.add_argument("--dry-run", action="store_true")
+
+    draft_reception = sub.add_parser("draft-reception-email", help="build a Reception email draft (never sends)")
+    draft_reception.add_argument("--client-name", required=True, help="spoken new-client name")
+    draft_reception.add_argument("--dry-run", action="store_true")
 
     cancel = sub.add_parser("cancel", help="discard the active session without creating an entry")
     cancel.add_argument("--at", help="ISO timestamp for deterministic demos/tests")
@@ -341,6 +352,8 @@ def run_command(args: argparse.Namespace) -> CommandResult:
             bool(args.clear_staff_name),
             bool(args.office),
             bool(args.clear_office),
+            bool(args.reception_email),
+            bool(args.clear_reception_email),
         ]
         if sum(1 for value in requested_changes if value) > 1:
             raise ValueError("change one TimeAssist setting at a time")
@@ -388,6 +401,14 @@ def run_command(args: argparse.Namespace) -> CommandResult:
             require_confirm(args.confirm, "changing TimeAssist settings")
             details = actions.clear_setting(db_path, "office")
             return CommandResult(True, command, "config-updated", "Cleared office.", details)
+        if args.reception_email:
+            require_confirm(args.confirm, "changing TimeAssist settings")
+            details = actions.set_setting(db_path, "reception_email", args.reception_email)
+            return CommandResult(True, command, "config-updated", f"Set reception_email to {details['value']}.", details)
+        if args.clear_reception_email:
+            require_confirm(args.confirm, "changing TimeAssist settings")
+            details = actions.clear_setting(db_path, "reception_email")
+            return CommandResult(True, command, "config-updated", "Cleared reception_email.", details)
         return CommandResult(True, command, "config", "Current local settings.", {"settings": actions.list_settings(db_path), "export_folder": actions.export_folder_status(db_path)})
     if command == "reround":
         date_value = normalized_date(args.date)
@@ -420,6 +441,14 @@ def run_command(args: argparse.Namespace) -> CommandResult:
         details = submit_entry(db_path, args.entry_id, at=args.at)
         message = "Already submitted." if details.get("skipped") else f"Submitted entry {args.entry_id}."
         return CommandResult(True, command, "submitted", message, details)
+    if command == "update-submitted":
+        from .supabase_submit import update_submitted_entry
+
+        details = update_submitted_entry(db_path, args.entry_id, at=args.at)
+        return CommandResult(True, command, "updated", f"Updated submitted entry {args.entry_id} in Supabase.", details)
+    if command == "draft-reception-email":
+        details = actions.draft_reception_email_for_db(db_path, args.client_name)
+        return CommandResult(True, command, "draft", "Reception email draft (not sent).", details)
     if command == "cancel":
         details = actions.cancel_session(db_path, args.at)
         return CommandResult(True, command, "canceled", "Discarded the active session; no entry created.", {"session": details})

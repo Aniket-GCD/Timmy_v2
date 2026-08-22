@@ -39,14 +39,16 @@ yourself, and never record anything in prose — every change goes through a too
 | List client roster | `list_clients` | — |
 | List Job Codes + accounts | `list_job_codes` | — |
 | Refresh roster from Supabase | `refresh_clients` | — |
-| Submit one approved entry | `submit` | `entry_id` (only after local approve) |
+| Submit one approved entry | `submit` | `entry_id` (only after local approve; skips if already submitted) |
+| Patch a submitted entry | `update_submitted` | `entry_id` (after `edit` on a submitted row; never a second INSERT) |
+| Draft Reception email | `draft_reception_email` | `spoken_client_name` (text only — never sends) |
 | Discard the active session | `cancel` | — |
 | Reminder: session open? | `checkin_status` | — |
 | Confirm still working | `checkin` | — |
 | Pause reminder prompts | `snooze_checkin` | `minutes` |
 | Database footprint | `status` | — |
 | Trim audit log | `cleanup` | `confirm=true` |
-| Show/set settings | `config` | `confirm=true` when changing any setting (`staff_name`, `office` GCD or MH, rounding, …) |
+| Show/set settings | `config` | `confirm=true` when changing any setting (`staff_name`, `office` GCD or MH, `reception_email`, rounding, …) |
 
 Entries in tool results are compact: `entry_id`, `client`, `notes`, `job_type`
 (also `job_code`), `billable`, `start`, `end`, `minutes` (billable minutes after
@@ -83,17 +85,50 @@ more before approval. Never block or refuse approval over missing notes.
    `review` whenever entries change or the server reports a stale token.
    Duplicate rows (same staff_name, office, entry_date, start_time, end_time)
    are rejected — surface that error; 9-10 and 10-11 for the same client are
-   allowed.
-6. Fix mistakes with `edit` (draft/needs_info only; approved entries must be
-   unapproved first). A rejected approval for `needs_info` is resolved the same
-   way: one `edit` with `entry_id` and `client`. For a capture that should never
-   be billed, confirm with the operator, then `discard_entry` with `confirm=true`.
+   allowed. Already-submitted rows skip on `submit` — use `edit` +
+   `update_submitted` instead of a second insert.
+6. Fix mistakes with `edit` (draft/needs_info, or submitted when the pay window
+   / superuser allows). A rejected approval for `needs_info` is resolved the
+   same way: one `edit` with `entry_id` and `client`. For a capture that should
+   never be billed, confirm with the operator, then `discard_entry` with
+   `confirm=true`. **Do not unapprove a submitted entry** — edit it, then
+   `update_submitted`.
 7. When `init_state` or `config` returns `export_folder.survey_required=true`:
    explain that the official CSV stays inside plugin data for audit safety and
    a copy goes to `Documents/TimeAssist Exports`. Ask: keep that default or
    choose a folder? Default → `config` with `confirm_default_user_export_dir=true`
    and `confirm=true`; custom → `user_export_dir` with `confirm=true`. Once
    `survey_required=false`, stop asking.
+
+## New / unmatched clients (Unassigned)
+
+1. Fuzzy-match via `list_clients` / `refresh_clients`.
+2. Hit → confirm the roster name, then capture normally.
+3. Miss → ask if this is a new client.
+4. If new, say exactly:
+   `This client has not been created in the system yet. Would you like me to email Reception about creating this client in QuickBooks?`
+5. If yes → call `draft_reception_email` with the spoken name; paste the draft
+   (To / Subject / Body) into chat; offer copy or the `mailto` link. **Never
+   send email.** Set `reception_email` once via `config` if the To: address is
+   still the placeholder.
+6. Regardless of yes/no, say:
+   `This entry will be recorded under the client name "Unassigned." Please update this entry to the correct client name once the client is created in QuickBooks.`
+7. Capture with client **Unassigned**; notes =
+   `NEW CLIENT: {spoken name} | {work notes}`; Job Code from the operator /
+   `list_job_codes`. Preview → approve → submit as usual.
+8. **Never** call `add_client` to create a real QuickBooks/Supabase client.
+   Never write Supabase `clients`. `add_client` is local-roster only for rare
+   cases the operator explicitly confirms are not a QBO create.
+9. Later, when the real client exists: `edit` the submitted entry (client off
+   Unassigned, clean notes), then `update_submitted`.
+
+## Editing submitted entries
+
+- Operator: “change my Unassigned entry on Aug 12 to NG Concrete” / “fix hours
+  on the 10am block.”
+- Check the pay-period window (Timmy enforces it; superusers named in firm
+  allowlist may edit anytime). Then `edit` → `update_submitted` → confirm.
+- Never `submit` again for the same block.
 
 ## Rounding (raw by default)
 
@@ -124,10 +159,12 @@ billable is kept for unknown names, while a known roster name takes its
 roster default. `clarify_active` does the same but only while the timer is
 still open; closed entries always use `edit`.
 When `config` shows `strict_roster` `yes`, confirm-as-is is off: the engine
-refuses to resolve a name not on the roster — relay its message, then offer
-to correct the entry or, with operator confirmation, `add_client`.
+refuses to resolve a name not on the roster — relay its message, then for a
+**new firm client** follow the Unassigned flow above (not `add_client` for QBO).
+`add_client` is only for rare local-roster cases the operator confirms are
+**not** a QuickBooks create.
 Never import or change the roster on your own initiative — offer
-`import_clients` (or a single `add_client`) to the operator instead.
+`import_clients` (or Unassigned + Reception draft) to the operator instead.
 
 **Administrative clients** follow the roster/engine (do not hardcode an
 Admin/Vacation list). If asked to bill a locked non-billable client, relay the
@@ -203,7 +240,8 @@ per-day review. HTML review is single-day only — render it one day at a time.
 `operator_code` is the operator's initials code from the firm's employee
 list, set once during setup via `config` (admin action — confirm with the
 operator); it appears in export filenames. Also set `staff_name` and `office`
-(`GCD` or `MH`) once — `submit` refuses if either is unset.
+(`GCD` or `MH`) once — `submit` refuses if either is unset. Optionally set
+`reception_email` once for new-client Reception drafts.
 
 ## Housekeeping & privacy
 

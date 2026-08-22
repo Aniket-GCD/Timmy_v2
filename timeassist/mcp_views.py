@@ -40,6 +40,8 @@ def slim_entry(entry: dict[str, Any]) -> dict[str, Any]:
         slim["hours"] = int(entry["rounded_minutes"]) / 60
     if entry.get("submitted_at"):
         slim["submitted_at"] = entry["submitted_at"]
+    if entry.get("supabase_id"):
+        slim["supabase_id"] = entry["supabase_id"]
     if entry.get("duration_minutes") != entry.get("rounded_minutes"):
         slim["raw_minutes"] = entry.get("duration_minutes")
     if entry.get("notes_missing"):
@@ -239,7 +241,23 @@ _VIEWS = {
         "skipped": result.get("skipped"),
         "reason": result.get("reason"),
         "submitted_at": result.get("submitted_at"),
+        "supabase_id": result.get("supabase_id"),
         "payload_preview": result.get("payload_preview"),
+    },
+    "update_submitted": lambda result: {
+        "entry_id": result.get("entry_id"),
+        "updated": result.get("updated"),
+        "supabase_id": result.get("supabase_id"),
+        "updated_at": result.get("updated_at"),
+        "payload_preview": result.get("payload_preview"),
+    },
+    "draft_reception_email": lambda result: {
+        "to": result.get("to"),
+        "subject": result.get("subject"),
+        "body": result.get("body"),
+        "mailto": result.get("mailto"),
+        "sent": False,
+        "note": result.get("note"),
     },
     "import_clients": _view_import_clients,
     "add_client": _view_add_client,
