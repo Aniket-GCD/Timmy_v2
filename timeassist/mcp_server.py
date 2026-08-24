@@ -303,13 +303,23 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "list_clients",
-        "description": "Live read-only GET of clients from Supabase (office-filtered). Pass query with spoken fragments (e.g. \"bill shop\") to return only matching names — do not dump the full roster to search by eye.",
+        "description": (
+            "Live Supabase client lookup (office-filtered). ALWAYS pass query with the spoken name "
+            "(e.g. \"Ocean View Road\"). Empty query returns NO names — only a count + message. "
+            "Prefer start/add_missing first: the engine soft-matches unique nicknames "
+            "(Ocean View Road -> 0969 Ocean View Road). Full dump only with confirm_full_list=true "
+            "when the operator explicitly asked for every name. Never invent client names."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Optional search text. Returns clients whose names contain those tokens (e.g. bill shop -> Bill's Windsurf Shop).",
+                    "description": "Spoken name or fragments. Required for any name list (e.g. Ocean View Road).",
+                },
+                "confirm_full_list": {
+                    "type": "boolean",
+                    "description": "True only when the operator asked for the entire client list.",
                 },
             },
         },
@@ -618,7 +628,11 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
             arguments.get("at"),
         )
     if name == "list_clients":
-        return actions.list_clients(db_path, query=arguments.get("query"))
+        return actions.list_clients(
+            db_path,
+            query=arguments.get("query"),
+            confirm_full_list=bool(arguments.get("confirm_full_list")),
+        )
     if name == "list_job_codes":
         from .supabase_ref import list_job_codes
 

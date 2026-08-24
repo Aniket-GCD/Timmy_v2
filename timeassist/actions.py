@@ -641,13 +641,45 @@ def resolve_client(conn, name: str, *, environ: dict[str, str] | None = None, db
     return row["display_name"], int(row["default_billable"])
 
 
-def list_clients(db_path: str | Path, environ: dict[str, str] | None = None, query: str | None = None) -> dict[str, Any]:
-    """Live GET of Supabase clients (or local SQLite when test escape hatch is on)."""
+def list_clients(
+    db_path: str | Path,
+    environ: dict[str, str] | None = None,
+    query: str | None = None,
+    *,
+    confirm_full_list: bool = False,
+) -> dict[str, Any]:
+    """Live GET of Supabase clients (or local SQLite when test escape hatch is on).
+
+    Empty ``query`` without ``confirm_full_list`` returns no names — only a count
+    + message — so the model cannot dump the roster and eye-search / invent hits.
+    """
     ensure_initialized(db_path)
+    q = (query or "").strip()
+    want_full = bool(confirm_full_list)
+    if not q and not want_full:
+        # Still hit the live list for an honest count, but withhold names.
+        if _local_roster_allowed():
+            with connect(db_path) as conn:
+                count = int(conn.execute("SELECT COUNT(*) FROM clients").fetchone()[0])
+        else:
+            from .supabase_ref import list_clients_remote
+            with connect(db_path) as conn:
+                office = get_setting(conn, "office")
+            count = len(list_clients_remote(environ=environ, office=office or None, db_path=db_path))
+        return {
+            "clients": [],
+            "client_count": count,
+            "message": (
+                "Pass query with the spoken client name (required). "
+                "Do not dump the full list to search by eye. "
+                "Prefer start/add_missing — the engine soft-matches unique nicknames "
+                "(e.g. Ocean View Road -> 0969 Ocean View Road). "
+                "Full list only when the operator asked for every name and you pass confirm_full_list=true."
+            ),
+        }
     if _local_roster_allowed():
         with connect(db_path) as conn:
             clients = [row_to_dict(r) for r in conn.execute("SELECT * FROM clients ORDER BY display_name").fetchall()]
-        q = (query or "").strip()
         if q:
             from .supabase_ref import name_fold, _match_tokens
 
@@ -663,12 +695,17 @@ def list_clients(db_path: str | Path, environ: dict[str, str] | None = None, que
                 if tokens and all(tok in set(_match_tokens(display)) for tok in tokens):
                     filtered.append(client)
             clients = filtered
-        return {"clients": clients}
+        return {"clients": clients, "client_count": len(clients)}
     from .supabase_ref import list_clients_remote
     with connect(db_path) as conn:
         office = get_setting(conn, "office")
-    clients = list_clients_remote(environ=environ, office=office or None, db_path=db_path, query=query)
-    return {"clients": clients}
+    clients = list_clients_remote(
+        environ=environ,
+        office=office or None,
+        db_path=db_path,
+        query=None if want_full and not q else q,
+    )
+    return {"clients": clients, "client_count": len(clients)}
 
 
 def apply_client_policy(

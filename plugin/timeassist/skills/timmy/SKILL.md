@@ -103,12 +103,17 @@ more before approval. Never block or refuse approval over missing notes.
 
 ## New / unmatched clients (Unassigned)
 
-1. Prefer capture tools (`start` / `add_missing`) — the engine soft-matches
-   unique nicknames (e.g. "Bill's Shop" -> "Bill's Windsurf Shop").
-2. If you need to look up names, call `list_clients` with `query` (spoken
-   fragments). Do **not** call `list_clients` with an empty query just to
-   fuzzy-search by eye.
-3. Hit -> confirm the roster name if unsure, then capture normally.
+1. **Capture first.** Call `start` / `add_missing` / `switch` with the spoken
+   client name. The engine soft-matches unique nicknames against live Supabase
+   (e.g. `Ocean View Road` -> `0969 Ocean View Road`, `Bill's Shop` ->
+   `Bill's Windsurf Shop`). Trust the tool result: if `client` is a roster name
+   and there is no `needs_info`, it matched — report that name. If
+   `spoken_client` is present, say you matched spoken X to roster Y.
+2. **Do not dump the roster.** Never call `list_clients` with an empty query
+   (it returns no names). Never invent names from memory or QuickBooks sample
+   data (e.g. "Blue Ocean Dreams"). Only use names returned by tools.
+3. Optional lookup: `list_clients` with `query` set to the **full spoken name**.
+   Zero hits after that (and capture still `needs_info`) -> treat as unmatched.
 4. Miss / ambiguous -> ask if this is a new client.
 5. If new, say exactly:
    `This client has not been created in the system yet. Would you like me to email Reception about creating this client in QuickBooks?`
@@ -149,14 +154,16 @@ choice  -  never silent.
 ## Client roster (Supabase only)
 
 **Single source of truth:** Supabase `clients` (synced from QuickBooks). Call
-`list_clients` with a `query` when looking up a spoken name; omit `query` only
-when the operator asked for the full list. Live read-only (filtered by
-configured office). There is no local CSV roster and no `refresh_clients`.
+`list_clients` with `query` set to the spoken name. Empty query returns **no
+names** (only a count + message). Full list only with `confirm_full_list=true`
+when the operator asked for every name. Live read-only (filtered by configured
+office). There is no local CSV roster and no `refresh_clients`.
 
 The engine matches exact display names (case-insensitive), a simple
 comma-swap fold (e.g. `John Smith` <-> `Smith, John`), and a **unique soft
-token match** (e.g. `Bill's Shop` -> `Bill's Windsurf Shop` when only one
-roster name contains those tokens). Known clients default to
+token match** (e.g. `Bill's Shop` -> `Bill's Windsurf Shop`, or
+`Ocean View Road` -> `0969 Ocean View Road` when only one roster name contains
+those tokens). Known clients default to
 billable; do not invent aliases. Unknown clients are soft: recorded as typed,
 marked `needs_info`, never blocked during capture  -  but **before approve/export
 every entry must match the Supabase list** (or use **Unassigned** for new firm

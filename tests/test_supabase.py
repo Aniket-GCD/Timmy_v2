@@ -235,7 +235,7 @@ class SubmitGateTests(unittest.TestCase):
         self.addCleanup(
             lambda: os.environ.__setitem__("TIMEASSIST_ALLOW_LOCAL_ROSTER", prev or "1")
         )
-        clients = actions.list_clients(self.db, environ=ENV)["clients"]
+        clients = actions.list_clients(self.db, environ=ENV, confirm_full_list=True)["clients"]
         self.assertTrue(any(c["display_name"] == "Unassigned" for c in clients))
         actions.set_setting(self.db, "staff_name", "Jane Doe")
         actions.set_setting(self.db, "office", "GCD")
@@ -402,9 +402,28 @@ class LiveClientRosterTests(unittest.TestCase):
             {"name": "Dead Co", "office": "GCD", "active": False},
         ]
         with patch("timeassist.supabase_ref.get_clients", return_value=rows):
-            listed = actions.list_clients(self.db, environ=ENV)["clients"]
+            listed = actions.list_clients(self.db, environ=ENV, confirm_full_list=True)["clients"]
         names = {c["display_name"] for c in listed}
         self.assertEqual(names, {"Acme Co", "Unassigned"})
+
+    def test_list_clients_requires_query_or_confirm(self) -> None:
+        rows = [
+            {"name": "Unassigned", "office": "GCD", "active": True},
+            {"name": "0969 Ocean View Road", "office": "GCD", "active": True},
+        ]
+        with patch("timeassist.supabase_ref.get_clients", return_value=rows):
+            result = actions.list_clients(self.db, environ=ENV)
+        self.assertEqual(result["clients"], [])
+        self.assertEqual(result["client_count"], 2)
+        self.assertIn("query", result["message"].lower())
+
+    def test_resolve_soft_street_number_prefix(self) -> None:
+        from timeassist import db as tdb
+        install_live_clients(self, "0969 Ocean View Road", "Acme Co")
+        with tdb.connect(self.db) as conn:
+            name, billable = actions.resolve_client(conn, "Ocean View Road", environ=ENV)
+        self.assertEqual(name, "0969 Ocean View Road")
+        self.assertEqual(billable, 1)
 
     def test_resolve_soft_unique_nickname(self) -> None:
         from timeassist import db as tdb
@@ -444,7 +463,7 @@ class LiveClientRosterTests(unittest.TestCase):
     def test_fail_closed_when_get_clients_errors(self) -> None:
         with patch("timeassist.supabase_ref.get_clients", side_effect=ValueError("network down")):
             with self.assertRaises(ValueError) as ctx:
-                actions.list_clients(self.db, environ=ENV)
+                actions.list_clients(self.db, environ=ENV, query="x")
         self.assertIn("client list unavailable", str(ctx.exception))
 
     def test_import_disabled_without_escape_hatch(self) -> None:

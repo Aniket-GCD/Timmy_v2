@@ -417,7 +417,7 @@ class ClientRosterTests(unittest.TestCase):
 
     def test_list_clients_live(self) -> None:
         install_live_clients(self, "Acme Co", "Globex")
-        names = {c["display_name"] for c in actions.list_clients(self.db)["clients"]}
+        names = {c["display_name"] for c in actions.list_clients(self.db, confirm_full_list=True)["clients"]}
         self.assertEqual(names, {"Acme Co", "Globex", "Unassigned"})
 
 
@@ -2327,7 +2327,7 @@ class AddClientTests(unittest.TestCase):
         self.assertEqual(client["default_billable"], 1)
         self.assertEqual(client["default_job_type"], "")
         self.assertEqual(client["billable_locked"], 0)
-        keys = {c["client_key"] for c in actions.list_clients(self.db)["clients"]}
+        keys = {c["client_key"] for c in actions.list_clients(self.db, confirm_full_list=True)["clients"]}
         self.assertIn("acme_widgets", keys)
         self.assertEqual(result["client_count"], len(keys))
 

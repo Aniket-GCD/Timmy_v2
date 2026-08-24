@@ -46,6 +46,8 @@ def slim_entry(entry: dict[str, Any]) -> dict[str, Any]:
         slim["raw_minutes"] = entry.get("duration_minutes")
     if entry.get("notes_missing"):
         slim["notes_missing"] = True
+    if entry.get("raw_client_name"):
+        slim["spoken_client"] = entry["raw_client_name"]
     if entry.get("capture_status") == "needs_info":
         slim["needs_info"] = (
             capture_note_text(entry.get("capture_note"), entry.get("client_name"))
@@ -65,6 +67,8 @@ def slim_session(session: dict[str, Any] | None) -> dict[str, Any] | None:
         "job_code": (session.get("job_type") or None),
         "started_at": session.get("started_at"),
     }
+    if session.get("raw_client_name"):
+        slim["spoken_client"] = session["raw_client_name"]
     if session.get("last_checkin_at") and session.get("last_checkin_at") != session.get("started_at"):
         slim["last_checkin_at"] = session["last_checkin_at"]
     if session.get("snoozed_until"):
@@ -198,12 +202,17 @@ def _view_switch(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def _view_list_clients(result: dict[str, Any]) -> dict[str, Any]:
-    return {
+    shaped: dict[str, Any] = {
         "clients": [
             {key: client[key] for key in ("client_key", "display_name", "aliases", "default_billable") if key in client}
             for client in result.get("clients", [])
         ]
     }
+    if result.get("client_count") is not None:
+        shaped["client_count"] = result["client_count"]
+    if result.get("message"):
+        shaped["message"] = result["message"]
+    return shaped
 
 
 def _view_import_clients(result: dict[str, Any]) -> dict[str, Any]:
