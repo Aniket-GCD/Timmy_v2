@@ -622,6 +622,80 @@ def resolve_client_row(conn, name: str, *, environ: dict[str, str] | None = None
     return roster_row_from_display(display)
 
 
+def client_confirm_gate(
+    conn,
+    client: str,
+    *,
+    confirm_client: bool = False,
+    environ: dict[str, str] | None = None,
+    db_path: str | Path | None = None,
+) -> dict[str, Any] | None:
+    """If live soft/unmatched needs operator confirmation, return a no-write payload.
+
+    Exact / comma-fold hits resolve silently. Soft unique hits and total misses
+    return ``needs_client_confirm`` so Timmy asks before writing time.
+    Local-roster test mode skips the gate.
+    """
+    if _local_roster_allowed():
+        return None
+    if confirm_client:
+        return None
+    from .supabase_config import unassigned_client_name
+    from .supabase_ref import classify_client_remote
+
+    office = get_setting(conn, "office")
+    resolved_db = db_path or _sqlite_file_from_conn(conn)
+    classified = classify_client_remote(
+        client, environ=environ, office=office or None, db_path=resolved_db,
+    )
+    spoken = classified["spoken"] or client.strip()
+    kind = classified["kind"]
+    if kind in {"exact", "fold"}:
+        return None
+    unassigned = unassigned_client_name(db_path=resolved_db, environ=environ)
+    if spoken.casefold() == unassigned.casefold():
+        return None
+    if kind == "soft":
+        suggested = classified["display_name"]
+        return {
+            "needs_client_confirm": True,
+            "match_kind": "soft",
+            "spoken_client": spoken,
+            "suggested_client": suggested,
+            "ask": (
+                f'Did you mean "{suggested}"? If yes, I will record it under that roster name. '
+                f"If not, is this a new client? Then I can record it under \"{unassigned}\" with a "
+                f'NEW CLIENT note and draft a Reception email so they can add it in QuickBooks.'
+            ),
+            "if_yes": {
+                "retry_with_client": suggested,
+                "or_confirm_client": True,
+            },
+            "if_new_client": {
+                "client": unassigned,
+                "notes_prefix": f"NEW CLIENT: {spoken} | ",
+                "draft_reception_email": True,
+            },
+        }
+    return {
+        "needs_client_confirm": True,
+        "match_kind": "none",
+        "spoken_client": spoken,
+        "suggested_client": None,
+        "ask": (
+            f'No close match on the Supabase client list for "{spoken}". '
+            f'Is this a new client? If yes, I can record it under "{unassigned}" with a '
+            f"NEW CLIENT note and draft a Reception email so they can add it in QuickBooks."
+        ),
+        "if_yes": None,
+        "if_new_client": {
+            "client": unassigned,
+            "notes_prefix": f"NEW CLIENT: {spoken} | ",
+            "draft_reception_email": True,
+        },
+    }
+
+
 def _sqlite_file_from_conn(conn) -> str | None:
     try:
         row = conn.execute("PRAGMA database_list").fetchone()
@@ -672,8 +746,8 @@ def list_clients(
             "message": (
                 "Pass query with the spoken client name (required). "
                 "Do not dump the full list to search by eye. "
-                "Prefer start/add_missing — the engine soft-matches unique nicknames "
-                "(e.g. Ocean View Road -> 0969 Ocean View Road). "
+                "Prefer start/add_missing — soft matches return needs_client_confirm "
+                "(e.g. Ocean View Road -> ask about 0969 Ocean View Road). "
                 "Full list only when the operator asked for every name and you pass confirm_full_list=true."
             ),
         }
@@ -1038,10 +1112,24 @@ def _insert_active_session(conn, capture: dict[str, Any], started_at: str) -> in
     return cur.lastrowid
 
 
-def start_session(db_path: str | Path, client: str, task: str, billable: str | None = None, at: str | None = None, job_type: str | None = None) -> dict[str, Any]:
+def start_session(
+    db_path: str | Path,
+    client: str,
+    task: str,
+    billable: str | None = None,
+    at: str | None = None,
+    job_type: str | None = None,
+    *,
+    confirm_client: bool = False,
+) -> dict[str, Any]:
     ensure_initialized(db_path)
     started = iso(parse_at(at)) if at else now_iso()
     with connect(db_path) as conn:
+        pending = client_confirm_gate(
+            conn, client, confirm_client=confirm_client, db_path=db_path,
+        )
+        if pending:
+            return pending
         active = get_active_session(conn)
         if active:
             raise ValueError(
@@ -1126,7 +1214,17 @@ def end_session(db_path: str | Path, at: str | None = None) -> dict[str, Any]:
     return _flag_missing_notes(entry)
 
 
-def switch_session(db_path: str | Path, client: str, task: str, billable: str | None = None, at: str | None = None, minutes_ago: int | None = None, job_type: str | None = None) -> dict[str, Any]:
+def switch_session(
+    db_path: str | Path,
+    client: str,
+    task: str,
+    billable: str | None = None,
+    at: str | None = None,
+    minutes_ago: int | None = None,
+    job_type: str | None = None,
+    *,
+    confirm_client: bool = False,
+) -> dict[str, Any]:
     ensure_initialized(db_path)
     switched_dt = parse_at(at)
     if minutes_ago is not None:
@@ -1136,6 +1234,11 @@ def switch_session(db_path: str | Path, client: str, task: str, billable: str | 
         switched_dt = switched_dt - timedelta(minutes=offset)
     switched_at = iso(switched_dt)
     with connect(db_path) as conn:
+        pending = client_confirm_gate(
+            conn, client, confirm_client=confirm_client, db_path=db_path,
+        )
+        if pending:
+            return pending
         active = get_active_session(conn)
         if active and parse_at(switched_at) < parse_at(active["started_at"]):
             raise ValueError(
@@ -1398,12 +1501,27 @@ def checkin(db_path: str | Path, at: str | None = None) -> dict[str, Any]:
     return after
 
 
-def add_missing_entry(db_path: str | Path, client: str, task: str, start: str, end: str, billable: str | None = None, job_type: str | None = None) -> dict[str, Any]:
+def add_missing_entry(
+    db_path: str | Path,
+    client: str,
+    task: str,
+    start: str,
+    end: str,
+    billable: str | None = None,
+    job_type: str | None = None,
+    *,
+    confirm_client: bool = False,
+) -> dict[str, Any]:
     ensure_initialized(db_path)
     start_iso = iso(parse_at(start))
     end_iso = iso(parse_at(end))
     duration = minutes_between(start_iso, end_iso)
     with connect(db_path) as conn:
+        pending = client_confirm_gate(
+            conn, client, confirm_client=confirm_client, db_path=db_path,
+        )
+        if pending:
+            return pending
         capture = resolve_capture_with_metadata(conn, client, task, billable, job_type=job_type)
         rounded = round_minutes(duration, *get_rounding(conn))
         review_status = "needs_info" if capture["capture_status"] == "needs_info" else "draft"

@@ -186,15 +186,33 @@ def _view_status(result: dict[str, Any]) -> dict[str, Any]:
     return shaped
 
 
+def _view_client_confirm(result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "needs_client_confirm": True,
+        "match_kind": result.get("match_kind"),
+        "spoken_client": result.get("spoken_client"),
+        "suggested_client": result.get("suggested_client"),
+        "ask": result.get("ask"),
+        "if_yes": result.get("if_yes"),
+        "if_new_client": result.get("if_new_client"),
+    }
+
+
 def _view_entry(result: dict[str, Any]) -> dict[str, Any]:
+    if result.get("needs_client_confirm"):
+        return _view_client_confirm(result)
     return slim_entry(result)
 
 
 def _view_session(result: dict[str, Any]) -> dict[str, Any]:
+    if result.get("needs_client_confirm"):
+        return _view_client_confirm(result)
     return slim_session(result) or {}
 
 
 def _view_switch(result: dict[str, Any]) -> dict[str, Any]:
+    if result.get("needs_client_confirm"):
+        return _view_client_confirm(result)
     return {
         "closed_entry": slim_entry(result["closed_entry"]),
         "new_session": slim_session(result["new_active_session"]),

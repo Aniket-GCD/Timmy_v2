@@ -317,6 +317,39 @@ def list_clients_remote(
     return out
 
 
+def classify_client_remote(
+    name: str,
+    *,
+    environ: dict[str, str] | None = None,
+    office: str | None = None,
+    db_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Classify spoken name against live Supabase clients.
+
+    kind:
+      - exact / fold — safe to resolve without asking
+      - soft — unique nickname/token hit; ask "Did you mean …?" before writing
+      - none — no hit; ask if new client (Unassigned + reception draft)
+    """
+    target = name.strip()
+    if not target:
+        return {"kind": "none", "display_name": None, "spoken": ""}
+    clients = list_clients_remote(environ=environ, office=office, db_path=db_path)
+    names = [row["display_name"] for row in clients]
+    lowered = target.casefold()
+    for display in names:
+        if display.casefold() == lowered:
+            return {"kind": "exact", "display_name": display, "spoken": target}
+    folded_target = name_fold(target)
+    fold_matches = [display for display in names if name_fold(display) == folded_target]
+    if len(fold_matches) == 1:
+        return {"kind": "fold", "display_name": fold_matches[0], "spoken": target}
+    soft = soft_unique_match(target, names)
+    if soft:
+        return {"kind": "soft", "display_name": soft, "spoken": target}
+    return {"kind": "none", "display_name": None, "spoken": target}
+
+
 def resolve_client_remote(
     name: str,
     *,
@@ -324,21 +357,14 @@ def resolve_client_remote(
     office: str | None = None,
     db_path: str | Path | None = None,
 ) -> str | None:
-    """Return canonical display_name from live Supabase list, or None if unmatched."""
-    target = name.strip()
-    if not target:
-        return None
-    clients = list_clients_remote(environ=environ, office=office, db_path=db_path)
-    lowered = target.casefold()
-    for row in clients:
-        if row["display_name"].casefold() == lowered:
-            return row["display_name"]
-    folded_target = name_fold(target)
-    fold_matches = [row for row in clients if name_fold(row["display_name"]) == folded_target]
-    if len(fold_matches) == 1:
-        return fold_matches[0]["display_name"]
-    soft = soft_unique_match(target, [row["display_name"] for row in clients])
-    return soft
+    """Return canonical display_name from live Supabase list, or None if unmatched.
+
+    Includes soft unique matches (callers that must ask first use classify_client_remote).
+    """
+    classified = classify_client_remote(
+        name, environ=environ, office=office, db_path=db_path,
+    )
+    return classified["display_name"]
 
 
 def roster_row_from_display(display_name: str) -> dict[str, Any]:

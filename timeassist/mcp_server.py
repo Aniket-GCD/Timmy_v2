@@ -34,7 +34,12 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "start",
-        "description": "Start a draft time session. Fails if a session is already active (use switch or end first).",
+        "description": (
+            "Start a draft time session. Soft nickname matches and unknown names return "
+            "needs_client_confirm (ask the operator) instead of writing — retry with the "
+            "suggested roster client, or Unassigned + draft_reception_email for a new client. "
+            "Fails if a session is already active (use switch or end first)."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -43,13 +48,20 @@ TOOLS: list[dict[str, Any]] = [
                 "job_type": {"type": "string", "description": "Job Code from list_job_codes (stored locally as job_type)."},
                 "billable": {"type": "string", "enum": ["yes", "no"], "description": "Omit to use roster default (else yes)."},
                 "at": {"type": "string", "description": "Optional ISO timestamp."},
+                "confirm_client": {
+                    "type": "boolean",
+                    "description": "True after the operator confirmed a soft match (or to proceed with an unmatched spoken name).",
+                },
             },
             "required": ["client", "task"],
         },
     },
     {
         "name": "switch",
-        "description": "Close the active session at the switch time and immediately start a new one. Unknown labels are captured as needs_info, never blocked.",
+        "description": (
+            "Close the active session at the switch time and immediately start a new one. "
+            "Soft/unknown clients return needs_client_confirm before writing (same as start)."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -59,6 +71,7 @@ TOOLS: list[dict[str, Any]] = [
                 "billable": {"type": "string", "enum": ["yes", "no"], "description": "Omit to use roster default (else yes)."},
                 "at": {"type": "string", "description": "Optional ISO timestamp."},
                 "minutes_ago": {"type": "integer", "minimum": 1, "description": "If the operator says they switched N minutes ago, close/start at at-now minus this many minutes."},
+                "confirm_client": {"type": "boolean", "description": "True after the operator confirmed the client match."},
             },
             "required": ["client", "task"],
         },
@@ -87,7 +100,12 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "add_missing",
-        "description": "Add an explicit missing time block as a draft entry.",
+        "description": (
+            "Add an explicit missing time block as a draft entry. Soft nickname matches and "
+            "unknown names return needs_client_confirm with an ask string — relay it to the "
+            "operator; on yes retry with suggested_client (or confirm_client=true); on new "
+            "client use Unassigned + NEW CLIENT notes + draft_reception_email."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -97,6 +115,10 @@ TOOLS: list[dict[str, Any]] = [
                 "start": {"type": "string", "description": "ISO start timestamp."},
                 "end": {"type": "string", "description": "ISO end timestamp."},
                 "billable": {"type": "string", "enum": ["yes", "no"], "description": "Omit to use roster default (else yes)."},
+                "confirm_client": {
+                    "type": "boolean",
+                    "description": "True after the operator confirmed a soft match or unmatched spoken name.",
+                },
             },
             "required": ["client", "task", "start", "end"],
         },
@@ -475,7 +497,15 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
     if name == "init_state":
         return actions.init_state(db_path, arguments.get("at"))
     if name == "start":
-        return actions.start_session(db_path, arguments["client"], arguments["task"], arguments.get("billable"), arguments.get("at"), job_type=arguments.get("job_type"))
+        return actions.start_session(
+            db_path,
+            arguments["client"],
+            arguments["task"],
+            arguments.get("billable"),
+            arguments.get("at"),
+            job_type=arguments.get("job_type"),
+            confirm_client=bool(arguments.get("confirm_client")),
+        )
     if name == "switch":
         return actions.switch_session(
             db_path,
@@ -485,6 +515,7 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
             arguments.get("at"),
             arguments.get("minutes_ago"),
             job_type=arguments.get("job_type"),
+            confirm_client=bool(arguments.get("confirm_client")),
         )
     if name == "clarify_active":
         return actions.clarify_active_session(
@@ -498,7 +529,16 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
     if name == "end":
         return actions.end_session(db_path, arguments.get("at"))
     if name == "add_missing":
-        return actions.add_missing_entry(db_path, arguments["client"], arguments["task"], arguments["start"], arguments["end"], arguments.get("billable"), job_type=arguments.get("job_type"))
+        return actions.add_missing_entry(
+            db_path,
+            arguments["client"],
+            arguments["task"],
+            arguments["start"],
+            arguments["end"],
+            arguments.get("billable"),
+            job_type=arguments.get("job_type"),
+            confirm_client=bool(arguments.get("confirm_client")),
+        )
     if name == "edit":
         return actions.edit_entry(
             db_path,

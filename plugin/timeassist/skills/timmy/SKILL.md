@@ -71,9 +71,9 @@ more before approval. Never block or refuse approval over missing notes.
    Codes, accounts, or times. Do not use `import_clients`, `add_client`, or
    `refresh_clients`  -  they are disabled; clients live only in Supabase.
 2. **Capture now, clarify later:** on a client change, **switch immediately**.
-   Questions are for labeling cleanup only, never before starting the timer.
-   If a result carries `needs_info`, fix labels with `clarify_active` while the
-   timer is open, or `edit` after it closed.
+   If the result is `needs_client_confirm`, ask using the tool's `ask` text before
+   retrying. If a written result carries `needs_info`, fix labels with
+   `clarify_active` while the timer is open, or `edit` after it closed.
 3. **After-the-fact** ("I worked 1 hour on ..."): do **not** call `start`. Ask
    one missing field at a time until **date, start, and end** exist, then
    `add_missing`. Never invent clock times.
@@ -101,36 +101,27 @@ more before approval. Never block or refuse approval over missing notes.
    and `confirm=true`; custom -> `user_export_dir` with `confirm=true`. Once
    `survey_required=false`, stop asking.
 
-## New / unmatched clients (Unassigned)
+## New / unmatched clients (confirm before write)
 
-1. **Capture first.** Call `start` / `add_missing` / `switch` with the spoken
-   client name. The engine soft-matches unique nicknames against live Supabase
-   (e.g. `Ocean View Road` -> `0969 Ocean View Road`, `Bill's Shop` ->
-   `Bill's Windsurf Shop`). Trust the tool result: if `client` is a roster name
-   and there is no `needs_info`, it matched — report that name. If
-   `spoken_client` is present, say you matched spoken X to roster Y.
-2. **Do not dump the roster.** Never call `list_clients` with an empty query
-   (it returns no names). Never invent names from memory or QuickBooks sample
-   data (e.g. "Blue Ocean Dreams"). Only use names returned by tools.
-3. Optional lookup: `list_clients` with `query` set to the **full spoken name**.
-   Zero hits after that (and capture still `needs_info`) -> treat as unmatched.
-4. Miss / ambiguous -> ask if this is a new client.
-5. If new, say exactly:
-   `This client has not been created in the system yet. Would you like me to email Reception about creating this client in QuickBooks?`
-6. If yes -> call `draft_reception_email` with the spoken name; paste the draft
-   (To / Subject / Body) into chat; offer copy or the `mailto` link. **Never
-   send email.** Set `reception_email` once via `config` if the To: address is
-   still the placeholder.
-7. Regardless of yes/no, say:
-   `This entry will be recorded under the client name "Unassigned." Please update this entry to the correct client name once the client is created in QuickBooks.`
-8. Capture with client **Unassigned**; notes =
-   `NEW CLIENT: {spoken name} | {work notes}`; Job Code from the operator /
-   `list_job_codes`. Preview -> approve -> submit as usual.
-9. **Never** call `add_client` / `import_clients` / `refresh_clients` (disabled).
-   Never write Supabase `clients`. New firm clients are created in QuickBooks;
-   Timmy only uses Unassigned until then.
-10. Later, when the real client exists: `edit` the submitted entry (client off
-   Unassigned, clean notes), then `update_submitted`.
+1. Call `add_missing` / `start` / `switch` with the **spoken** client name (and times /
+   Job Code when known). Do **not** dump `list_clients` to search by eye.
+2. If the tool returns `needs_client_confirm=true`, **relay the `ask` text verbatim**
+   (or nearly so). Example soft match:
+   > Did you mean "0969 Ocean View Road"? If yes, I will record it under that roster
+   > name. If not, is this a new client? Then I can record it under "Unassigned" with
+   > a NEW CLIENT note and draft a Reception email…
+3. **Operator says yes (soft match):** retry the same tool with
+   `client` = `suggested_client` (exact roster name), **or** the same spoken name
+   plus `confirm_client=true`. Then continue (Job Code, review, approve, submit).
+4. **Operator says new client / not that name:** ask once if they want a Reception
+   email. Capture with client **Unassigned**; notes =
+   `NEW CLIENT: {spoken name} | {work notes}`; call `draft_reception_email` with the
+   spoken name; paste To / Subject / Body; **never send**. Then preview → approve →
+   submit.
+5. Exact / case-insensitive / comma-fold roster hits write immediately (no confirm).
+6. **Never** invent client names. **Never** call `add_client` / `import_clients` /
+   `refresh_clients`. Never write Supabase `clients`.
+7. Later, when the real client exists: `edit` off Unassigned, then `update_submitted`.
 
 ## Editing submitted entries
 
@@ -159,17 +150,16 @@ names** (only a count + message). Full list only with `confirm_full_list=true`
 when the operator asked for every name. Live read-only (filtered by configured
 office). There is no local CSV roster and no `refresh_clients`.
 
-The engine matches exact display names (case-insensitive), a simple
-comma-swap fold (e.g. `John Smith` <-> `Smith, John`), and a **unique soft
-token match** (e.g. `Bill's Shop` -> `Bill's Windsurf Shop`, or
-`Ocean View Road` -> `0969 Ocean View Road` when only one roster name contains
-those tokens). Known clients default to
-billable; do not invent aliases. Unknown clients are soft: recorded as typed,
-marked `needs_info`, never blocked during capture  -  but **before approve/export
-every entry must match the Supabase list** (or use **Unassigned** for new firm
-clients). If the operator confirms the name is correct as-is (or corrects it),
-resolve with one `edit` passing `entry_id` and `client`. `clarify_active` does
-the same while the timer is open.
+The engine matches exact display names (case-insensitive) and a simple
+comma-swap fold (e.g. `John Smith` <-> `Smith, John`) **immediately**. A
+**unique soft token match** (e.g. `Ocean View Road` -> `0969 Ocean View Road`)
+returns `needs_client_confirm` so Timmy asks before writing. Known clients
+default to billable; do not invent aliases. Unknown clients also return
+`needs_client_confirm` (new-client / Unassigned path) rather than silently
+billing a typed name. Before approve/export every entry must match the
+Supabase list (or use Unassigned). If the operator confirms the name is
+correct as-is (or corrects it), resolve with one `edit` passing `entry_id`
+and `client`. `clarify_active` does the same while the timer is open.
 When `config` shows `strict_roster` `yes`, confirm-as-is is off: the engine
 refuses a name not on Supabase  -  relay its message, then for a **new firm
 client** follow the Unassigned flow above.

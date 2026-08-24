@@ -425,6 +425,47 @@ class LiveClientRosterTests(unittest.TestCase):
         self.assertEqual(name, "0969 Ocean View Road")
         self.assertEqual(billable, 1)
 
+    def test_add_missing_soft_match_asks_before_write(self) -> None:
+        install_live_clients(self, "0969 Ocean View Road", "Acme Co")
+        pending = actions.add_missing_entry(
+            self.db,
+            "Ocean View Road",
+            "tax prep",
+            "2026-08-21T09:00:00",
+            "2026-08-21T10:00:00",
+            "yes",
+        )
+        self.assertTrue(pending.get("needs_client_confirm"))
+        self.assertEqual(pending["suggested_client"], "0969 Ocean View Road")
+        self.assertIn("Did you mean", pending["ask"])
+        from timeassist import db as tdb
+        with tdb.connect(self.db) as conn:
+            n = conn.execute("SELECT COUNT(*) FROM time_entries").fetchone()[0]
+        self.assertEqual(n, 0)
+        written = actions.add_missing_entry(
+            self.db,
+            "0969 Ocean View Road",
+            "tax prep",
+            "2026-08-21T09:00:00",
+            "2026-08-21T10:00:00",
+            "yes",
+        )
+        self.assertEqual(written["client_name"], "0969 Ocean View Road")
+        self.assertEqual(written.get("capture_status") or "resolved", "resolved")
+
+    def test_add_missing_soft_confirm_client_flag(self) -> None:
+        install_live_clients(self, "Bill's Windsurf Shop", "Acme Co")
+        written = actions.add_missing_entry(
+            self.db,
+            "Bill's Shop",
+            "work",
+            "2026-05-28T09:00:00",
+            "2026-05-28T09:30:00",
+            "yes",
+            confirm_client=True,
+        )
+        self.assertEqual(written["client_name"], "Bill's Windsurf Shop")
+
     def test_resolve_soft_unique_nickname(self) -> None:
         from timeassist import db as tdb
         install_live_clients(self, "Bill's Windsurf Shop", "Acme Co")
