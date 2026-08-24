@@ -10,7 +10,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import os
 from timeassist import mcp_server
+from tests.remote_roster import install_live_clients
+
+# Escape hatch for legacy import_clients seeding in MCP tests.
+os.environ["TIMEASSIST_ALLOW_LOCAL_ROSTER"] = "1"
+
 
 
 class McpServerTests(unittest.TestCase):
@@ -479,6 +485,22 @@ class McpServerTests(unittest.TestCase):
         self.assertEqual(result["rule"], "nearest_15_minutes")
         self.assertEqual(result["rerounded_count"], 1)
         self.assertEqual(result["total_draft_minutes"], 30)
+
+
+    def test_list_clients_live_mcp(self) -> None:
+        prev = os.environ.pop("TIMEASSIST_ALLOW_LOCAL_ROSTER", None)
+        self.addCleanup(lambda: os.environ.__setitem__("TIMEASSIST_ALLOW_LOCAL_ROSTER", prev or "1"))
+        install_live_clients(self, "Acme Co", "Globex")
+        listed = self.payload("list_clients", {})
+        names = {c["display_name"] for c in listed["clients"]}
+        self.assertEqual(names, {"Acme Co", "Globex", "Unassigned"})
+
+    def test_import_clients_disabled_mcp(self) -> None:
+        prev = os.environ.pop("TIMEASSIST_ALLOW_LOCAL_ROSTER", None)
+        self.addCleanup(lambda: os.environ.__setitem__("TIMEASSIST_ALLOW_LOCAL_ROSTER", prev or "1"))
+        result = self.call("import_clients", {"path": "x.csv", "confirm_replace": True})
+        self.assertTrue(result.get("isError"))
+        self.assertIn("Supabase", result["content"][0]["text"])
 
     def test_import_and_list_clients(self) -> None:
         self.payload("init_state", {"at": "2026-05-28T08:55:00"})

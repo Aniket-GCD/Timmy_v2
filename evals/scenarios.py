@@ -19,6 +19,11 @@ from typing import Any, Callable
 from timeassist import actions
 from timeassist.db import connect
 
+import os
+
+# Eval seeding still uses CSV import; production matching is live Supabase.
+os.environ.setdefault("TIMEASSIST_ALLOW_LOCAL_ROSTER", "1")
+
 
 # --- expectation matching -------------------------------------------------
 

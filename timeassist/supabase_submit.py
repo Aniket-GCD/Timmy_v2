@@ -8,10 +8,16 @@ from typing import Any
 from . import actions
 from .db import connect
 from .pay_period import can_edit_entry, entry_work_date, refuse_edit_message
+from .supabase_config import time_entries_table, unassigned_client_name
 from .supabase_ref import account_for_job_code, get_job_codes, request_json
 
-UNASSIGNED_CLIENT = "Unassigned"
 NEW_CLIENT_NOTES_PREFIX = "NEW CLIENT:"
+# Default label; prefer unassigned_client_name(db_path=...) at call sites.
+UNASSIGNED_CLIENT = "Unassigned"
+
+
+def _unassigned_label(db_path: str | Path | None = None, environ: dict[str, str] | None = None) -> str:
+    return unassigned_client_name(db_path=db_path, environ=environ)
 
 
 def _clock_parts(iso_ts: str) -> tuple[str, str]:
@@ -31,10 +37,16 @@ def _clock_parts(iso_ts: str) -> tuple[str, str]:
     return date_part[:10], time_part[:8]
 
 
-def is_new_client_path(entry: dict[str, Any]) -> bool:
+def is_new_client_path(
+    entry: dict[str, Any],
+    *,
+    db_path: str | Path | None = None,
+    environ: dict[str, str] | None = None,
+) -> bool:
     notes = (entry.get("task_text") or "").strip()
     client = (entry.get("client_name") or "").strip()
-    return notes.upper().startswith(NEW_CLIENT_NOTES_PREFIX) or client.casefold() == UNASSIGNED_CLIENT.casefold()
+    label = _unassigned_label(db_path=db_path, environ=environ)
+    return notes.upper().startswith(NEW_CLIENT_NOTES_PREFIX) or client.casefold() == label.casefold()
 
 
 def ensure_new_client_notes(spoken_name: str, work_notes: str) -> str:
@@ -45,12 +57,19 @@ def ensure_new_client_notes(spoken_name: str, work_notes: str) -> str:
     return f"{NEW_CLIENT_NOTES_PREFIX} {spoken} | {work}".rstrip(" |")
 
 
-def apply_unassigned_payload(entry: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+def apply_unassigned_payload(
+    entry: dict[str, Any],
+    payload: dict[str, Any],
+    *,
+    db_path: str | Path | None = None,
+    environ: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """Force client=Unassigned and NEW CLIENT notes when on the new-client path."""
-    if not is_new_client_path(entry):
+    if not is_new_client_path(entry, db_path=db_path, environ=environ):
         return payload
+    label = _unassigned_label(db_path=db_path, environ=environ)
     payload = dict(payload)
-    payload["client"] = UNASSIGNED_CLIENT
+    payload["client"] = label
     notes = (entry.get("task_text") or "").strip()
     if not notes.upper().startswith(NEW_CLIENT_NOTES_PREFIX):
         spoken = (entry.get("raw_client_name") or entry.get("client_name") or "unknown").strip()
@@ -66,6 +85,8 @@ def time_entry_payload(
     staff_name: str,
     office: str,
     account: str,
+    db_path: str | Path | None = None,
+    environ: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     notes = (entry.get("task_text") or "").strip()
     job_code = (entry.get("job_type") or "").strip()
@@ -87,7 +108,7 @@ def time_entry_payload(
         "billable": bool(entry.get("billable")),
         "source_file": "timmy",
     }
-    return apply_unassigned_payload(entry, payload)
+    return apply_unassigned_payload(entry, payload, db_path=db_path, environ=environ)
 
 
 def _extract_supabase_id(response: Any) -> str | None:
@@ -135,12 +156,16 @@ def submit_entry(
         job_code = (entry.get("job_type") or "").strip()
         if not job_code:
             raise ValueError("set a Job Code before submit; account is copied from job_codes, never typed")
-        codes = get_job_codes(environ=environ)
+        codes = get_job_codes(environ=environ, db_path=db_path)
         account = account_for_job_code(job_code, codes)
-        payload = time_entry_payload(entry, staff_name=staff_name, office=office, account=account)
+        payload = time_entry_payload(
+            entry, staff_name=staff_name, office=office, account=account,
+            db_path=db_path, environ=environ,
+        )
+        table = time_entries_table(db_path=db_path, environ=environ)
         response = request_json(
             "POST",
-            "time_entries",
+            table,
             body=payload,
             environ=environ,
             prefer="return=representation",
@@ -211,12 +236,16 @@ def update_submitted_entry(
         job_code = (entry.get("job_type") or "").strip()
         if not job_code:
             raise ValueError("set a Job Code before update_submitted; account is copied from job_codes, never typed")
-        codes = get_job_codes(environ=environ)
+        codes = get_job_codes(environ=environ, db_path=db_path)
         account = account_for_job_code(job_code, codes)
-        payload = time_entry_payload(entry, staff_name=staff_name, office=office, account=account)
+        payload = time_entry_payload(
+            entry, staff_name=staff_name, office=office, account=account,
+            db_path=db_path, environ=environ,
+        )
+        table = time_entries_table(db_path=db_path, environ=environ)
         request_json(
             "PATCH",
-            "time_entries",
+            table,
             body=payload,
             query={"id": f"eq.{supabase_id}"},
             environ=environ,

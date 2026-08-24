@@ -159,14 +159,14 @@ def build_parser() -> argparse.ArgumentParser:
     reround.add_argument("--at", help="ISO timestamp for deterministic demos/tests")
     reround.add_argument("--dry-run", action="store_true")
 
-    import_clients = sub.add_parser("import-clients", help="import a client roster CSV")
+    import_clients = sub.add_parser("import-clients", help="DISABLED — firm clients live in Supabase only")
     import_clients.add_argument("--file", required=True, help="path to the clients CSV")
     import_clients.add_argument("--mode", choices=["replace", "merge"], default="replace")
     import_clients.add_argument("--confirm-replace", dest="confirm_replace", action="store_true", help="required when mode is replace")
     import_clients.add_argument("--at", help="ISO timestamp for deterministic demos/tests")
     import_clients.add_argument("--dry-run", action="store_true")
 
-    add_client = sub.add_parser("add-client", help="add one new client to the roster")
+    add_client = sub.add_parser("add-client", help="DISABLED — firm clients live in Supabase only")
     add_client.add_argument("--name", required=True, help="client display name")
     add_client.add_argument("--aliases", default="", help="optional ';'-separated alternate names")
     add_client.add_argument("--default-billable", dest="default_billable", choices=["yes", "no"], help="default billable flag (yes when omitted)")
@@ -175,13 +175,13 @@ def build_parser() -> argparse.ArgumentParser:
     add_client.add_argument("--at", help="ISO timestamp for deterministic demos/tests")
     add_client.add_argument("--dry-run", action="store_true")
 
-    clients = sub.add_parser("clients", help="list the imported client roster")
+    clients = sub.add_parser("clients", help="list clients from Supabase (live read-only)")
     clients.add_argument("--dry-run", action="store_true")
 
     job_codes = sub.add_parser("job-codes", help="GET job codes from Supabase (read-only)")
     job_codes.add_argument("--dry-run", action="store_true")
 
-    refresh_clients = sub.add_parser("refresh-clients", help="GET clients from Supabase and merge into local SQLite")
+    refresh_clients = sub.add_parser("refresh-clients", help="DISABLED — list_clients is already live")
     refresh_clients.add_argument("--at", help="ISO timestamp for deterministic demos/tests")
     refresh_clients.add_argument("--dry-run", action="store_true")
 
@@ -430,7 +430,7 @@ def run_command(args: argparse.Namespace) -> CommandResult:
     if command == "job-codes":
         from .supabase_ref import list_job_codes
 
-        details = list_job_codes()
+        details = list_job_codes(db_path=db_path)
         return CommandResult(True, command, "job-codes", f"{len(details['job_codes'])} job code(s).", details)
     if command == "refresh-clients":
         details = actions.refresh_clients(db_path, args.at)

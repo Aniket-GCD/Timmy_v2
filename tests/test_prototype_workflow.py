@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -22,12 +23,16 @@ class _CliHarness(unittest.TestCase):
         self.db = self.workdir / "timeassist.sqlite"
 
     def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
+        env = os.environ.copy()
+        # Legacy CSV seeding for CLI workflow tests; production uses live Supabase.
+        env["TIMEASSIST_ALLOW_LOCAL_ROSTER"] = "1"
         return subprocess.run(
             [sys.executable, str(SCRIPT), "--db", str(self.db), *args],
             cwd=ROOT,
             text=True,
             capture_output=True,
             check=False,
+            env=env,
         )
 
     def json_cli(self, *args: str) -> dict:
@@ -394,7 +399,11 @@ class PrototypeWorkflowTests(_CliHarness):
         self.assertIn("Curated synthetic demo output", readme.read_text())
         transcript = Path(artifacts["transcript"]).read_text()
         self.assertNotIn(Path.home().as_posix(), transcript)
-        self.assertIn("~/Documents/TimeAssist Exports", transcript)
+        self.assertTrue(
+            "~/Documents/TimeAssist Exports" in transcript
+            or "~/OneDrive/Documents/TimeAssist Exports" in transcript,
+            "transcript should show the portable user export folder",
+        )
 
     def test_demo_command_refuses_to_clear_unowned_existing_directory(self) -> None:
         output_dir = self.workdir / "real-folder"

@@ -382,7 +382,23 @@ def validate_client_label_uniqueness(rows: list[tuple[str, str, str]]) -> None:
             seen_labels[normalized_label] = key
 
 
+LOCAL_ROSTER_DISABLED = (
+    "Firm clients live only in Supabase (synced from QuickBooks). "
+    "Local CSV import / add_client / refresh_clients are disabled. "
+    "Use list_clients (live) to match names; new clients use Unassigned + draft_reception_email."
+)
+
+
+
+def _local_roster_allowed() -> bool:
+    """Test-only escape hatch. Production never sets this; live Supabase is the roster."""
+    import os
+    return os.environ.get("TIMEASSIST_ALLOW_LOCAL_ROSTER") == "1"
+
+
 def import_clients(db_path: str | Path, csv_path: str | Path, mode: str = "replace", at: str | None = None) -> dict[str, Any]:
+    if not _local_roster_allowed():
+        raise ValueError(LOCAL_ROSTER_DISABLED)
     if mode not in {"replace", "merge"}:
         raise ValueError("mode must be 'replace' or 'merge'")
     ensure_initialized(db_path)
@@ -469,10 +485,9 @@ def import_clients(db_path: str | Path, csv_path: str | Path, mode: str = "repla
 def add_client(db_path: str | Path, display_name: str, aliases: str = "",
                default_billable: str | None = None, default_job_type: str = "",
                client_key: str | None = None, at: str | None = None) -> dict[str, Any]:
-    """Add ONE new client to the roster. Add-only by design: an existing key or
-    colliding label is an error, never an overwrite — updates go through
-    import_clients, which owns replace/merge semantics (and seeded-key
-    ownership transfer)."""
+    """Add ONE new client to the local roster (test escape hatch only)."""
+    if not _local_roster_allowed():
+        raise ValueError(LOCAL_ROSTER_DISABLED)
     ensure_initialized(db_path)
     changed_at = iso(parse_at(at)) if at else now_iso()
     display = (display_name or "").strip()
@@ -502,20 +517,15 @@ def add_client(db_path: str | Path, display_name: str, aliases: str = "",
     return {"client": client, "client_count": count}
 
 
-def list_clients(db_path: str | Path) -> dict[str, Any]:
-    ensure_initialized(db_path)
-    with connect(db_path) as conn:
-        clients = [row_to_dict(r) for r in conn.execute("SELECT * FROM clients ORDER BY display_name").fetchall()]
-    return {"clients": clients}
-
-
 def refresh_clients(db_path: str | Path, at: str | None = None, environ: dict[str, str] | None = None) -> dict[str, Any]:
-    """GET clients from Supabase and merge into the local SQLite roster (table name stays clients)."""
+    """GET clients from Supabase and merge into local SQLite (test escape hatch only)."""
+    if not _local_roster_allowed():
+        raise ValueError(LOCAL_ROSTER_DISABLED)
     from .supabase_ref import client_display_name, get_clients
 
     ensure_initialized(db_path)
     changed_at = iso(parse_at(at)) if at else now_iso()
-    remote = get_clients(environ=environ)
+    remote = get_clients(environ=environ, db_path=db_path)
     parsed: list[tuple[str, str]] = []
     seen: dict[str, str] = {}
     for row in remote:
@@ -545,24 +555,14 @@ def refresh_clients(db_path: str | Path, at: str | None = None, environ: dict[st
     return {"imported_count": len(parsed), "client_count": count}
 
 
+
 def name_fold(name: str) -> str:
-    """Fold 'Lastname, Firstname' to 'firstname lastname' (lower, collapsed spaces).
-
-    Only names with exactly one comma and text on both sides swap; malformed
-    strings (zero or multiple commas) fold to plain lowercase. A single-comma
-    business name (e.g. "Widgets, Inc") still swaps, so folding is not a
-    guarantee against cross-matching individuals and businesses. Display names
-    only — aliases stay exact-match.
-    """
-    s = " ".join(name.lower().split())
-    if "," in s:
-        parts = [p.strip() for p in s.split(",")]
-        if len(parts) == 2 and all(parts):
-            s = f"{parts[1]} {parts[0]}"
-    return s
+    from .supabase_ref import name_fold as _name_fold
+    return _name_fold(name)
 
 
-def resolve_client_row(conn, name: str) -> sqlite3.Row | None:
+
+def _resolve_client_row_local(conn, name: str):
     """Return the full roster row a label resolves to, or None (needs_info).
 
     All matching passes live here so callers share one deterministic order:
@@ -596,13 +596,63 @@ def resolve_client_row(conn, name: str) -> sqlite3.Row | None:
     return None
 
 
-def resolve_client(conn, name: str) -> tuple[str, int | None]:
+def _resolve_client_local(conn, name: str) -> tuple[str, int | None]:
     """Thin wrapper preserving the historic (display_name, default_billable|None)
     tuple API; all matching logic lives in `resolve_client_row`."""
-    row = resolve_client_row(conn, name)
+    row = _resolve_client_row_local(conn, name)
     if row is None:
         return name, None
     return row["display_name"], int(row["default_billable"])
+
+
+
+
+def resolve_client_row(conn, name: str, *, environ: dict[str, str] | None = None, db_path: str | Path | None = None):
+    """Live Supabase match, or local SQLite when TIMEASSIST_ALLOW_LOCAL_ROSTER=1 (tests)."""
+    if _local_roster_allowed():
+        return _resolve_client_row_local(conn, name)
+    from .supabase_ref import resolve_client_remote, roster_row_from_display
+    office = get_setting(conn, "office")
+    resolved_db = db_path or _sqlite_file_from_conn(conn)
+    display = resolve_client_remote(
+        name, environ=environ, office=office or None, db_path=resolved_db,
+    )
+    if display is None:
+        return None
+    return roster_row_from_display(display)
+
+
+def _sqlite_file_from_conn(conn) -> str | None:
+    try:
+        row = conn.execute("PRAGMA database_list").fetchone()
+    except Exception:
+        return None
+    if row is None:
+        return None
+    # (seq, name, file) — file may be empty for :memory:
+    path = row[2] if not isinstance(row, dict) else row["file"]
+    return path or None
+
+
+def resolve_client(conn, name: str, *, environ: dict[str, str] | None = None, db_path: str | Path | None = None) -> tuple[str, int | None]:
+    row = resolve_client_row(conn, name, environ=environ, db_path=db_path)
+    if row is None:
+        return name, None
+    return row["display_name"], int(row["default_billable"])
+
+
+def list_clients(db_path: str | Path, environ: dict[str, str] | None = None) -> dict[str, Any]:
+    """Live GET of Supabase clients (or local SQLite when test escape hatch is on)."""
+    ensure_initialized(db_path)
+    if _local_roster_allowed():
+        with connect(db_path) as conn:
+            clients = [row_to_dict(r) for r in conn.execute("SELECT * FROM clients ORDER BY display_name").fetchall()]
+        return {"clients": clients}
+    from .supabase_ref import list_clients_remote
+    with connect(db_path) as conn:
+        office = get_setting(conn, "office")
+    clients = list_clients_remote(environ=environ, office=office or None, db_path=db_path)
+    return {"clients": clients}
 
 
 def apply_client_policy(
@@ -653,6 +703,8 @@ def resolve_capture_with_metadata(
     clarification: bool = False,
     job_type: str | None = None,
     current_job_type: str | None = None,
+    environ: dict[str, str] | None = None,
+    db_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Resolve a capture while preserving the user's raw switch/clarify text.
 
@@ -665,7 +717,7 @@ def resolve_capture_with_metadata(
     """
     raw_client = client.strip()
     raw_task = task.strip()
-    row = resolve_client_row(conn, raw_client)
+    row = resolve_client_row(conn, raw_client, environ=environ, db_path=db_path)
     canonical = row["display_name"] if row is not None else raw_client
     billable_explicit = billable is not None
     billable_int, job_type_resolved = apply_client_policy(
@@ -679,8 +731,8 @@ def resolve_capture_with_metadata(
     # capture-now/clarify-later is an invariant under every mode.
     if not known_client and clarification and billable_explicit and strict_roster_enabled(conn):
         raise ValueError(
-            f"strict roster mode is on: '{raw_client}' is not on the roster; "
-            "correct the entry to a roster client, or add the client with add_client first"
+            f"strict roster mode is on: '{raw_client}' is not on the Supabase client list; "
+            "correct the entry to a known client, or use Unassigned + draft_reception_email for a new firm client"
         )
     needs_info = not known_client and not (clarification and billable_explicit)
     client_changed = canonical.strip().lower() != raw_client.lower()

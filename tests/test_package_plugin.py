@@ -87,7 +87,9 @@ class PackagePluginTests(unittest.TestCase):
         self.assertFalse(PLUGIN_BINARY.exists(), "packager should not leave a binary in the source plugin directory")
         with zipfile.ZipFile(out) as zf:
             self.assertEqual(zf.read("timeassist/bin/timeassist.exe"), fake.read_bytes())
-            self.assertIn("timeassist/.claude-plugin/plugin.json", zf.namelist())
+            names = zf.namelist()
+            self.assertIn("timeassist/.claude-plugin/plugin.json", names)
+            self.assertIn("timeassist/config/supabase.json", names)
 
 
 if __name__ == "__main__":

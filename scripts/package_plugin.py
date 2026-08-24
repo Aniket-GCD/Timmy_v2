@@ -56,6 +56,7 @@ def main() -> int:
     # Cowork uploader expects the plugin directory at the archive root, not its
     # contents loose at the root.
     top = PLUGIN_DIR.name
+    supabase_config = ROOT / "config" / "supabase.json"
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
         for path in sorted(PLUGIN_DIR.rglob("*")):
             if path.is_dir():
@@ -65,6 +66,8 @@ def main() -> int:
                 continue
             zf.write(path, f"{top}/{rel.as_posix()}")
         zf.write(exe, f"{top}/bin/{args.binary_name}")
+        if supabase_config.is_file():
+            zf.write(supabase_config, f"{top}/config/supabase.json")
 
     print(f"Wrote {out} ({out.stat().st_size} bytes)")
     return 0

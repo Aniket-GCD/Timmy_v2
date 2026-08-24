@@ -8,6 +8,7 @@ a stakeholder would see by typing the commands by hand.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import webbrowser
 from dataclasses import asdict
@@ -216,16 +217,25 @@ def run_demo(output_dir: str | Path, date_value: str = DEFAULT_DEMO_DATE, open_h
     _write_output_readme(out)
     _write_demo_roster(out)
 
-    transcript: list[tuple[str, dict[str, Any]]] = []
-    latest_review_token: str | None = None
-    for planned_args in _demo_steps(date_value, out):
-        args = _with_review_token(planned_args, latest_review_token)
-        payload = _run_step(db, args)
-        refreshed_token = _review_token_from_payload(payload)
-        if refreshed_token:
-            latest_review_token = refreshed_token
-        command = " ".join(["python scripts/timeassist.py", "--db", db_display, *args])
-        transcript.append((command, payload))
+    # Synthetic demo still seeds via CSV; production roster is live Supabase only.
+    prev_roster = os.environ.get("TIMEASSIST_ALLOW_LOCAL_ROSTER")
+    os.environ["TIMEASSIST_ALLOW_LOCAL_ROSTER"] = "1"
+    try:
+        transcript: list[tuple[str, dict[str, Any]]] = []
+        latest_review_token: str | None = None
+        for planned_args in _demo_steps(date_value, out):
+            args = _with_review_token(planned_args, latest_review_token)
+            payload = _run_step(db, args)
+            refreshed_token = _review_token_from_payload(payload)
+            if refreshed_token:
+                latest_review_token = refreshed_token
+            command = " ".join(["python scripts/timeassist.py", "--db", db_display, *args])
+            transcript.append((command, payload))
+    finally:
+        if prev_roster is None:
+            os.environ.pop("TIMEASSIST_ALLOW_LOCAL_ROSTER", None)
+        else:
+            os.environ["TIMEASSIST_ALLOW_LOCAL_ROSTER"] = prev_roster
 
     transcript_path = _write_transcript(out, transcript)
 

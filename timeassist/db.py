@@ -111,8 +111,7 @@ CLIENT_COLUMN_DEFINITIONS = {
     "billable_locked": "INTEGER NOT NULL DEFAULT 0",
 }
 ADMIN_CLIENT_SEEDS = ("Admin", "Early Out", "Holiday", "Staff Meeting")
-# Placeholder for work done before the real QBO client exists. Billable; not locked.
-UNASSIGNED_CLIENT_SEED = "Unassigned"
+# Unassigned lives in Supabase only (live client list). Do not seed locally.
 
 
 def slugify_client_key(name: str) -> str:
@@ -262,15 +261,4 @@ def initialize(db_path: str | Path, now: str) -> None:
                 (key, display_name, now),
             )
             label_owner.setdefault(display_name.lower(), key)
-        # Unassigned: new-client holding bucket so approve is not blocked by strict roster.
-        unassigned_key = slugify_client_key(UNASSIGNED_CLIENT_SEED)
-        if label_owner.get(UNASSIGNED_CLIENT_SEED.lower(), unassigned_key) == unassigned_key:
-            conn.execute(
-                """
-                INSERT INTO clients(client_key, display_name, aliases, default_billable, default_job_type, billable_locked, updated_at)
-                VALUES (?, ?, '', 1, '', 0, ?)
-                ON CONFLICT(client_key) DO NOTHING
-                """,
-                (unassigned_key, UNASSIGNED_CLIENT_SEED, now),
-            )
         conn.commit()

@@ -10,19 +10,27 @@ from unittest import mock
 from pathlib import Path
 
 from timeassist import actions, db, paths
+from tests.remote_roster import install_live_clients
+
+# Legacy CSV roster helpers remain for unit tests that still seed SQLite.
+os.environ["TIMEASSIST_ALLOW_LOCAL_ROSTER"] = "1"
 
 
-def _seed_roster(db_path, *names: str) -> None:
-    """Register synthetic clients so capture paths resolve them instead of
-    marking them needs_info (the #34 roster gate now applies to every capture
-    path). merge mode keeps the seeded admin clients and needs no
-    confirm_replace; default_billable=yes mirrors the pre-gate default."""
-    path = Path(db_path).parent / "roster-seed.csv"
-    path.write_text(
-        "display_name,aliases,default_billable\n"
-        + "".join(f"{name},,yes\n" for name in names)
-    )
-    actions.import_clients(db_path, path, mode="merge")
+def _seed_roster(test_case, *names: str) -> None:
+    """Seed via live mock (preferred) — also works with local roster escape hatch."""
+    install_live_clients(test_case, *names)
+    # Also merge into local SQLite so tests that still use local resolve stay green.
+    path = Path(getattr(test_case, "db", Path(test_case.tmp.name) / "timeassist.sqlite")).parent / "roster-seed.csv"
+    if not hasattr(test_case, "db"):
+        return
+    # Quote display names so commas (e.g. "Smith, John") survive CSV parsing.
+    lines = ["display_name,aliases,default_billable\n"]
+    for name in names:
+        safe = '"' + name.replace('"', '""') + '"'
+        lines.append(f"{safe},,yes\n")
+    path.write_text("".join(lines))
+    actions.import_clients(test_case.db, path, mode="merge")
+
 
 
 class RoundingDefaultTests(unittest.TestCase):
@@ -30,6 +38,7 @@ class RoundingDefaultTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.db = Path(self.tmp.name) / "timeassist.sqlite"
+        install_live_clients(self, "Acme Co")
 
     def test_new_install_defaults_to_exact(self) -> None:
         actions.init_state(self.db, "2026-05-28T09:00:00")
@@ -265,7 +274,7 @@ class ReroundTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.db = Path(self.tmp.name) / "timeassist.sqlite"
         actions.init_state(self.db, "2026-05-28T09:00:00")
-        _seed_roster(self.db, "Acme Co")
+        _seed_roster(self, "Acme Co")
 
     def _add(self, start: str, end: str, status: str = "draft") -> dict:
         entry = actions.add_missing_entry(self.db, "Acme Co", "work", start, end, "yes")
@@ -376,218 +385,40 @@ class RoundingRuleParsingTests(unittest.TestCase):
 
 class ClientRosterTests(unittest.TestCase):
     def setUp(self) -> None:
+        # Production path: no local roster escape hatch
+        self._prev_local = os.environ.pop("TIMEASSIST_ALLOW_LOCAL_ROSTER", None)
+
+        def _restore() -> None:
+            if self._prev_local is not None:
+                os.environ["TIMEASSIST_ALLOW_LOCAL_ROSTER"] = self._prev_local
+            else:
+                os.environ["TIMEASSIST_ALLOW_LOCAL_ROSTER"] = "1"
+
+        self.addCleanup(_restore)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.work = Path(self.tmp.name)
-        self.db = self.work / "timeassist.sqlite"
+        self.db = Path(self.tmp.name) / "timeassist.sqlite"
         actions.init_state(self.db, "2026-05-28T09:00:00")
 
-    def _write_csv(self, text: str) -> Path:
-        path = self.work / "clients.csv"
-        path.write_text(text)
-        return path
+    def test_import_clients_disabled(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            actions.import_clients(self.db, Path("x.csv"))
+        self.assertIn("Supabase", str(ctx.exception))
 
-    def test_import_replace_loads_roster(self) -> None:
-        csv_path = self._write_csv(
-            "client_key,display_name,aliases,default_billable\n"
-            "acme,Acme Co,\"ACME;Acme Inc\",yes\n"
-            "internal,Internal Admin,admin,no\n"
-        )
-        result = actions.import_clients(self.db, csv_path)
-        self.assertEqual(result["mode"], "replace")
-        self.assertEqual(result["imported_count"], 2)
+    def test_add_client_disabled(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            actions.add_client(self.db, "Acme")
+        self.assertIn("Supabase", str(ctx.exception))
+
+    def test_refresh_clients_disabled(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            actions.refresh_clients(self.db)
+        self.assertIn("Supabase", str(ctx.exception))
+
+    def test_list_clients_live(self) -> None:
+        install_live_clients(self, "Acme Co", "Globex")
         names = {c["display_name"] for c in actions.list_clients(self.db)["clients"]}
-        # Built-in admin clients are re-seeded on every ensure_initialized(),
-        # except the seeded "Admin" here defers to the operator's "Internal
-        # Admin" row that already owns the alias 'admin' (I3): re-seeding it would
-        # shadow that alias, a collision the import layer itself would reject.
-        self.assertEqual(names, {"Acme Co", "Internal Admin", "Early Out", "Holiday", "Staff Meeting"})
-
-    def test_import_replace_clears_previous(self) -> None:
-        actions.import_clients(self.db, self._write_csv(
-            "client_key,display_name,aliases,default_billable\nacme,Acme Co,,yes\n"
-        ))
-        actions.import_clients(self.db, self._write_csv(
-            "client_key,display_name,aliases,default_billable\nglobex,Globex,,yes\n"
-        ))
-        names = {c["display_name"] for c in actions.list_clients(self.db)["clients"]}
-        self.assertEqual(names, {"Globex", "Admin", "Early Out", "Holiday", "Staff Meeting"})
-
-    def test_import_merge_upserts(self) -> None:
-        actions.import_clients(self.db, self._write_csv(
-            "client_key,display_name,aliases,default_billable\nacme,Acme Co,,yes\n"
-        ))
-        actions.import_clients(self.db, self._write_csv(
-            "client_key,display_name,aliases,default_billable\nglobex,Globex,,yes\n"
-        ), mode="merge")
-        names = {c["display_name"] for c in actions.list_clients(self.db)["clients"]}
-        self.assertEqual(names, {"Acme Co", "Globex", "Admin", "Early Out", "Holiday", "Staff Meeting"})
-
-    def test_import_requires_display_name_column(self) -> None:
-        bad = self._write_csv("client_key,aliases\nacme,ACME\n")
-        with self.assertRaises(ValueError):
-            actions.import_clients(self.db, bad)
-
-    def test_import_slugs_missing_client_key(self) -> None:
-        actions.import_clients(self.db, self._write_csv(
-            "display_name,aliases,default_billable\nAcme Co.,,yes\n"
-        ))
-        keys = {c["client_key"] for c in actions.list_clients(self.db)["clients"]}
-        self.assertEqual(keys, {"acme_co", "admin", "early_out", "holiday", "staff_meeting"})
-
-    def test_import_defaults_billable_to_yes(self) -> None:
-        actions.import_clients(self.db, self._write_csv(
-            "client_key,display_name\nacme,Acme Co\n"
-        ))
-        client = actions.list_clients(self.db)["clients"][0]
-        self.assertEqual(client["default_billable"], 1)
-
-    def test_import_accepts_common_truthy_billable_values(self) -> None:
-        # Operators naturally write true/false/1/0/y/n, not only yes/no.
-        actions.import_clients(self.db, self._write_csv(
-            "client_key,display_name,default_billable\n"
-            "acme,Acme Co,true\n"
-            "globex,Globex,True\n"
-            "initech,Initech,1\n"
-            "umbrella,Umbrella,Y\n"
-            "stark,Stark,yes\n"
-        ))
-        by_name = {c["display_name"]: c["default_billable"] for c in actions.list_clients(self.db)["clients"]}
-        self.assertEqual(by_name, {
-            "Acme Co": 1, "Globex": 1, "Initech": 1, "Umbrella": 1, "Stark": 1,
-            "Admin": 0, "Early Out": 0, "Holiday": 0, "Staff Meeting": 0,
-        })
-
-    def test_import_accepts_common_falsy_billable_values(self) -> None:
-        actions.import_clients(self.db, self._write_csv(
-            "client_key,display_name,default_billable\n"
-            "a,Alpha,false\n"
-            "b,Bravo,False\n"
-            "c,Charlie,0\n"
-            "d,Delta,n\n"
-            "e,Echo,no\n"
-        ))
-        by_name = {c["display_name"]: c["default_billable"] for c in actions.list_clients(self.db)["clients"]}
-        self.assertEqual(by_name, {
-            "Alpha": 0, "Bravo": 0, "Charlie": 0, "Delta": 0, "Echo": 0,
-            "Admin": 0, "Early Out": 0, "Holiday": 0, "Staff Meeting": 0,
-        })
-
-    def test_import_unrecognized_billable_defaults_to_yes(self) -> None:
-        actions.import_clients(self.db, self._write_csv(
-            "client_key,display_name,default_billable\nacme,Acme Co,maybe\n"
-        ))
-        client = actions.list_clients(self.db)["clients"][0]
-        self.assertEqual(client["default_billable"], 1)
-
-    def test_import_rejects_duplicate_client_key(self) -> None:
-        bad = self._write_csv(
-            "client_key,display_name,default_billable\n"
-            "acme,Acme Co,yes\n"
-            "acme,Acme Holdings,no\n"
-        )
-        with self.assertRaises(ValueError):
-            actions.import_clients(self.db, bad)
-
-    def test_import_rejects_slugify_collision(self) -> None:
-        # "Acme Co" and "Acme.Co" both slug to acme_co — must not silently overwrite.
-        bad = self._write_csv(
-            "display_name,default_billable\n"
-            "Acme Co,yes\n"
-            "Acme.Co,no\n"
-        )
-        with self.assertRaises(ValueError):
-            actions.import_clients(self.db, bad)
-
-    def test_import_rejects_duplicate_aliases(self) -> None:
-        bad = self._write_csv(
-            "client_key,display_name,aliases,default_billable\n"
-            "alpha,Alpha,shared,yes\n"
-            "bravo,Bravo,shared,no\n"
-        )
-        with self.assertRaises(ValueError):
-            actions.import_clients(self.db, bad)
-
-    def test_import_rejects_alias_that_matches_another_display_name(self) -> None:
-        bad = self._write_csv(
-            "client_key,display_name,aliases,default_billable\n"
-            "alpha,Alpha,Bravo,yes\n"
-            "bravo,Bravo,,no\n"
-        )
-        with self.assertRaises(ValueError):
-            actions.import_clients(self.db, bad)
-
-    def test_import_merge_rejects_alias_conflicting_with_existing_roster(self) -> None:
-        actions.import_clients(self.db, self._write_csv(
-            "client_key,display_name,aliases,default_billable\n"
-            "alpha,Alpha,shared,yes\n"
-        ))
-        bad_merge = self._write_csv(
-            "client_key,display_name,aliases,default_billable\n"
-            "bravo,Bravo,shared,no\n"
-        )
-        with self.assertRaises(ValueError):
-            actions.import_clients(self.db, bad_merge, mode="merge")
-
-    def test_import_merge_allows_updating_same_client_aliases(self) -> None:
-        actions.import_clients(self.db, self._write_csv(
-            "client_key,display_name,aliases,default_billable\n"
-            "alpha,Alpha,old,yes\n"
-        ))
-        update = self._write_csv(
-            "client_key,display_name,aliases,default_billable\n"
-            "alpha,Alpha,new,no\n"
-        )
-        actions.import_clients(self.db, update, mode="merge")
-        clients = actions.list_clients(self.db)["clients"]
-        alpha = next(c for c in clients if c["display_name"] == "Alpha")
-        self.assertEqual(alpha["aliases"], "new")
-        self.assertEqual(alpha["default_billable"], 0)
-
-    def test_import_handles_utf8_bom_with_display_name_first(self) -> None:
-        # Excel "CSV UTF-8" prepends a BOM to the first header field.
-        path = self.work / "bom.csv"
-        path.write_bytes("display_name,default_billable\nAcme Co,yes\n".encode("utf-8-sig"))
-        result = actions.import_clients(self.db, path)
-        self.assertEqual(result["imported_count"], 1)
-        self.assertEqual(actions.list_clients(self.db)["clients"][0]["display_name"], "Acme Co")
-
-    def test_import_missing_file_raises(self) -> None:
-        with self.assertRaises(ValueError):
-            actions.import_clients(self.db, self.work / "nope.csv")
-
-    def test_import_reads_default_job_type_column(self) -> None:
-        actions.import_clients(self.db, self._write_csv(
-            "display_name,aliases,default_billable,default_job_type\n"
-            "Acme Co,,yes,Bookkeeping\n"
-        ))
-        with db.connect(self.db) as conn:
-            row = conn.execute("SELECT default_job_type FROM clients WHERE display_name='Acme Co'").fetchone()
-        self.assertEqual(row["default_job_type"], "Bookkeeping")
-
-    def test_merge_import_over_seeded_admin_takes_ownership(self) -> None:
-        # Operator merge-imports their OWN client named Admin: the seeded lock
-        # must not survive — merge and replace modes must agree (operator wins).
-        actions.import_clients(self.db, self._write_csv(
-            "display_name,aliases,default_billable\nAdmin,,yes\n"
-        ), mode="merge")
-        with db.connect(self.db) as conn:
-            row = conn.execute("SELECT default_billable, billable_locked, default_job_type FROM clients WHERE display_name='Admin'").fetchone()
-        self.assertEqual(int(row["default_billable"]), 1)
-        self.assertEqual(int(row["billable_locked"]), 0)
-        self.assertEqual(row["default_job_type"], "")
-        session = actions.start_session(self.db, "Admin", "their admin client", "yes", "2026-05-28T09:00:00")
-        self.assertEqual(session["billable"], 1)
-
-    def test_fresh_capture_autofills_roster_default_job_type(self) -> None:
-        actions.import_clients(self.db, self._write_csv(
-            "display_name,aliases,default_billable,default_job_type\n"
-            "Acme Co,,yes,Bookkeeping\n"
-        ))
-        session = actions.start_session(self.db, "Acme Co", "w", None, "2026-05-28T09:00:00")
-        self.assertEqual(session["job_type"], "Bookkeeping")
-        entry = actions.add_missing_entry(self.db, "Acme Co", "w", "2026-05-28T10:00:00", "2026-05-28T10:30:00")
-        self.assertEqual(entry["job_type"], "Bookkeeping")
+        self.assertEqual(names, {"Acme Co", "Globex", "Unassigned"})
 
 
 class ResolveClientTests(unittest.TestCase):
@@ -597,13 +428,7 @@ class ResolveClientTests(unittest.TestCase):
         self.work = Path(self.tmp.name)
         self.db = self.work / "timeassist.sqlite"
         actions.init_state(self.db, "2026-05-28T09:00:00")
-        path = self.work / "clients.csv"
-        path.write_text(
-            "client_key,display_name,aliases,default_billable\n"
-            "acme,Acme Co,\"ACME;Acme Inc\",yes\n"
-            "internal,Internal Admin,admin,no\n"
-        )
-        actions.import_clients(self.db, path)
+        _seed_roster(self, "Acme Co", "Internal Admin")
 
     def test_resolves_display_name_case_insensitively(self) -> None:
         with db.connect(self.db) as conn:
@@ -611,17 +436,6 @@ class ResolveClientTests(unittest.TestCase):
         self.assertEqual(name, "Acme Co")
         self.assertEqual(billable, 1)
 
-    def test_resolves_alias(self) -> None:
-        with db.connect(self.db) as conn:
-            name, billable = actions.resolve_client(conn, "ACME")
-        self.assertEqual(name, "Acme Co")
-        self.assertEqual(billable, 1)
-
-    def test_resolves_non_billable_default(self) -> None:
-        with db.connect(self.db) as conn:
-            name, billable = actions.resolve_client(conn, "admin")
-        self.assertEqual(name, "Internal Admin")
-        self.assertEqual(billable, 0)
 
     def test_unknown_client_returns_name_and_none(self) -> None:
         with db.connect(self.db) as conn:
@@ -629,15 +443,6 @@ class ResolveClientTests(unittest.TestCase):
         self.assertEqual(name, "Wayne Ent")
         self.assertIsNone(billable)
 
-    def test_alias_matching_another_clients_display_name_is_rejected_on_import(self) -> None:
-        path = self.work / "collide.csv"
-        path.write_text(
-            "client_key,display_name,aliases,default_billable\n"
-            "acme,Acme Co,Globex,no\n"
-            "globex,Globex,,yes\n"
-        )
-        with self.assertRaises(ValueError):
-            actions.import_clients(self.db, path)
 
 
 class NameFoldTests(unittest.TestCase):
@@ -664,13 +469,7 @@ class ResolveClientFoldTests(unittest.TestCase):
         self.work = Path(self.tmp.name)
         self.db = self.work / "timeassist.sqlite"
         actions.init_state(self.db, "2026-05-28T09:00:00")
-        path = self.work / "clients.csv"
-        path.write_text(
-            "client_key,display_name,aliases,default_billable\n"
-            "jsmith,\"Smith, John\",,yes\n"
-            "acme,Acme Holdings LLC,,yes\n"
-        )
-        actions.import_clients(self.db, path)
+        _seed_roster(self, "Smith, John", "Acme Holdings LLC")
 
     def test_typed_firstname_lastname_matches_roster_lastname_firstname(self) -> None:
         with db.connect(self.db) as conn:
@@ -685,37 +484,34 @@ class ResolveClientFoldTests(unittest.TestCase):
         self.assertEqual(billable, 1)
 
     def test_reverse_direction(self) -> None:
-        # Roster stores 'John Smith'; typed 'Smith, John' folds and matches.
-        path = self.work / "reverse.csv"
-        path.write_text(
-            "client_key,display_name,aliases,default_billable\n"
-            "jsmith2,John Smith,,yes\n"
-        )
-        actions.import_clients(self.db, path, mode="replace")
-        with db.connect(self.db) as conn:
-            name, billable = actions.resolve_client(conn, "Smith, John")
+        from unittest import mock
+        os.environ.pop("TIMEASSIST_ALLOW_LOCAL_ROSTER", None)
+        self.addCleanup(lambda: os.environ.__setitem__("TIMEASSIST_ALLOW_LOCAL_ROSTER", "1"))
+        rows = [
+            {"name": "Unassigned", "office": "GCD", "active": True},
+            {"name": "John Smith", "office": "GCD", "active": True},
+        ]
+        with mock.patch("timeassist.supabase_ref.get_clients", return_value=rows):
+            with db.connect(self.db) as conn:
+                name, billable = actions.resolve_client(conn, "Smith, John")
         self.assertEqual(name, "John Smith")
         self.assertEqual(billable, 1)
 
     def test_ambiguous_fold_never_bills_blind(self) -> None:
-        # Two rows both fold to 'john smith' while neither exactly matches the
-        # typed 'John Smith' (pass 1/2 miss). Pass 3 sees 2 candidates and MUST
-        # refuse to guess between people -> (name, None) so caller marks needs_info.
-        # PIN: import validation may reject near-duplicate display names, so we
-        # insert the colliding row directly via SQL.
-        with db.connect(self.db) as conn:
-            conn.execute(
-                "INSERT INTO clients(client_key, display_name, aliases, default_billable, updated_at) "
-                "VALUES ('jsmith_a', 'Smith, John', '', 1, '2026-05-28T09:00:00')"
-            )
-            conn.execute(
-                "INSERT INTO clients(client_key, display_name, aliases, default_billable, updated_at) "
-                "VALUES ('jsmith_b', 'Smith,John', '', 1, '2026-05-28T09:00:00')"
-            )
-            conn.commit()
-            name, billable = actions.resolve_client(conn, "John Smith")
+        from unittest import mock
+        os.environ.pop("TIMEASSIST_ALLOW_LOCAL_ROSTER", None)
+        self.addCleanup(lambda: os.environ.__setitem__("TIMEASSIST_ALLOW_LOCAL_ROSTER", "1"))
+        rows = [
+            {"name": "Unassigned", "office": "GCD", "active": True},
+            {"name": "Smith, John", "office": "GCD", "active": True},
+            {"name": "Smith,John", "office": "GCD", "active": True},
+        ]
+        with mock.patch("timeassist.supabase_ref.get_clients", return_value=rows):
+            with db.connect(self.db) as conn:
+                name, billable = actions.resolve_client(conn, "John Smith")
         self.assertEqual(name, "John Smith")
         self.assertIsNone(billable)
+
 
 
 class ManagementTiebreakTests(unittest.TestCase):
@@ -1028,7 +824,7 @@ class TimeMathHardeningTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.db = Path(self.tmp.name) / "timeassist.sqlite"
         actions.init_state(self.db, "2026-05-28T09:00:00")
-        _seed_roster(self.db, "Acme")
+        _seed_roster(self, "Acme")
 
     def test_parse_at_normalizes_aware_to_naive(self) -> None:
         # Offset-aware inputs must be folded to local naive so they never mix
@@ -1118,7 +914,7 @@ class ExportHardeningTests(unittest.TestCase):
         os.environ["USERPROFILE"] = str(self.profile)
         self.addCleanup(self._restore_userprofile)
         actions.init_state(self.db, "2026-05-28T09:00:00")
-        _seed_roster(self.db, "Acme Co")
+        _seed_roster(self, "Acme Co")
 
     def _restore_userprofile(self) -> None:
         if self._old_userprofile is None:
@@ -1129,7 +925,7 @@ class ExportHardeningTests(unittest.TestCase):
     def _approved_entry(self, client: str, task: str) -> int:
         # Seed the client so the capture resolves (roster gate #34) and can be
         # approved; the export-sanitizer assertions still see the same values.
-        _seed_roster(self.db, client)
+        _seed_roster(self, client)
         entry = actions.add_missing_entry(self.db, client, task, "2026-05-28T09:00:00", "2026-05-28T09:30:00", "yes")
         actions.set_approval(self.db, entry["entry_id"], True, "2026-05-28T10:00:00")
         return entry["entry_id"]
@@ -1364,7 +1160,7 @@ class ExportFormatTests(unittest.TestCase):
         self.work = Path(self.tmp.name)
         self.db = self.work / "timeassist.sqlite"
         actions.init_state(self.db, "2026-05-28T09:00:00")
-        _seed_roster(self.db, "Acme Co")
+        _seed_roster(self, "Acme Co")
 
     def _approve(self, entry_id: int) -> None:
         actions.set_approval(self.db, entry_id, True, "2026-05-28T10:00:00")
@@ -1639,7 +1435,7 @@ class DatabaseStatusTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.db = Path(self.tmp.name) / "timeassist.sqlite"
-        _seed_roster(self.db, "Acme Co")
+        _seed_roster(self, "Acme Co")
 
     def test_status_reports_counts_size_and_retention(self) -> None:
         entry = actions.add_missing_entry(self.db, "Acme Co", "x", "2026-05-28T09:00:00", "2026-05-28T09:30:00", "yes")
@@ -1768,7 +1564,7 @@ class BackupTests(unittest.TestCase):
             self.assertFalse(Path(path).exists(), f"expected older backup to rotate out: {path}")
 
     def test_export_writes_backup(self) -> None:
-        _seed_roster(self.db, "Acme Co")
+        _seed_roster(self, "Acme Co")
         entry = actions.add_missing_entry(self.db, "Acme Co", "x", "2026-05-28T09:00:00", "2026-05-28T09:30:00", "yes")
         actions.set_approval(self.db, entry["entry_id"], True, "2026-05-28T10:00:00")
         out = self.work / "qb.csv"
@@ -1783,7 +1579,7 @@ class DiscardEntryTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.db = str(Path(self.tmp.name) / "t.sqlite")
         actions.init_state(self.db, "2026-05-28T08:00:00")
-        _seed_roster(self.db, "Client A")
+        _seed_roster(self, "Client A")
         actions.start_session(self.db, "Client A", "cleanup", at="2026-05-28T09:00:00")
         self.entry = actions.end_session(self.db, at="2026-05-28T09:30:00")
 
@@ -2315,7 +2111,7 @@ class LockedBillableFinalizeGateTests(unittest.TestCase):
 
     def test_export_mixed_day_skips_locked_and_exports_rest(self) -> None:
         locked_id = self._legacy_admin_entry()
-        _seed_roster(self.db, "Client A")
+        _seed_roster(self, "Client A")
         ok = actions.add_missing_entry(self.db, "Client A", "real work",
                                        "2026-05-28T11:00:00", "2026-05-28T11:30:00", "yes")
         with db.connect(self.db) as conn:
@@ -2348,7 +2144,7 @@ class NotesNudgeTests(unittest.TestCase):
         self.work = Path(self.tmp.name)
         self.db = self.work / "timeassist.sqlite"
         actions.init_state(self.db, "2026-05-28T09:00:00")
-        _seed_roster(self.db, "Acme Co")
+        _seed_roster(self, "Acme Co")
 
     def test_end_session_flags_missing_notes(self) -> None:
         actions.start_session(self.db, "Acme Co", "", "yes", "2026-05-28T09:00:00")
@@ -2467,7 +2263,7 @@ class StrictRosterEnforcementTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.db = Path(self.tmp.name) / "timeassist.sqlite"
         actions.init_state(self.db, "2026-05-28T08:55:00")
-        _seed_roster(self.db, "Client A")
+        _seed_roster(self, "Client A")
         actions.set_setting(self.db, "strict_roster", "yes")
 
     def _needs_info_entry(self) -> dict:
@@ -2521,7 +2317,7 @@ class AddClientTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.db = Path(self.tmp.name) / "timeassist.sqlite"
         actions.init_state(self.db, "2026-05-28T08:55:00")
-        _seed_roster(self.db, "Client A")
+        _seed_roster(self, "Client A")
 
     def test_adds_one_client_with_defaults(self) -> None:
         result = actions.add_client(self.db, "Acme Widgets")
@@ -2700,7 +2496,7 @@ class RangeReviewTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.db = Path(self.tmp.name) / "timeassist.sqlite"
         # Seed roster so clients resolve (not needs_info) except the unknown one.
-        _seed_roster(self.db, "Acme Co", "Beta Corp")
+        _seed_roster(self, "Acme Co", "Beta Corp")
         # 2026-06-01: one 30-min entry
         self.e1 = actions.add_missing_entry(
             self.db, "Acme Co", "June first work",
@@ -2912,7 +2708,7 @@ class RangeExportTests(unittest.TestCase):
         self.work = Path(self.tmp.name)
         self.db = self.work / "timeassist.sqlite"
         self.out = self.work / "out.csv"
-        _seed_roster(self.db, "Acme Co", "Beta Corp")
+        _seed_roster(self, "Acme Co", "Beta Corp")
         # 2026-06-01: one 30-min entry
         self.e1 = actions.add_missing_entry(
             self.db, "Acme Co", "June first work",

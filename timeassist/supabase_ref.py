@@ -11,6 +11,7 @@ import json
 import os
 import urllib.error
 import urllib.parse
+from pathlib import Path
 from typing import Any
 from urllib.request import Request, urlopen
 
@@ -124,13 +125,25 @@ def _http_error(status: int, detail: str) -> Exception:
     return ValueError(f"Supabase HTTP {status}" + (f": {snippet}" if snippet else ""))
 
 
-def get_clients(environ: dict[str, str] | None = None) -> list[dict[str, Any]]:
-    rows = request_json("GET", "clients", query={"select": "*"}, environ=environ)
+def get_clients(
+    environ: dict[str, str] | None = None,
+    db_path: str | Path | None = None,
+) -> list[dict[str, Any]]:
+    from .supabase_config import clients_table
+
+    table = clients_table(db_path=db_path, environ=environ)
+    rows = request_json("GET", table, query={"select": "*"}, environ=environ)
     return rows if isinstance(rows, list) else []
 
 
-def get_job_codes(environ: dict[str, str] | None = None) -> list[dict[str, Any]]:
-    rows = request_json("GET", "job_codes", query={"select": "*"}, environ=environ)
+def get_job_codes(
+    environ: dict[str, str] | None = None,
+    db_path: str | Path | None = None,
+) -> list[dict[str, Any]]:
+    from .supabase_config import job_codes_table
+
+    table = job_codes_table(db_path=db_path, environ=environ)
+    rows = request_json("GET", table, query={"select": "*"}, environ=environ)
     return rows if isinstance(rows, list) else []
 
 
@@ -143,8 +156,11 @@ def slim_job_code(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def list_job_codes(environ: dict[str, str] | None = None) -> dict[str, Any]:
-    codes = [slim_job_code(row) for row in get_job_codes(environ=environ)]
+def list_job_codes(
+    environ: dict[str, str] | None = None,
+    db_path: str | Path | None = None,
+) -> dict[str, Any]:
+    codes = [slim_job_code(row) for row in get_job_codes(environ=environ, db_path=db_path)]
     codes = [row for row in codes if row["job_code"]]
     return {"job_codes": codes}
 
@@ -171,3 +187,111 @@ def client_display_name(row: dict[str, Any]) -> str:
         if value:
             return value
     return ""
+
+
+def name_fold(name: str) -> str:
+    """Fold 'Lastname, Firstname' to 'firstname lastname' (lower, collapsed spaces)."""
+    s = " ".join(name.lower().split())
+    if "," in s:
+        parts = [p.strip() for p in s.split(",")]
+        if len(parts) == 2 and all(parts):
+            s = f"{parts[1]} {parts[0]}"
+    return s
+
+
+def slim_client(row: dict[str, Any]) -> dict[str, Any]:
+    display = client_display_name(row)
+    office = (row.get("office") or "").strip() or None
+    active = row.get("active")
+    if active is None:
+        active_flag = True
+    elif isinstance(active, bool):
+        active_flag = active
+    else:
+        active_flag = str(active).strip().lower() in {"1", "true", "yes", "t"}
+    return {
+        "display_name": display,
+        "office": office,
+        "active": active_flag,
+        "client_key": (row.get("qbo_customer_id") or row.get("client_key") or "").strip() or None,
+        "default_billable": 1,
+        "billable_locked": 0,
+        "default_job_type": "",
+        "aliases": "",
+    }
+
+
+def _wrap_client_fetch(exc: BaseException) -> ValueError:
+    msg = str(exc).strip() or exc.__class__.__name__
+    if msg.lower().startswith("set supabase_url") or "supabase" in msg.lower():
+        return ValueError(f"client list unavailable: {msg}")
+    return ValueError(f"client list unavailable: cannot reach Supabase ({msg})")
+
+
+def list_clients_remote(
+    environ: dict[str, str] | None = None,
+    office: str | None = None,
+    db_path: str | Path | None = None,
+) -> list[dict[str, Any]]:
+    """Live read-only GET of Supabase clients. Fail closed on network/auth errors."""
+    from .supabase_config import unassigned_client_name
+
+    try:
+        rows = get_clients(environ=environ, db_path=db_path)
+    except ValueError as exc:
+        raise _wrap_client_fetch(exc) from None
+    unassigned_label = unassigned_client_name(db_path=db_path, environ=environ)
+    office_norm = (office or "").strip().upper() or None
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        slim = slim_client(row)
+        if not slim["display_name"]:
+            continue
+        if not slim["active"]:
+            continue
+        row_office = (slim["office"] or "").strip().upper() or None
+        if office_norm:
+            # Keep office match; always keep Unassigned for that office (or any Unassigned).
+            is_unassigned = slim["display_name"].casefold() == unassigned_label.casefold()
+            if row_office and row_office != office_norm and not is_unassigned:
+                continue
+            if is_unassigned and row_office and row_office != office_norm:
+                continue
+        out.append(slim)
+    out.sort(key=lambda item: item["display_name"].casefold())
+    return out
+
+
+def resolve_client_remote(
+    name: str,
+    *,
+    environ: dict[str, str] | None = None,
+    office: str | None = None,
+    db_path: str | Path | None = None,
+) -> str | None:
+    """Return canonical display_name from live Supabase list, or None if unmatched."""
+    target = name.strip()
+    if not target:
+        return None
+    clients = list_clients_remote(environ=environ, office=office, db_path=db_path)
+    lowered = target.casefold()
+    for row in clients:
+        if row["display_name"].casefold() == lowered:
+            return row["display_name"]
+    folded_target = name_fold(target)
+    fold_matches = [row for row in clients if name_fold(row["display_name"]) == folded_target]
+    if len(fold_matches) == 1:
+        return fold_matches[0]["display_name"]
+    return None
+
+
+def roster_row_from_display(display_name: str) -> dict[str, Any]:
+    """Stand-in for the old SQLite client row (billable defaults for live roster)."""
+    return {
+        "display_name": display_name,
+        "default_billable": 1,
+        "billable_locked": 0,
+        "default_job_type": "",
+        "aliases": "",
+        "client_key": None,
+    }

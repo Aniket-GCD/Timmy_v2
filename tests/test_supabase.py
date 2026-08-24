@@ -13,7 +13,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import os
 from timeassist import actions
+from tests.remote_roster import install_live_clients
+
+os.environ.setdefault("TIMEASSIST_ALLOW_LOCAL_ROSTER", "1")
 from timeassist import mcp_server
 from timeassist import pay_period
 from timeassist import reception_email_draft
@@ -226,7 +230,12 @@ class SubmitGateTests(unittest.TestCase):
         self.assertEqual(calls.count("GET"), 1)
 
     def test_unassigned_seed_and_submit_payload(self) -> None:
-        clients = actions.list_clients(self.db)["clients"]
+        install_live_clients(self, "Acme Co")
+        prev = os.environ.pop("TIMEASSIST_ALLOW_LOCAL_ROSTER", None)
+        self.addCleanup(
+            lambda: os.environ.__setitem__("TIMEASSIST_ALLOW_LOCAL_ROSTER", prev or "1")
+        )
+        clients = actions.list_clients(self.db, environ=ENV)["clients"]
         self.assertTrue(any(c["display_name"] == "Unassigned" for c in clients))
         actions.set_setting(self.db, "staff_name", "Jane Doe")
         actions.set_setting(self.db, "office", "GCD")
@@ -239,6 +248,7 @@ class SubmitGateTests(unittest.TestCase):
             "yes",
             job_type="Email",
         )
+        self.assertEqual(entry.get("capture_status") or "resolved", "resolved")
         actions.set_approval(self.db, entry["entry_id"], True, "2026-08-12T10:05:00")
         seen: list[dict] = []
 
@@ -367,3 +377,68 @@ class SubmitGateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LiveClientRosterTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.prev = os.environ.pop("TIMEASSIST_ALLOW_LOCAL_ROSTER", None)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.db = Path(self.tmp.name) / "timeassist.sqlite"
+        actions.init_state(self.db, "2026-05-28T09:00:00")
+        actions.set_setting(self.db, "office", "GCD")
+
+    def tearDown(self) -> None:
+        if self.prev is not None:
+            os.environ["TIMEASSIST_ALLOW_LOCAL_ROSTER"] = self.prev
+        else:
+            os.environ["TIMEASSIST_ALLOW_LOCAL_ROSTER"] = "1"
+
+    def test_list_clients_remote_filters_office(self) -> None:
+        rows = [
+            {"name": "Unassigned", "office": "GCD", "active": True},
+            {"name": "Acme Co", "office": "GCD", "active": True},
+            {"name": "Other Office LLC", "office": "MH", "active": True},
+            {"name": "Dead Co", "office": "GCD", "active": False},
+        ]
+        with patch("timeassist.supabase_ref.get_clients", return_value=rows):
+            listed = actions.list_clients(self.db, environ=ENV)["clients"]
+        names = {c["display_name"] for c in listed}
+        self.assertEqual(names, {"Acme Co", "Unassigned"})
+
+    def test_resolve_exact_and_fold(self) -> None:
+        from timeassist import db as tdb
+        install_live_clients(self, "Smith, John")
+        with tdb.connect(self.db) as conn:
+            name, billable = actions.resolve_client(conn, "john smith", environ=ENV)
+        self.assertEqual(name, "Smith, John")
+        self.assertEqual(billable, 1)
+
+    def test_resolve_miss_returns_none_billable(self) -> None:
+        from timeassist import db as tdb
+        install_live_clients(self, "Acme Co")
+        with tdb.connect(self.db) as conn:
+            name, billable = actions.resolve_client(conn, "Nobody LLC", environ=ENV)
+        self.assertEqual(name, "Nobody LLC")
+        self.assertIsNone(billable)
+
+    def test_fail_closed_when_get_clients_errors(self) -> None:
+        with patch("timeassist.supabase_ref.get_clients", side_effect=ValueError("network down")):
+            with self.assertRaises(ValueError) as ctx:
+                actions.list_clients(self.db, environ=ENV)
+        self.assertIn("client list unavailable", str(ctx.exception))
+
+    def test_import_disabled_without_escape_hatch(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            actions.import_clients(self.db, Path("x.csv"))
+        self.assertIn("Supabase", str(ctx.exception))
+
+    def test_capture_uses_live_hit(self) -> None:
+        install_live_clients(self, "Acme Co")
+        entry = actions.add_missing_entry(
+            self.db, "acme co", "work",
+            "2026-05-28T09:00:00", "2026-05-28T09:30:00", "yes",
+        )
+        self.assertEqual(entry["client_name"], "Acme Co")
+        self.assertEqual(entry.get("capture_status") or "resolved", "resolved")
+

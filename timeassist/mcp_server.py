@@ -274,20 +274,20 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "import_clients",
-        "description": "Import a client roster CSV (client_key, display_name, aliases, default_billable). mode 'replace' (default, requires confirm_replace=true) reloads the roster; 'merge' upserts by client_key.",
+        "description": "DISABLED. Firm clients live only in Supabase (QuickBooks sync). Always errors — use list_clients (live) or Unassigned + draft_reception_email for new clients.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Path to the clients CSV file under the TimeAssist data directory."},
-                "mode": {"type": "string", "enum": ["replace", "merge"], "default": "replace", "description": "replace (default) reloads the whole roster; merge upserts by client_key."},
-                "confirm_replace": {"type": "boolean", "description": "Required true when mode is replace because it clears the existing roster."},
+                "path": {"type": "string", "description": "Ignored — tool is disabled."},
+                "mode": {"type": "string", "enum": ["replace", "merge"], "default": "replace"},
+                "confirm_replace": {"type": "boolean"},
             },
             "required": ["path"],
         },
     },
     {
         "name": "add_client",
-        "description": "Add ONE client to the LOCAL roster only. Never use this to create a QuickBooks/Supabase client — for new firm clients use Unassigned + draft_reception_email. Fails if the client already exists.",
+        "description": "DISABLED. Firm clients live only in Supabase. Always errors — use Unassigned + draft_reception_email for new QuickBooks clients.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -303,7 +303,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "list_clients",
-        "description": "List the local client roster (display name, aliases, billable default). Refresh from Supabase with refresh_clients.",
+        "description": "Live read-only GET of clients from Supabase (single source of truth). Filtered by configured office when set. Requires network + SUPABASE_URL/KEY.",
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
@@ -313,7 +313,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "refresh_clients",
-        "description": "GET clients from Supabase and merge into the local SQLite clients table. Does not rename that table.",
+        "description": "DISABLED. list_clients already queries Supabase live — no local cache to refresh. Always errors.",
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
@@ -614,7 +614,7 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
     if name == "list_job_codes":
         from .supabase_ref import list_job_codes
 
-        return list_job_codes()
+        return list_job_codes(db_path=db_path)
     if name == "refresh_clients":
         return actions.refresh_clients(db_path)
     if name == "submit":

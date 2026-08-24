@@ -18,6 +18,9 @@ import timeassist
 from timeassist import cli
 from timeassist import mcp_server
 
+# Legacy CSV seeding for path/security tests; production roster is live Supabase.
+os.environ.setdefault("TIMEASSIST_ALLOW_LOCAL_ROSTER", "1")
+
 
 class PluginMcpConfigTests(unittest.TestCase):
     def test_release_version_surfaces_match_manifest_semver(self) -> None:
@@ -58,7 +61,9 @@ class PluginMcpConfigTests(unittest.TestCase):
 
         for required_text in [
             "review_token",
-            "confirm_replace",
+            "list_clients",
+            "Supabase",
+            "Unassigned",
             "confirm=true",
             "run `review` first",
             "paths must stay under `${CLAUDE_PLUGIN_DATA}`",
@@ -72,8 +77,8 @@ class PluginMcpConfigTests(unittest.TestCase):
             "Timmy",
             "Never block or refuse approval over missing notes",
             "Surface `needs_info` before approval",
-            "must match the roster",
-            "Administrative clients",
+            "must match the",
+            "administrative",
             "prefer the non-management near-twin",
             "skipped_locked_count",
             # free-form rounding increments (any 1-60 minutes)

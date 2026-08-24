@@ -1,0 +1,8 @@
+{
+  "tables": {
+    "time_entries": "time_entries",
+    "clients": "clients",
+    "job_codes": "job_codes"
+  },
+  "unassigned_client_name": "Unassigned"
+}
