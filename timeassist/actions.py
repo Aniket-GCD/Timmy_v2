@@ -385,19 +385,17 @@ def validate_client_label_uniqueness(rows: list[tuple[str, str, str]]) -> None:
 LOCAL_ROSTER_DISABLED = (
     "Firm clients live only in Supabase (synced from QuickBooks). "
     "Local CSV import / add_client / refresh_clients are disabled. "
-    "Use list_clients (live) to match names; new clients use Unassigned + draft_reception_email."
+    "Matching is inside add_missing/start/switch against live Supabase; "
+    "new clients use Unassigned + draft_reception_email."
 )
 
 
 
 def _local_roster_allowed() -> bool:
-    """Test/demo escape hatch only when Supabase credentials are absent.
+    """Test/demo only: import_clients / add_client into SQLite.
 
-    If SUPABASE_URL + key are set (pilot plugin MCP always has them), always use
-    live Supabase — never the SQLite clients table — even if
-    TIMEASSIST_ALLOW_LOCAL_ROSTER=1. That table may still hold a stale 6k-row
-    CSV import from earlier pilots; dumping it burns tokens and misses live names
-    like ``0969 Ocean View Road``.
+    Never used for list_clients or resolve — those are Supabase-only.
+    Blocked when SUPABASE_URL+key are set (pilot MCP always has them).
     """
     import os
     if os.environ.get("TIMEASSIST_ALLOW_LOCAL_ROSTER") != "1":
@@ -413,16 +411,23 @@ def _local_roster_allowed() -> bool:
     return True
 
 
-_MAX_LIST_CLIENTS = 80
+def _supabase_environ(
+    environ: dict[str, str] | None = None,
+) -> dict[str, str] | None:
+    """Return an env mapping that has Supabase credentials, or None."""
+    import os
+    from .supabase_ref import credentials_from_env
 
-
-def _cap_listed_clients(clients: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str | None]:
-    if len(clients) <= _MAX_LIST_CLIENTS:
-        return clients, None
-    return (
-        clients[:_MAX_LIST_CLIENTS],
-        f"truncated to {_MAX_LIST_CLIENTS} of {len(clients)} names — pass a tighter query; never dump the full roster",
-    )
+    candidates: list[dict[str, str] | None] = [environ, dict(os.environ)]
+    for env in candidates:
+        if not env:
+            continue
+        try:
+            credentials_from_env(env)
+            return env
+        except ValueError:
+            continue
+    return None
 
 
 def import_clients(db_path: str | Path, csv_path: str | Path, mode: str = "replace", at: str | None = None) -> dict[str, Any]:
@@ -637,7 +642,23 @@ def _resolve_client_local(conn, name: str) -> tuple[str, int | None]:
 
 
 def resolve_client_row(conn, name: str, *, environ: dict[str, str] | None = None, db_path: str | Path | None = None):
-    """Live Supabase match, or local SQLite when TIMEASSIST_ALLOW_LOCAL_ROSTER=1 (tests)."""
+    """Match spoken name against live Supabase clients only.
+
+    Never reads the local SQLite ``clients`` table (stale CSV imports). Test
+    suites without Supabase credentials may set TIMEASSIST_ALLOW_LOCAL_ROSTER=1
+    to use SQLite; the pilot MCP always has Supabase env so that path is dead.
+    """
+    live_env = _supabase_environ(environ)
+    if live_env is not None:
+        from .supabase_ref import resolve_client_remote, roster_row_from_display
+        office = get_setting(conn, "office")
+        resolved_db = db_path or _sqlite_file_from_conn(conn)
+        display = resolve_client_remote(
+            name, environ=live_env, office=office or None, db_path=resolved_db,
+        )
+        if display is None:
+            return None
+        return roster_row_from_display(display)
     if _local_roster_allowed():
         return _resolve_client_row_local(conn, name)
     from .supabase_ref import resolve_client_remote, roster_row_from_display
@@ -663,9 +684,9 @@ def client_confirm_gate(
 
     Exact / comma-fold hits resolve silently. Soft unique hits and total misses
     return ``needs_client_confirm`` so Timmy asks before writing time.
-    Local-roster test mode skips the gate.
     """
-    if _local_roster_allowed():
+    live_env = _supabase_environ(environ)
+    if live_env is None and _local_roster_allowed():
         return None
     if confirm_client:
         return None
@@ -675,13 +696,13 @@ def client_confirm_gate(
     office = get_setting(conn, "office")
     resolved_db = db_path or _sqlite_file_from_conn(conn)
     classified = classify_client_remote(
-        client, environ=environ, office=office or None, db_path=resolved_db,
+        client, environ=live_env, office=office or None, db_path=resolved_db,
     )
     spoken = classified["spoken"] or client.strip()
     kind = classified["kind"]
     if kind in {"exact", "fold"}:
         return None
-    unassigned = unassigned_client_name(db_path=resolved_db, environ=environ)
+    unassigned = unassigned_client_name(db_path=resolved_db, environ=live_env)
     if spoken.casefold() == unassigned.casefold():
         return None
     if kind == "soft":
@@ -751,72 +772,48 @@ def list_clients(
     *,
     confirm_full_list: bool = False,
 ) -> dict[str, Any]:
-    """Live GET of Supabase clients (or local SQLite when test escape hatch is on).
+    """Live GET of Supabase clients only — never reads the local SQLite clients table.
 
-    Empty ``query`` without ``confirm_full_list`` returns no names — only a count
-    + message — so the model cannot dump the roster and eye-search / invent hits.
+    Empty ``query`` without ``confirm_full_list`` returns no names (count + message).
     """
     ensure_initialized(db_path)
+    from .supabase_ref import list_clients_remote
+
+    live_env = _supabase_environ(environ)
+    if live_env is None and not _local_roster_allowed():
+        # Force the credentials error from the live client.
+        live_env = environ
+    elif live_env is None and _local_roster_allowed():
+        # Tests without Supabase: still do not dump SQLite via this API.
+        raise ValueError(
+            "list_clients is Supabase-only. Set SUPABASE_URL/SUPABASE_KEY, or mock "
+            "timeassist.supabase_ref.get_clients in tests (install_live_clients)."
+        )
+
     q = (query or "").strip()
     want_full = bool(confirm_full_list)
+    with connect(db_path) as conn:
+        office = get_setting(conn, "office")
     if not q and not want_full:
-        # Still hit the live list for an honest count, but withhold names.
-        if _local_roster_allowed():
-            with connect(db_path) as conn:
-                count = int(conn.execute("SELECT COUNT(*) FROM clients").fetchone()[0])
-        else:
-            from .supabase_ref import list_clients_remote
-            with connect(db_path) as conn:
-                office = get_setting(conn, "office")
-            count = len(list_clients_remote(environ=environ, office=office or None, db_path=db_path))
+        count = len(list_clients_remote(environ=live_env, office=office or None, db_path=db_path))
         return {
             "clients": [],
             "client_count": count,
             "message": (
                 "Pass query with the spoken client name (required). "
-                "Do not dump the full list to search by eye. "
-                "Prefer start/add_missing — soft matches return needs_client_confirm "
+                "Do not dump the full list. Prefer add_missing/start/switch — "
+                "soft matches return needs_client_confirm "
                 "(e.g. Ocean View Road -> ask about 0969 Ocean View Road). "
-                "Full list only when the operator asked for every name and you pass confirm_full_list=true."
+                "Full list only with confirm_full_list=true when the operator asked."
             ),
         }
-    if _local_roster_allowed():
-        with connect(db_path) as conn:
-            clients = [row_to_dict(r) for r in conn.execute("SELECT * FROM clients ORDER BY display_name").fetchall()]
-        if q:
-            from .supabase_ref import name_fold, _match_tokens
-
-            tokens = _match_tokens(q)
-            needle = name_fold(q)
-            filtered = []
-            for client in clients:
-                display = client.get("display_name") or ""
-                folded = name_fold(display)
-                if needle and needle in folded:
-                    filtered.append(client)
-                    continue
-                if tokens and all(tok in set(_match_tokens(display)) for tok in tokens):
-                    filtered.append(client)
-            clients = filtered
-        clients, note = _cap_listed_clients(clients)
-        out: dict[str, Any] = {"clients": clients, "client_count": len(clients)}
-        if note:
-            out["message"] = note
-        return out
-    from .supabase_ref import list_clients_remote
-    with connect(db_path) as conn:
-        office = get_setting(conn, "office")
     clients = list_clients_remote(
-        environ=environ,
+        environ=live_env,
         office=office or None,
         db_path=db_path,
         query=None if want_full and not q else q,
     )
-    clients, note = _cap_listed_clients(clients)
-    out = {"clients": clients, "client_count": len(clients)}
-    if note:
-        out["message"] = note
-    return out
+    return {"clients": clients, "client_count": len(clients)}
 
 
 def apply_client_policy(

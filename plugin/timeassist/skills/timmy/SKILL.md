@@ -36,9 +36,9 @@ yourself, and never record anything in prose  -  every change goes through a too
 | Re-round a day's drafts | `reround` | `confirm=true` when setting `rule` |
 | Import client roster | `import_clients` | **Disabled**  -  clients live in Supabase |
 | Add one new roster client | `add_client` | **Disabled**  -  use Unassigned + draft |
-| List client roster | `list_clients` | Live Supabase GET (office-filtered) |
+| List client roster | `list_clients` | Live Supabase only — `confirm_full_list=true` for full list, or `query` to search |
 | List Job Codes + accounts | `list_job_codes` |  -  |
-| Refresh roster from Supabase | `refresh_clients` | **Disabled**  -  list_clients is already live |
+| Refresh roster from Supabase | `refresh_clients` | **Disabled** |
 | Submit one approved entry | `submit` | `entry_id` (only after local approve; skips if already submitted) |
 | Patch a submitted entry | `update_submitted` | `entry_id` (after `edit` on a submitted row; never a second INSERT) |
 | Draft Reception email | `draft_reception_email` | `spoken_client_name` (text only  -  never sends) |
@@ -66,12 +66,11 @@ more before approval. Never block or refuse approval over missing notes.
 ## Workflow
 
 1. Map the intent to one tool. Ask only for genuinely missing required fields  - 
-   **one short question at a time**. Fetch names from `list_clients` (live
-   Supabase) and Job Codes from `list_job_codes`. Do not invent clients, Job
-   Codes, accounts, or times. Do not use `import_clients`, `add_client`, or
-   `refresh_clients`  -  they are disabled; clients live only in Supabase.
-   Do **not** call `list_clients` to resolve a spoken name — use `add_missing` /
-   `start` / `switch` and handle `needs_client_confirm`.
+   **one short question at a time**. Job Codes from `list_job_codes`. Do not invent
+   clients, Job Codes, accounts, or times. Do not use `import_clients`, `add_client`,
+   or `refresh_clients`. To show the roster, `list_clients` (Supabase only:
+   `confirm_full_list=true` or `query`). Capture matching is live inside
+   `add_missing` / `start` / `switch`.
 2. **Capture now, clarify later:** on a client change, **switch immediately**.
    If the result is `needs_client_confirm`, ask using the tool's `ask` text before
    retrying. If a written result carries `needs_info`, fix labels with
@@ -81,11 +80,16 @@ more before approval. Never block or refuse approval over missing notes.
    `add_missing`. Never invent clock times.
 4. Report the exact tool result  -  entry id, `minutes`, `status`. Never
    pre-calculate.
-5. Structured preview, then yes, then local approve, then submit:
+5. Structured preview, then yes, then local approve, then **submit on the same
+   timeassist MCP** (tool name `submit` — not a separate server, not CSV export):
    run `review`, show Client / Job Code / Notes / start / end / hours / billable,
    wait for an explicit yes, `approve` with the current `review_token`, then
-   `submit` with that `entry_id`. **Never submit without approve.** Re-run
-   `review` whenever entries change or the server reports a stale token.
+   immediately `submit` with that `entry_id`. If deferred tools hide `submit`,
+   ToolSearch/select `submit` on the timeassist plugin first, then call it.
+   **Never submit without approve.** **Never ask the operator for SUPABASE_URL /
+   SUPABASE_KEY** — they are already on the MCP env. Job Codes come from
+   `list_job_codes` on this same MCP (not a separate Supabase connector).
+   Re-run `review` whenever entries change or the server reports a stale token.
    Duplicate rows (same staff_name, office, entry_date, start_time, end_time)
    are rejected  -  surface that error; 9-10 and 10-11 for the same client are
    allowed. Already-submitted rows skip on `submit`  -  use `edit` +
@@ -106,9 +110,9 @@ more before approval. Never block or refuse approval over missing notes.
 ## New / unmatched clients (confirm before write)
 
 1. Call `add_missing` / `start` / `switch` with the **spoken** client name (and times /
-   Job Code when known). **Do not call `list_clients` to search for a match** — that is
-   how huge stale local dumps happen. Matching is inside capture tools against live
-   Supabase.
+   Job Code when known). Matching runs live against Supabase inside those tools.
+   Use `list_clients` only when the operator asks to see/search the roster
+   (`confirm_full_list=true` or `query=…`) — never invent names from memory.
 2. If the tool returns `needs_client_confirm=true`, **relay the `ask` text verbatim**
    (or nearly so). Example soft match:
    > Did you mean "0969 Ocean View Road"? If yes, I will record it under that roster
@@ -148,12 +152,10 @@ choice  -  never silent.
 
 ## Client roster (Supabase only)
 
-**Single source of truth:** Supabase `clients` (synced from QuickBooks). Call
-`list_clients` with `query` set to the spoken name. Empty query returns **no
-names** (only a count + message). Full list only with `confirm_full_list=true`
-when the operator asked for every name. Live read-only (filtered by configured
-office). There is no local CSV roster and no `refresh_clients`.
-
+**Single source of truth:** Supabase `clients` (synced from QuickBooks).
+`list_clients` is a live read-only Supabase GET (never local CSV/SQLite).
+Call `add_missing` / `start` / `switch` with the spoken name; the engine queries
+Supabase live and returns `needs_client_confirm` for soft/unique hits.
 The engine matches exact display names (case-insensitive) and a simple
 comma-swap fold (e.g. `John Smith` <-> `Smith, John`) **immediately**. A
 **unique soft token match** (e.g. `Ocean View Road` -> `0969 Ocean View Road`)
@@ -169,7 +171,7 @@ refuses a name not on Supabase  -  relay its message, then for a **new firm
 client** follow the Unassigned flow above.
 
 **Management shell:** never self-select a roster name containing "management" the
-operator didn't name. When resolving `needs_info` or picking from `list_clients`,
+operator didn't name. When resolving `needs_info` or a soft-match confirm,
 prefer the non-management near-twin; when unsure, ask.
 
 ## Recovery (interrupted sessions)

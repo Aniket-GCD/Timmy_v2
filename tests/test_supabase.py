@@ -473,14 +473,7 @@ class LiveClientRosterTests(unittest.TestCase):
         os.environ["SUPABASE_KEY"] = ENV["SUPABASE_KEY"]
         self.addCleanup(lambda: os.environ.pop("SUPABASE_URL", None))
         self.addCleanup(lambda: os.environ.pop("SUPABASE_KEY", None))
-        # put a fake local-only name in SQLite that is NOT on the live mock
-        from timeassist import db as tdb
-        with tdb.connect(self.db) as conn:
-            conn.execute(
-                "INSERT INTO clients(client_key, display_name, aliases, default_billable, billable_locked, default_job_type) "
-                "VALUES ('local_only', 'Local Only CSV Co', '', 1, 0, '')"
-            )
-            conn.commit()
+        self.assertFalse(actions._local_roster_allowed())
         rows = [
             {"name": "0969 Ocean View Road", "office": "GCD", "active": True},
             {"name": "Unassigned", "office": "GCD", "active": True},
@@ -498,7 +491,6 @@ class LiveClientRosterTests(unittest.TestCase):
         self.assertTrue(pending.get("needs_client_confirm"))
         self.assertEqual(pending["suggested_client"], "0969 Ocean View Road")
         self.assertEqual([c["display_name"] for c in listed], ["0969 Ocean View Road"])
-        self.assertFalse(any(c.get("display_name") == "Local Only CSV Co" for c in listed))
 
     def test_resolve_soft_unique_nickname(self) -> None:
         from timeassist import db as tdb

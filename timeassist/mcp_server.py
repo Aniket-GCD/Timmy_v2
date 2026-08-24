@@ -181,6 +181,66 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "submit",
+        "description": (
+            "POST one locally approved time entry to Supabase (time_entries table). "
+            "Required after approve — same timeassist MCP, not a separate submit server. "
+            "Refuses drafts and missing staff_name/office. Already-submitted rows skip "
+            "(use update_submitted to PATCH)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "entry_id": {"type": "integer"},
+                "at": {"type": "string", "description": "Optional ISO timestamp."},
+            },
+            "required": ["entry_id"],
+        },
+    },
+    {
+        "name": "update_submitted",
+        "description": "PATCH the existing Supabase time_entries row for a locally submitted entry (by supabase_id). Pay-period/superuser gate applies. Never inserts a second row.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "entry_id": {"type": "integer"},
+                "at": {"type": "string", "description": "Optional ISO timestamp (also used for pay-window check)."},
+            },
+            "required": ["entry_id"],
+        },
+    },
+    {
+        "name": "list_clients",
+        "description": (
+            "Live read-only GET of firm clients from Supabase only (never local CSV/SQLite). "
+            "When the operator asks to list all clients, pass confirm_full_list=true. "
+            "To search, pass query with part of the spoken name. "
+            "For capturing time, prefer add_missing/start/switch (soft match + needs_client_confirm)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Optional filter on display name (token soft-match). Omit with confirm_full_list for the full Supabase roster.",
+                },
+                "confirm_full_list": {
+                    "type": "boolean",
+                    "description": "Required true to return every active Supabase client when the operator asked for the full list.",
+                },
+            },
+        },
+    },
+    {
+        "name": "list_job_codes",
+        "description": (
+            "GET job codes and accounts from Supabase on this same timeassist MCP. "
+            "Use these Job Code values; copy account from the matching row, never type account. "
+            "Do not ask the operator for Supabase URL/API keys."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "unapprove",
         "description": "Return an approved entry to draft. Cannot unapprove an already-exported entry.",
         "inputSchema": {
@@ -296,7 +356,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "import_clients",
-        "description": "DISABLED. Firm clients live only in Supabase (QuickBooks sync). Always errors — use list_clients (live) or Unassigned + draft_reception_email for new clients.",
+        "description": "DISABLED. Firm clients live only in Supabase (QuickBooks sync). Always errors — use add_missing/start (live soft-match) or Unassigned + draft_reception_email.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -324,60 +384,9 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
-        "name": "list_clients",
-        "description": (
-            "Do NOT use this to match a spoken client for time entry — call add_missing/start/switch instead "
-            "(they soft-match live Supabase and return needs_client_confirm). "
-            "If you must look up a name, ALWAYS pass query (e.g. \"Ocean View Road\"). "
-            "Empty query returns NO names. Never dump the full roster. Live Supabase only when credentials are set."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Spoken name or fragments. Required for any name list (e.g. Ocean View Road).",
-                },
-                "confirm_full_list": {
-                    "type": "boolean",
-                    "description": "True only when the operator asked for the entire client list.",
-                },
-            },
-        },
-    },
-    {
-        "name": "list_job_codes",
-        "description": "GET job codes and accounts from Supabase. Use these Job Code values; copy account from the matching row, never type account.",
-        "inputSchema": {"type": "object", "properties": {}},
-    },
-    {
         "name": "refresh_clients",
-        "description": "DISABLED. list_clients already queries Supabase live — no local cache to refresh. Always errors.",
+        "description": "DISABLED. Client matching is live on add_missing/start/switch — no local cache to refresh. Always errors.",
         "inputSchema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "submit",
-        "description": "POST one locally approved time entry to Supabase. Refuses drafts and missing staff_name/office. Never submit without approve. Already-submitted rows are skipped (use update_submitted to PATCH).",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "entry_id": {"type": "integer"},
-                "at": {"type": "string", "description": "Optional ISO timestamp."},
-            },
-            "required": ["entry_id"],
-        },
-    },
-    {
-        "name": "update_submitted",
-        "description": "PATCH the existing Supabase time_entries row for a locally submitted entry (by supabase_id). Pay-period/superuser gate applies. Never inserts a second row.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "entry_id": {"type": "integer"},
-                "at": {"type": "string", "description": "Optional ISO timestamp (also used for pay-window check)."},
-            },
-            "required": ["entry_id"],
-        },
     },
     {
         "name": "draft_reception_email",

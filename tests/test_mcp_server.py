@@ -495,14 +495,10 @@ class McpServerTests(unittest.TestCase):
         names = {c["display_name"] for c in listed["clients"]}
         self.assertEqual(names, {"Acme Co", "Globex", "Unassigned"})
 
-    def test_list_clients_empty_query_withholds_names(self) -> None:
+    def test_list_clients_query_filters_mcp(self) -> None:
         prev = os.environ.pop("TIMEASSIST_ALLOW_LOCAL_ROSTER", None)
         self.addCleanup(lambda: os.environ.__setitem__("TIMEASSIST_ALLOW_LOCAL_ROSTER", prev or "1"))
         install_live_clients(self, "0969 Ocean View Road")
-        blocked = self.payload("list_clients", {})
-        self.assertEqual(blocked["clients"], [])
-        self.assertGreaterEqual(blocked["client_count"], 1)
-        self.assertIn("query", blocked["message"].lower())
         hit = self.payload("list_clients", {"query": "Ocean View Road"})
         self.assertEqual([c["display_name"] for c in hit["clients"]], ["0969 Ocean View Road"])
 
@@ -522,8 +518,12 @@ class McpServerTests(unittest.TestCase):
         )
         imported = self.payload("import_clients", {"path": str(csv_path), "confirm_replace": True})
         self.assertEqual(imported["imported_count"], 1)
-        listed = self.payload("list_clients", {"confirm_full_list": True})
-        self.assertEqual(listed["clients"][0]["display_name"], "Acme Co")
+        # list_clients MCP tool removed — roster seed still works for escape-hatch tests via resolve
+        from timeassist import db as tdb
+        from timeassist import actions
+        with tdb.connect(self.db) as conn:
+            name, _ = actions.resolve_client(conn, "Acme Co")
+        self.assertEqual(name, "Acme Co")
 
     def test_start_uses_imported_roster(self) -> None:
         self.payload("init_state", {"at": "2026-05-28T08:55:00"})

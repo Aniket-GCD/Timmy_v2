@@ -2327,7 +2327,8 @@ class AddClientTests(unittest.TestCase):
         self.assertEqual(client["default_billable"], 1)
         self.assertEqual(client["default_job_type"], "")
         self.assertEqual(client["billable_locked"], 0)
-        keys = {c["client_key"] for c in actions.list_clients(self.db, confirm_full_list=True)["clients"]}
+        with db.connect(self.db) as conn:
+            keys = {r["client_key"] for r in conn.execute("SELECT client_key FROM clients")}
         self.assertIn("acme_widgets", keys)
         self.assertEqual(result["client_count"], len(keys))
 
