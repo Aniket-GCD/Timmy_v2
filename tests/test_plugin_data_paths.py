@@ -55,6 +55,9 @@ class PluginMcpConfigTests(unittest.TestCase):
         self.assertEqual(server["command"], "${CLAUDE_PLUGIN_ROOT}/bin/timeassist.exe")
         self.assertEqual(server["args"], ["--db", "${CLAUDE_PLUGIN_DATA}/timeassist.sqlite", "mcp"])
         self.assertEqual(server["cwd"], "${CLAUDE_PLUGIN_DATA}")
+        env = server.get("env") or {}
+        self.assertTrue((env.get("SUPABASE_URL") or "").strip())
+        self.assertTrue((env.get("SUPABASE_KEY") or "").strip())
 
     def test_plugin_skill_documents_server_side_gates(self) -> None:
         skill = (ROOT / "plugin" / "timeassist" / "skills" / "billable-time-assistant" / "SKILL.md").read_text()

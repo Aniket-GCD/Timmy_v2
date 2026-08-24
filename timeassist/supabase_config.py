@@ -1,9 +1,11 @@
 """Supabase table-name config (stdlib JSON). Secrets stay in the environment.
 
-Load order for file content:
+Load order for file content (first found wins):
 1. TIMEASSIST_SUPABASE_CONFIG (path to JSON)
 2. <dir of --db>/supabase.json
-3. Built-in defaults (production table names)
+3. Plugin-shipped config next to the exe: ../config/supabase.json
+   (plugin zip layout: timeassist/bin/timeassist.exe + timeassist/config/supabase.json)
+4. Built-in defaults (same as shipped config/supabase.json)
 
 Env overrides (win over file) for individual tables:
   TIMEASSIST_SUPABASE_TABLE_TIME_ENTRIES
@@ -16,14 +18,16 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
 _TABLE_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
+# Keep in sync with config/supabase.json (pilot: write sandbox table).
 DEFAULT_SUPABASE_CONFIG: dict[str, Any] = {
     "tables": {
-        "time_entries": "time_entries",
+        "time_entries": "time_entries_timmy_v2",
         "clients": "clients",
         "job_codes": "job_codes",
     },
@@ -97,6 +101,33 @@ def _config_path_beside_db(db_path: str | Path | None) -> Path | None:
     return Path(db_path).expanduser().resolve().parent / "supabase.json"
 
 
+def _config_path_plugin_shipped() -> Path | None:
+    """config/supabase.json shipped in the plugin zip next to bin/."""
+    if getattr(sys, "frozen", False):
+        # .../timeassist/bin/timeassist.exe -> .../timeassist/config/supabase.json
+        candidate = Path(sys.executable).resolve().parent.parent / "config" / "supabase.json"
+        if candidate.is_file():
+            return candidate
+    # Dev checkout / tests: repo config/
+    repo = Path(__file__).resolve().parents[1] / "config" / "supabase.json"
+    if repo.is_file():
+        return repo
+    return None
+
+
+def _resolve_config_file(
+    db_path: str | Path | None,
+    environ: dict[str, str],
+) -> Path | None:
+    env_path = _config_path_from_env(environ)
+    if env_path is not None:
+        return env_path
+    beside = _config_path_beside_db(db_path)
+    if beside is not None and beside.is_file():
+        return beside
+    return _config_path_plugin_shipped()
+
+
 def load_supabase_config(
     db_path: str | Path | None = None,
     environ: dict[str, str] | None = None,
@@ -105,15 +136,12 @@ def load_supabase_config(
     env = os.environ if environ is None else environ
     cfg = _deep_copy_defaults()
 
-    path = _config_path_from_env(env)
+    path = _resolve_config_file(db_path, env)
     if path is not None:
-        if not path.is_file():
+        if _config_path_from_env(env) is not None and not path.is_file():
             raise ValueError(f"TIMEASSIST_SUPABASE_CONFIG is not a file: {path}")
-        cfg = _merge_file_payload(cfg, _read_json_file(path))
-    else:
-        beside = _config_path_beside_db(db_path)
-        if beside is not None and beside.is_file():
-            cfg = _merge_file_payload(cfg, _read_json_file(beside))
+        if path.is_file():
+            cfg = _merge_file_payload(cfg, _read_json_file(path))
 
     tables = cfg["tables"]
     for key, env_key in _ENV_TABLE_KEYS.items():

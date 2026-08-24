@@ -24,12 +24,31 @@ ENV = {
 
 
 class LoadConfigTests(unittest.TestCase):
-    def test_defaults_when_no_file(self) -> None:
+    def test_defaults_match_shipped_config(self) -> None:
         cfg = supabase_config.load_supabase_config(environ={})
-        self.assertEqual(cfg["tables"]["time_entries"], "time_entries")
+        self.assertEqual(cfg["tables"]["time_entries"], "time_entries_timmy_v2")
         self.assertEqual(cfg["tables"]["clients"], "clients")
         self.assertEqual(cfg["tables"]["job_codes"], "job_codes")
         self.assertEqual(cfg["unassigned_client_name"], "Unassigned")
+
+    def test_loads_plugin_layout_config_next_to_exe(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            plugin = Path(tmp) / "timeassist"
+            bin_dir = plugin / "bin"
+            cfg_dir = plugin / "config"
+            bin_dir.mkdir(parents=True)
+            cfg_dir.mkdir(parents=True)
+            exe = bin_dir / "timeassist.exe"
+            exe.write_bytes(b"MZ")
+            (cfg_dir / "supabase.json").write_text(
+                json.dumps({"tables": {"time_entries": "from_plugin_zip"}}),
+                encoding="utf-8",
+            )
+            with patch.object(supabase_config.sys, "frozen", True, create=True), patch.object(
+                supabase_config.sys, "executable", str(exe)
+            ):
+                cfg = supabase_config.load_supabase_config(environ={})
+        self.assertEqual(cfg["tables"]["time_entries"], "from_plugin_zip")
 
     def test_load_from_supabase_json_beside_db(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

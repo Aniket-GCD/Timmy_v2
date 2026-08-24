@@ -6,7 +6,7 @@ This note is for the helper installing TimeAssist for a guided pilot. Keep the a
 
 - Use synthetic data first.
 - Do not bundle real client rosters in the plugin.
-- Firm clients come from live Supabase (env: `SUPABASE_URL`, `SUPABASE_KEY`). Table names Timmy uses are in `config/supabase.json` (`clients`, `job_codes`, `time_entries` only). For sandbox pilots, copy that file to `${CLAUDE_PLUGIN_DATA}/supabase.json` and point `tables.time_entries` at a write sandbox table; never put API keys in that file.
+- Firm clients come from live Supabase (env: `SUPABASE_URL`, `SUPABASE_KEY`). Table names live in the plugin’s `config/supabase.json` (loaded automatically next to `bin/timeassist.exe`). Current pilot writes to `time_entries_timmy_v2`; never put API keys in that file.
 - Keep exports local and human-approved.
 - Do not promise direct QuickBooks writeback; the current handoff is a CSV export.
 

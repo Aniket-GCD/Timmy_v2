@@ -33,7 +33,7 @@ Then follow:
 
 - Plugin installs pin the database to `${CLAUDE_PLUGIN_DATA}/timeassist.sqlite`.
 - Default exports, review HTML, sanitized packets, and backups are written next to that database.
-- Firm clients and job codes come from live Supabase (`list_clients` / `list_job_codes`). Secrets stay in env (`SUPABASE_URL`, `SUPABASE_KEY`). Table names Timmy uses: `config/supabase.json` (`clients`, `job_codes`, `time_entries`). Optional override: copy to `${CLAUDE_PLUGIN_DATA}/supabase.json` and point `tables.time_entries` at a sandbox table for pilots. Never put API keys in that file.
+- Firm clients and job codes come from live Supabase (`list_clients` / `list_job_codes`). Secrets stay in env (`SUPABASE_URL`, `SUPABASE_KEY`). Table names come from the plugin’s `config/supabase.json` (auto-loaded; pilot writes to `time_entries_timmy_v2`). Never put API keys in that file.
 - On first run, `init_state` returns an `export_folder` survey so Cowork can ask the operator to accept the default `Documents/TimeAssist Exports` handoff folder or choose a custom one.
 - A built-in copy step writes each official QuickBooks CSV to the confirmed/default handoff folder; a confirmed `user_export_dir` setting can override that folder without letting model-supplied export paths escape plugin data.
 - Tool results report both the internal `output` and `user_visible_output`.

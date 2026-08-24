@@ -1,6 +1,6 @@
 {
   "tables": {
-    "time_entries": "time_entries",
+    "time_entries": "time_entries_timmy_v2",
     "clients": "clients",
     "job_codes": "job_codes"
   },
