@@ -641,17 +641,33 @@ def resolve_client(conn, name: str, *, environ: dict[str, str] | None = None, db
     return row["display_name"], int(row["default_billable"])
 
 
-def list_clients(db_path: str | Path, environ: dict[str, str] | None = None) -> dict[str, Any]:
+def list_clients(db_path: str | Path, environ: dict[str, str] | None = None, query: str | None = None) -> dict[str, Any]:
     """Live GET of Supabase clients (or local SQLite when test escape hatch is on)."""
     ensure_initialized(db_path)
     if _local_roster_allowed():
         with connect(db_path) as conn:
             clients = [row_to_dict(r) for r in conn.execute("SELECT * FROM clients ORDER BY display_name").fetchall()]
+        q = (query or "").strip()
+        if q:
+            from .supabase_ref import name_fold, _match_tokens
+
+            tokens = _match_tokens(q)
+            needle = name_fold(q)
+            filtered = []
+            for client in clients:
+                display = client.get("display_name") or ""
+                folded = name_fold(display)
+                if needle and needle in folded:
+                    filtered.append(client)
+                    continue
+                if tokens and all(tok in set(_match_tokens(display)) for tok in tokens):
+                    filtered.append(client)
+            clients = filtered
         return {"clients": clients}
     from .supabase_ref import list_clients_remote
     with connect(db_path) as conn:
         office = get_setting(conn, "office")
-    clients = list_clients_remote(environ=environ, office=office or None, db_path=db_path)
+    clients = list_clients_remote(environ=environ, office=office or None, db_path=db_path, query=query)
     return {"clients": clients}
 
 

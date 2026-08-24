@@ -1,10 +1,10 @@
 {
   "name": "timeassist",
   "version": "0.1.24",
-  "description": "Timmy (formerly TimeAssist): local, human-reviewed billable-time capture for accountants. Bundles the assistant skill and a local MCP server; nothing is billed without explicit human approval.",
+  "description": "TimmyV2: local, human-reviewed billable-time capture for accountants. Bundles the /timmy skill and a local MCP server; nothing is billed without explicit human approval. Clients come from live Supabase.",
   "author": {
-    "name": "Josh Wihongi"
+    "name": "GCD"
   },
-  "repository": "https://github.com/0paani/timeassist-local-kit",
+  "repository": "https://github.com/Aniket-GCD/Timmy_v2",
   "license": "UNLICENSED"
 }

@@ -1,4 +1,0 @@
-client_key,display_name,aliases,default_billable,default_job_type
-client_a,Client A,"A Co;A Company",yes,Bookkeeping
-client_b,Client B,"B Co;B Company",yes,Tax
-internal,Internal Admin,"admin;internal",no,Administrative

@@ -23,7 +23,7 @@ plan in `docs/plans/`.
      `plugin/timeassist/.claude-plugin/plugin.json` (a test enforces the match)
      plus a `CHANGELOG.md` entry.
    - Changed MCP tools or output shapes? Update BOTH the plugin
-     `skills/billable-time-assistant/SKILL.md` AND the PowerShell smoke test in
+     `skills/timmy/SKILL.md` AND the PowerShell smoke test in
      `.github/workflows/windows-build.yml` — it asserts MCP payload keys
      (e.g. export's `csv`/`official_csv`) and the local suite will NOT catch a
      mismatch. This exact gap failed the first v0.1.19 tag build.
@@ -60,7 +60,7 @@ plan in `docs/plans/`.
    ```
    Expect: both assets (`timeassist.exe`, `timeassist-plugin.zip`); zip has a
    top-level `timeassist/` folder containing `bin/timeassist.exe`, `.mcp.json`,
-   and `skills/billable-time-assistant/SKILL.md`; `origin/dist` shows the new
+   and `skills/timmy/SKILL.md`; `origin/dist` shows the new
    version.
 
 ## When the tag run fails

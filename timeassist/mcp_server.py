@@ -303,8 +303,16 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "list_clients",
-        "description": "Live read-only GET of clients from Supabase (single source of truth). Filtered by configured office when set. Requires network + SUPABASE_URL/KEY.",
-        "inputSchema": {"type": "object", "properties": {}},
+        "description": "Live read-only GET of clients from Supabase (office-filtered). Pass query with spoken fragments (e.g. \"bill shop\") to return only matching names — do not dump the full roster to search by eye.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Optional search text. Returns clients whose names contain those tokens (e.g. bill shop -> Bill's Windsurf Shop).",
+                },
+            },
+        },
     },
     {
         "name": "list_job_codes",
@@ -610,7 +618,7 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
             arguments.get("at"),
         )
     if name == "list_clients":
-        return actions.list_clients(db_path)
+        return actions.list_clients(db_path, query=arguments.get("query"))
     if name == "list_job_codes":
         from .supabase_ref import list_job_codes
 

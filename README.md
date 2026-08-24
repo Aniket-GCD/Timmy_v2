@@ -138,7 +138,7 @@ The current pilot bundle is Windows-only because `plugin/timeassist/.mcp.json` l
 
 The plugin pins its database to `${CLAUDE_PLUGIN_DATA}/timeassist.sqlite`. The official export CSV, review HTML, sanitized packets, and backups live in subfolders next to that database (`exports/`, `backups/`, …) — that internal copy is the audit source of truth. Every export also copies the exact CSV bytes to a user-visible folder so the accountant can find it: `Documents/TimeAssist Exports` by default, or the folder chosen via `config` `user_export_dir` (requires `confirm=true`).
 
-Tools exposed include capture, review, edit, approve/approve-all, unapprove, export, sanitized packet, roster import/list, reminders/check-ins, status, cleanup, and config for settings such as rounding and `user_export_dir`. The shipped assistant behavior contract lives at `plugin/timeassist/skills/billable-time-assistant/SKILL.md`.
+Tools exposed include capture, review, edit, approve/approve-all, unapprove, export, sanitized packet, live `list_clients` (Supabase), reminders/check-ins, status, cleanup, and config for settings such as rounding and `user_export_dir`. Local client CSV import is disabled in the product path. The shipped assistant behavior contract lives at `plugin/timeassist/skills/timmy/SKILL.md` (invoke as `/timmy`).
 
 ## Executable showcase build
 

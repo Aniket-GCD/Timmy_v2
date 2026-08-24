@@ -1,6 +1,6 @@
 # TimeAssist plugin
 
-A Claude / Cowork plugin that bundles the billable-time assistant **skill** and a **local MCP server** into one installable unit. Installing it gives the operator TimeAssist tools for capture, review, edit, approve, export, and sanitized packets.
+A Claude / Cowork plugin that bundles the **/timmy** skill (TimmyV2) and a **local MCP server** (`timeassist`) into one installable unit. Installing it gives the operator tools for capture, review, edit, approve, export, and sanitized packets. Clients come from live Supabase — no local roster CSV import.
 
 The accountant should not need this file. In the repo, send them to `../../docs/accountant-quick-start.md`.
 
@@ -8,7 +8,7 @@ The accountant should not need this file. In the repo, send them to `../../docs/
 
 ```text
 .claude-plugin/plugin.json                 plugin manifest
-skills/billable-time-assistant/SKILL.md    assistant workflow + approval gate
+skills/timmy/SKILL.md                      assistant workflow + approval gate (/timmy)
 .mcp.json                                  local MCP server declaration
 bin/timeassist.exe                         Windows engine, added by CI/release build
 ```
@@ -37,7 +37,7 @@ Then follow:
 - On first run, `init_state` returns an `export_folder` survey so Cowork can ask the operator to accept the default `Documents/TimeAssist Exports` handoff folder or choose a custom one.
 - A built-in copy step writes each official QuickBooks CSV to the confirmed/default handoff folder; a confirmed `user_export_dir` setting can override that folder without letting model-supplied export paths escape plugin data.
 - Tool results report both the internal `output` and `user_visible_output`.
-- The roster is not bundled; Timmy reads clients live from Supabase (not a local CSV).
+- The roster is not bundled; Timmy reads clients live from Supabase (`list_clients`). There is no local CSV client import in the pilot product.
 - The assistant should review drafts before approval and export only approved entries.
 - There is no direct QuickBooks writeback in this pilot.
 

@@ -24,7 +24,7 @@ DEFAULT_MODEL = "claude-sonnet-5"
 API_URL = "https://api.anthropic.com/v1/messages"
 API_VERSION = "2023-06-01"
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-SKILL_PATH = _REPO_ROOT / "plugin" / "timeassist" / "skills" / "billable-time-assistant" / "SKILL.md"
+SKILL_PATH = _REPO_ROOT / "plugin" / "timeassist" / "skills" / "timmy" / "SKILL.md"
 
 _HARNESS_PREAMBLE = (
     "You are running inside Claude Cowork as the operator's billable-time "

@@ -199,6 +199,40 @@ def name_fold(name: str) -> str:
     return s
 
 
+def _match_tokens(name: str) -> list[str]:
+    """Significant tokens for soft match (strip punctuation noise)."""
+    folded = name_fold(name)
+    cleaned = "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in folded)
+    return [tok for tok in cleaned.split() if len(tok) >= 3]
+
+
+def soft_unique_match(spoken: str, display_names: list[str]) -> str | None:
+    """If spoken uniquely identifies one roster name, return that display name.
+
+    Used for nicknames like "Bill's Shop" -> "Bill's Windsurf Shop" when only
+    one active client contains all significant spoken tokens. Ambiguous or
+    empty -> None (caller asks / uses Unassigned flow).
+    """
+    tokens = _match_tokens(spoken)
+    if not tokens:
+        return None
+    hits: list[str] = []
+    seen: set[str] = set()
+    for display in display_names:
+        display_toks = set(_match_tokens(display))
+        if not display_toks:
+            continue
+        if all(tok in display_toks for tok in tokens):
+            key = display.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            hits.append(display)
+    if len(hits) == 1:
+        return hits[0]
+    return None
+
+
 def slim_client(row: dict[str, Any]) -> dict[str, Any]:
     display = client_display_name(row)
     office = (row.get("office") or "").strip() or None
@@ -232,8 +266,13 @@ def list_clients_remote(
     environ: dict[str, str] | None = None,
     office: str | None = None,
     db_path: str | Path | None = None,
+    query: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Live read-only GET of Supabase clients. Fail closed on network/auth errors."""
+    """Live read-only GET of Supabase clients. Fail closed on network/auth errors.
+
+    Optional ``query`` keeps only display names whose tokens match (same soft
+    rules as resolve) so the model need not dump the full roster.
+    """
     from .supabase_config import unassigned_client_name
 
     try:
@@ -259,6 +298,22 @@ def list_clients_remote(
                 continue
         out.append(slim)
     out.sort(key=lambda item: item["display_name"].casefold())
+    q = (query or "").strip()
+    if q:
+        tokens = _match_tokens(q)
+        needle = name_fold(q)
+        filtered: list[dict[str, Any]] = []
+        for slim in out:
+            display = slim["display_name"]
+            folded = name_fold(display)
+            if needle and needle in folded:
+                filtered.append(slim)
+                continue
+            if tokens:
+                display_toks = set(_match_tokens(display))
+                if all(tok in display_toks for tok in tokens):
+                    filtered.append(slim)
+        out = filtered
     return out
 
 
@@ -282,7 +337,8 @@ def resolve_client_remote(
     fold_matches = [row for row in clients if name_fold(row["display_name"]) == folded_target]
     if len(fold_matches) == 1:
         return fold_matches[0]["display_name"]
-    return None
+    soft = soft_unique_match(target, [row["display_name"] for row in clients])
+    return soft
 
 
 def roster_row_from_display(display_name: str) -> dict[str, Any]:

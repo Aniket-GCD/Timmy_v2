@@ -1,5 +1,11 @@
 # Decision Log
 
+## 2026-08-24 — TimmyV2 branding; skill `/timmy`; no local client CSV in product
+
+**Decision:** Plugin display author is GCD and descriptions say TimmyV2; technical plugin id / MCP / `bin/timeassist.exe` stay `timeassist`. Skill folder + frontmatter name are `timmy` so Claude invokes `/timmy`. Product path never imports a local clients CSV — live Supabase via `list_clients` only; `import_clients` / `add_client` / `refresh_clients` remain disabled except the test/demo escape hatch `TIMEASSIST_ALLOW_LOCAL_ROSTER=1`.
+
+**Why:** Separate marketplace display wording from the skill slash command; avoid operators dumping huge local CSVs into SQLite when Supabase is the source of truth.
+
 ## 2026-05-28 — Start with a private local-kit repo
 
 **Decision:** Create a private repo for the local Claude Code workstation kit rather than starting with a central hosted bot.

@@ -406,13 +406,32 @@ class LiveClientRosterTests(unittest.TestCase):
         names = {c["display_name"] for c in listed}
         self.assertEqual(names, {"Acme Co", "Unassigned"})
 
-    def test_resolve_exact_and_fold(self) -> None:
+    def test_resolve_soft_unique_nickname(self) -> None:
         from timeassist import db as tdb
-        install_live_clients(self, "Smith, John")
+        install_live_clients(self, "Bill's Windsurf Shop", "Acme Co")
         with tdb.connect(self.db) as conn:
-            name, billable = actions.resolve_client(conn, "john smith", environ=ENV)
-        self.assertEqual(name, "Smith, John")
+            name, billable = actions.resolve_client(conn, "Bill's Shop", environ=ENV)
+        self.assertEqual(name, "Bill's Windsurf Shop")
         self.assertEqual(billable, 1)
+
+    def test_resolve_soft_ambiguous_stays_unmatched(self) -> None:
+        from timeassist import db as tdb
+        install_live_clients(self, "Bill's Windsurf Shop", "Bill's Bike Shop")
+        with tdb.connect(self.db) as conn:
+            name, billable = actions.resolve_client(conn, "Bill's Shop", environ=ENV)
+        self.assertEqual(name, "Bill's Shop")
+        self.assertIsNone(billable)
+
+    def test_list_clients_query_filters(self) -> None:
+        rows = [
+            {"name": "Unassigned", "office": "GCD", "active": True},
+            {"name": "Bill's Windsurf Shop", "office": "GCD", "active": True},
+            {"name": "Acme Co", "office": "GCD", "active": True},
+        ]
+        with patch("timeassist.supabase_ref.get_clients", return_value=rows):
+            listed = actions.list_clients(self.db, environ=ENV, query="bill shop")["clients"]
+        names = {c["display_name"] for c in listed}
+        self.assertEqual(names, {"Bill's Windsurf Shop"})
 
     def test_resolve_miss_returns_none_billable(self) -> None:
         from timeassist import db as tdb

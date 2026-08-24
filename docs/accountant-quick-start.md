@@ -34,7 +34,9 @@ A helper may do this with you during the pilot:
 3. Confirm the export handoff folder. The default is your real Documents folder,
    `Documents\TimeAssist Exports`, so exported CSVs are easy to find. A helper
    can set a different folder if needed.
-4. If you have an approved client roster, have the helper import it from a local CSV.
+4. Confirm Timmy can list your firm's clients from Supabase (ask for a short
+   client list). There is no local CSV roster import — names come from the
+   live firm list.
 5. Tell Timmy your initials once. The helper sets your short code from the firm's
    employee list (for example AVD), and every export file you produce carries it —
    `quickbooks-time-AVD-2026-06-30.csv` — so files from different people stay
@@ -44,20 +46,18 @@ A helper may do this with you during the pilot:
    nearest 15 bills as 15 minutes, never 0. Keep raw time if you don't want that.
 7. Run a synthetic practice day before using real client names.
 
-The client roster is local to your computer and is not bundled into the plugin.
+Client names are read live from Supabase for your office. They are not stored
+as a separate CSV on your machine.
 
 ## Client names and built-in categories
 
 - **A few categories are always there.** Admin, Early Out, Holiday, and Staff Meeting
   are built in. They are always non-billable and always filed as "Administrative", so
   you can log that time without it ever landing on a client bill.
-- **Names match how people say them.** If your roster stores a client as "Smith, John",
-  you can just say "John Smith" and Timmy will match it automatically — no need to
-  remember which way round it was typed.
-- **Job Type can fill itself in.** If your roster lists a usual job type for a
-  client (the helper sets this up during import), every new entry for that client
-  is filed under it automatically — you only need to mention a job type when a
-  piece of work is different from usual.
+- **Names match how people say them.** Soft matching can resolve a nickname
+  (for example "Bill's Shop") to the full QuickBooks name when that match is unique.
+- **Job Codes come from the firm list.** Use `list_job_codes` / ask Timmy for
+  Job Codes — do not invent accounts or codes.
 
 ## Context-switch reminders
 

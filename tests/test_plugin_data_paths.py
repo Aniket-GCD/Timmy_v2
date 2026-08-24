@@ -60,7 +60,7 @@ class PluginMcpConfigTests(unittest.TestCase):
         self.assertTrue((env.get("SUPABASE_KEY") or "").strip())
 
     def test_plugin_skill_documents_server_side_gates(self) -> None:
-        skill = (ROOT / "plugin" / "timeassist" / "skills" / "billable-time-assistant" / "SKILL.md").read_text()
+        skill = (ROOT / "plugin" / "timeassist" / "skills" / "timmy" / "SKILL.md").read_text()
 
         for required_text in [
             "review_token",

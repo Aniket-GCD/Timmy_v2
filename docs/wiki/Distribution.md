@@ -14,7 +14,7 @@ the design.
 - **Cowork plugin** (`plugin/timeassist/`) — bundles the skill + the local MCP
   server into one installable unit:
   - `.claude-plugin/plugin.json` (manifest)
-  - `skills/billable-time-assistant/SKILL.md` (the skill + approval gate)
+  - `skills/timmy/SKILL.md` (the `/timmy` skill + approval gate)
   - `.mcp.json` → `${CLAUDE_PLUGIN_ROOT}/bin/timeassist.exe --db ${CLAUDE_PLUGIN_DATA}/timeassist.sqlite mcp`, with `cwd` set to `${CLAUDE_PLUGIN_DATA}`
   - `bin/timeassist.exe` (dropped in by CI; gitignored, never committed)
 - **Marketplace** (`.claude-plugin/marketplace.json`) — points the plugin source

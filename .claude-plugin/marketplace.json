@@ -1,16 +1,16 @@
 {
   "name": "timeassist-marketplace",
-  "description": "Guided-pilot marketplace for the Windows Timmy (formerly TimeAssist) Cowork plugin: local, human-reviewed billable-time capture for accountants.",
+  "description": "Guided-pilot marketplace for the Windows TimmyV2 (TimeAssist) Cowork plugin: local, human-reviewed billable-time capture for accountants.",
   "owner": {
-    "name": "Josh Wihongi"
+    "name": "GCD"
   },
   "plugins": [
     {
       "name": "timeassist",
-      "description": "Timmy (formerly TimeAssist): local, human-reviewed billable-time capture for accountants (skill + local MCP server). Nothing is billed without explicit human approval.",
+      "description": "TimmyV2: local, human-reviewed billable-time capture for accountants (/timmy skill + local MCP). Clients from live Supabase. Nothing is billed without explicit human approval.",
       "source": {
         "source": "git-subdir",
-        "url": "0paani/timeassist-local-kit",
+        "url": "Aniket-GCD/Timmy_v2",
         "path": "plugin/timeassist",
         "ref": "dist"
       }

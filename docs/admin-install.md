@@ -22,7 +22,7 @@ timeassist/
   .mcp.json
   README.md
   config/supabase.json
-  skills/billable-time-assistant/SKILL.md
+  skills/timmy/SKILL.md
   bin/timeassist.exe
 ```
 
@@ -58,8 +58,8 @@ printf '%s\n' \
 
 1. Download or build the plugin zip.
 2. In Cowork, open plugin/customization settings and upload the plugin zip.
-3. Confirm the `billable-time-assistant` skill and `timeassist` tools are available.
-4. Start a fresh chat and ask: “Use TimeAssist and initialize local state.”
+3. Confirm the `/timmy` skill and `timeassist` tools are available.
+4. Start a fresh chat and ask: “Use Timmy and initialize local state.”
 5. Ask for `status` to confirm the local database was created.
 
 Known packaging note: the zip should contain a top-level `timeassist/` folder, not just the files at the archive root.
@@ -71,25 +71,15 @@ Known packaging note: the zip should contain a top-level `timeassist/` folder, n
    the default `Documents/TimeAssist Exports` handoff folder or choose another
    folder. Accepting the default requires a confirmed `config` action, and a
    custom folder also requires confirmation.
-3. If approved, import a local roster CSV with these columns:
-
-```csv
-client_key,display_name,aliases,default_billable,default_job_type
-acme,Acme Co,"ACME;Acme",yes,Bookkeeping
-```
-
-   Only `display_name` is required. `default_job_type` fills the Job Type
-   column automatically on every new entry for that client — set it for each
-   roster client so exports never have a blank Job Type. A starter template
-   lives at `config/clients.example.csv`. A single new client can later be
-   added in one step (ask TimeAssist to add it, or `add-client` on the CLI) —
-   no need to re-import the whole CSV.
-
-4. List clients and confirm aliases resolve as expected. If the firm requires
-   every billed name to match the master list exactly, turn on strict roster
-   mode (`config` setting `strict_roster` = `yes`): entries for unknown names
-   are still captured, but can only be fixed by matching or adding a roster
-   client — "keep the name as typed" is disabled.
+3. Set `SUPABASE_URL` / `SUPABASE_KEY` on the timeassist MCP (shipped in
+   `.mcp.json` for this pilot). Confirm `list_clients` returns live Supabase
+   names for the configured office — **do not import a local clients CSV**
+   (`import_clients` is disabled).
+4. List clients and confirm soft-matching works (e.g. a nickname resolves to the
+   full QBO name). If the firm requires every billed name to match the master
+   list exactly, turn on strict roster mode (`config` setting `strict_roster` =
+   `yes`): entries for unknown names are still captured, but can only be fixed
+   by matching a Supabase client or using the Unassigned + Reception flow.
 5. Set the operator's initials code (`config` setting `operator_code`, 2–4
    letters from the firm's employee list, e.g. `AVD`). Each install belongs to
    one operator; the code is stamped into that operator's export filenames
@@ -107,11 +97,10 @@ Plugin installs now pin the database to `${CLAUDE_PLUGIN_DATA}/timeassist.sqlite
 ## Troubleshooting
 
 - **Plugin upload/validation fails:** check the desktop app's DevTools/network response for the real validation error; Cowork may show a generic message.
-- **Windows warns about the app:** the pilot binary may be unsigned. Do not ask a real pilot user to bypass warnings unless Josh explicitly approves that pilot risk.
+- **Windows warns about the app:** the pilot binary may be unsigned. Confirm with the firm admin before asking a pilot user to bypass SmartScreen.
 - **No tools appear:** confirm the plugin zip structure, plugin manifest, `.mcp.json`, and bundled `bin/timeassist.exe` are present.
 - **Export location is unclear:** ask TimeAssist to export again only if safe, or review the previous tool result for the full path. Do not guess.
-- **Roster import fails:** verify CSV headers and keep the file local. Do not paste private client lists into chat.
-
+- **Client list fails:** confirm Supabase env on the MCP server and that Unassigned exists for GCD/MH. Do not fall back to a local CSV import.
 ## Handoff to the accountant
 
 Give them only:
