@@ -391,9 +391,38 @@ LOCAL_ROSTER_DISABLED = (
 
 
 def _local_roster_allowed() -> bool:
-    """Test-only escape hatch. Production never sets this; live Supabase is the roster."""
+    """Test/demo escape hatch only when Supabase credentials are absent.
+
+    If SUPABASE_URL + key are set (pilot plugin MCP always has them), always use
+    live Supabase — never the SQLite clients table — even if
+    TIMEASSIST_ALLOW_LOCAL_ROSTER=1. That table may still hold a stale 6k-row
+    CSV import from earlier pilots; dumping it burns tokens and misses live names
+    like ``0969 Ocean View Road``.
+    """
     import os
-    return os.environ.get("TIMEASSIST_ALLOW_LOCAL_ROSTER") == "1"
+    if os.environ.get("TIMEASSIST_ALLOW_LOCAL_ROSTER") != "1":
+        return False
+    url = (os.environ.get("SUPABASE_URL") or "").strip()
+    key = (
+        (os.environ.get("SUPABASE_KEY") or "").strip()
+        or (os.environ.get("SUPABASE_ANON_KEY") or "").strip()
+        or (os.environ.get("SUPABASE_SECRET") or "").strip()
+    )
+    if url and key:
+        return False
+    return True
+
+
+_MAX_LIST_CLIENTS = 80
+
+
+def _cap_listed_clients(clients: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str | None]:
+    if len(clients) <= _MAX_LIST_CLIENTS:
+        return clients, None
+    return (
+        clients[:_MAX_LIST_CLIENTS],
+        f"truncated to {_MAX_LIST_CLIENTS} of {len(clients)} names — pass a tighter query; never dump the full roster",
+    )
 
 
 def import_clients(db_path: str | Path, csv_path: str | Path, mode: str = "replace", at: str | None = None) -> dict[str, Any]:
@@ -769,7 +798,11 @@ def list_clients(
                 if tokens and all(tok in set(_match_tokens(display)) for tok in tokens):
                     filtered.append(client)
             clients = filtered
-        return {"clients": clients, "client_count": len(clients)}
+        clients, note = _cap_listed_clients(clients)
+        out: dict[str, Any] = {"clients": clients, "client_count": len(clients)}
+        if note:
+            out["message"] = note
+        return out
     from .supabase_ref import list_clients_remote
     with connect(db_path) as conn:
         office = get_setting(conn, "office")
@@ -779,7 +812,11 @@ def list_clients(
         db_path=db_path,
         query=None if want_full and not q else q,
     )
-    return {"clients": clients, "client_count": len(clients)}
+    clients, note = _cap_listed_clients(clients)
+    out = {"clients": clients, "client_count": len(clients)}
+    if note:
+        out["message"] = note
+    return out
 
 
 def apply_client_policy(

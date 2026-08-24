@@ -326,11 +326,10 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "list_clients",
         "description": (
-            "Live Supabase client lookup (office-filtered). ALWAYS pass query with the spoken name "
-            "(e.g. \"Ocean View Road\"). Empty query returns NO names — only a count + message. "
-            "Prefer start/add_missing first: the engine soft-matches unique nicknames "
-            "(Ocean View Road -> 0969 Ocean View Road). Full dump only with confirm_full_list=true "
-            "when the operator explicitly asked for every name. Never invent client names."
+            "Do NOT use this to match a spoken client for time entry — call add_missing/start/switch instead "
+            "(they soft-match live Supabase and return needs_client_confirm). "
+            "If you must look up a name, ALWAYS pass query (e.g. \"Ocean View Road\"). "
+            "Empty query returns NO names. Never dump the full roster. Live Supabase only when credentials are set."
         ),
         "inputSchema": {
             "type": "object",

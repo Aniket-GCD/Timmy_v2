@@ -466,6 +466,40 @@ class LiveClientRosterTests(unittest.TestCase):
         )
         self.assertEqual(written["client_name"], "Bill's Windsurf Shop")
 
+    def test_supabase_creds_force_live_over_local_escape_hatch(self) -> None:
+        """Pilot MCP always has Supabase env — never dump the stale SQLite CSV roster."""
+        os.environ["TIMEASSIST_ALLOW_LOCAL_ROSTER"] = "1"
+        os.environ["SUPABASE_URL"] = ENV["SUPABASE_URL"]
+        os.environ["SUPABASE_KEY"] = ENV["SUPABASE_KEY"]
+        self.addCleanup(lambda: os.environ.pop("SUPABASE_URL", None))
+        self.addCleanup(lambda: os.environ.pop("SUPABASE_KEY", None))
+        # put a fake local-only name in SQLite that is NOT on the live mock
+        from timeassist import db as tdb
+        with tdb.connect(self.db) as conn:
+            conn.execute(
+                "INSERT INTO clients(client_key, display_name, aliases, default_billable, billable_locked, default_job_type) "
+                "VALUES ('local_only', 'Local Only CSV Co', '', 1, 0, '')"
+            )
+            conn.commit()
+        rows = [
+            {"name": "0969 Ocean View Road", "office": "GCD", "active": True},
+            {"name": "Unassigned", "office": "GCD", "active": True},
+        ]
+        with patch("timeassist.supabase_ref.get_clients", return_value=rows):
+            pending = actions.add_missing_entry(
+                self.db,
+                "Ocean View Road",
+                "tax prep",
+                "2026-08-21T09:00:00",
+                "2026-08-21T10:00:00",
+                "yes",
+            )
+            listed = actions.list_clients(self.db, environ=ENV, query="Ocean View Road")["clients"]
+        self.assertTrue(pending.get("needs_client_confirm"))
+        self.assertEqual(pending["suggested_client"], "0969 Ocean View Road")
+        self.assertEqual([c["display_name"] for c in listed], ["0969 Ocean View Road"])
+        self.assertFalse(any(c.get("display_name") == "Local Only CSV Co" for c in listed))
+
     def test_resolve_soft_unique_nickname(self) -> None:
         from timeassist import db as tdb
         install_live_clients(self, "Bill's Windsurf Shop", "Acme Co")

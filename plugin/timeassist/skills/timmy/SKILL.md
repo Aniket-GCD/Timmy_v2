@@ -70,6 +70,8 @@ more before approval. Never block or refuse approval over missing notes.
    Supabase) and Job Codes from `list_job_codes`. Do not invent clients, Job
    Codes, accounts, or times. Do not use `import_clients`, `add_client`, or
    `refresh_clients`  -  they are disabled; clients live only in Supabase.
+   Do **not** call `list_clients` to resolve a spoken name — use `add_missing` /
+   `start` / `switch` and handle `needs_client_confirm`.
 2. **Capture now, clarify later:** on a client change, **switch immediately**.
    If the result is `needs_client_confirm`, ask using the tool's `ask` text before
    retrying. If a written result carries `needs_info`, fix labels with
@@ -104,7 +106,9 @@ more before approval. Never block or refuse approval over missing notes.
 ## New / unmatched clients (confirm before write)
 
 1. Call `add_missing` / `start` / `switch` with the **spoken** client name (and times /
-   Job Code when known). Do **not** dump `list_clients` to search by eye.
+   Job Code when known). **Do not call `list_clients` to search for a match** — that is
+   how huge stale local dumps happen. Matching is inside capture tools against live
+   Supabase.
 2. If the tool returns `needs_client_confirm=true`, **relay the `ask` text verbatim**
    (or nearly so). Example soft match:
    > Did you mean "0969 Ocean View Road"? If yes, I will record it under that roster
