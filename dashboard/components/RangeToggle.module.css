@@ -1,0 +1,29 @@
+.wrap {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+}
+
+.btn,
+.active {
+  border: none;
+  background: transparent;
+  color: var(--dark-grey);
+  padding: 0.45rem 1rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.btn:hover {
+  background: var(--off-white);
+}
+
+.active {
+  background: var(--mysterious-mixture);
+  color: var(--white);
+}

@@ -1,0 +1,133 @@
+.wrap {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.toggle {
+  border: 1px solid var(--border);
+  background: var(--off-white);
+  color: var(--dark-grey);
+  border-radius: 999px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.toggle:hover {
+  border-color: var(--hippie-green);
+  color: var(--mysterious-mixture);
+}
+
+.tableScroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.table th {
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  background: #f7f6f5;
+  color: var(--muted);
+  font-weight: 400;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 0.55rem 0.85rem;
+  border-bottom: 1px solid #eeecea;
+  vertical-align: top;
+}
+
+.clientCol {
+  min-width: 10rem;
+}
+
+.num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.groupHeader td {
+  background: var(--tartlet);
+  border-bottom: 1px solid #f2c9c8;
+  padding: 0;
+}
+
+.groupBtn {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  cursor: pointer;
+  color: var(--dark-grey);
+  font-family: inherit;
+}
+
+.chevron {
+  color: var(--mysterious-mixture);
+  width: 0.85rem;
+}
+
+.groupName {
+  font-family: var(--font-display);
+  color: var(--mysterious-mixture);
+  font-size: 1rem;
+}
+
+.groupMeta {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-left: auto;
+}
+
+.indent {
+  padding-left: 1.75rem !important;
+}
+
+.row:hover td {
+  background: #faf9f8;
+}
+
+.subtotal td {
+  background: #f7f6f5;
+  color: var(--muted);
+  font-size: 0.88rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.footer td {
+  position: sticky;
+  bottom: 0;
+  background: var(--mysterious-mixture);
+  color: var(--white);
+  border-bottom: none;
+  padding: 0.75rem 0.85rem;
+}
+
+.footer strong {
+  font-family: var(--font-display);
+  font-weight: 400;
+}
