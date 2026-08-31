@@ -832,9 +832,10 @@ def apply_client_policy(
     `billable_locked` column, never off client names, so an operator roster
     override degrades safely.
 
-    Precedence for each field: explicit request (job_type="" clears), then the
-    caller's current stored value (clarify/edit preservation), then the roster
-    default. Fresh captures pass no current values, so roster defaults apply.
+    Precedence for job_type: explicit request (job_type="" clears), then the
+    caller's current stored value (clarify/edit preservation), else blank.
+    Roster default_job_type is never auto-applied for unlocked clients — it is
+    suggestion-only (see suggested_job_type on capture results).
     """
     if row is not None and int(row["billable_locked"]):
         if billable_requested is not None and bool_to_int(billable_requested) == 1:
@@ -851,7 +852,7 @@ def apply_client_policy(
     elif current_job_type is not None:
         job_type = current_job_type
     else:
-        job_type = row["default_job_type"] if row is not None else ""
+        job_type = ""
     return billable, job_type
 
 
@@ -874,7 +875,7 @@ def resolve_capture_with_metadata(
     with billable intent can resolve the pending metadata without changing time.
     Billable/job_type policy is enforced once, in `apply_client_policy`: an explicit
     job_type wins ("" clears), else the caller's `current_job_type` is preserved,
-    else the roster default applies.
+    else job_type stays blank (roster default is suggestion-only).
     """
     raw_client = client.strip()
     raw_task = task.strip()
@@ -897,7 +898,10 @@ def resolve_capture_with_metadata(
         )
     needs_info = not known_client and not (clarification and billable_explicit)
     client_changed = canonical.strip().lower() != raw_client.lower()
-    return {
+    suggested = ""
+    if row is not None and not int(row["billable_locked"]):
+        suggested = (row["default_job_type"] or "").strip()
+    result = {
         "client_name": canonical,
         "task_text": raw_task,
         "billable": billable_int,
@@ -908,18 +912,45 @@ def resolve_capture_with_metadata(
         "capture_note": "client_not_in_roster" if needs_info else None,
         "clarified_at": None,
     }
+    if suggested and not (job_type_resolved or "").strip():
+        result["suggested_job_type"] = suggested
+    return result
+
+
+def _attach_suggested_job_type(conn, payload: dict[str, Any]) -> dict[str, Any]:
+    """Add suggested_job_type when stored job_type is blank (suggestion only)."""
+    if (payload.get("job_type") or "").strip():
+        return payload
+    if payload.get("suggested_job_type"):
+        return payload
+    client_name = payload.get("client_name")
+    if not client_name:
+        return payload
+    row = resolve_client_row(conn, client_name)
+    if row is None or int(row["billable_locked"]):
+        return payload
+    suggested = (row["default_job_type"] or "").strip()
+    if suggested:
+        payload["suggested_job_type"] = suggested
+    return payload
 
 
 def capture_note_text(note: str | None, client_name: str | None = None) -> str | None:
     """Human wording for stored capture-note tokens (storage keeps the token)."""
-    if note == "client_not_in_roster":
+    if not note:
+        return None
+    # duration_only may be combined with other tokens via ';'
+    primary = note.split(";")[0].strip()
+    if primary == "client_not_in_roster":
         return f"client '{client_name}' is not in the roster" if client_name else "client is not in the roster"
+    if primary == "duration_only":
+        return None
     return note
 
 
 def needs_review_reason(entry: dict[str, Any]) -> str | None:
     if entry.get("capture_status") == "needs_info":
-        return entry.get("capture_note") or "needs_info"
+        return capture_note_text(entry.get("capture_note"), entry.get("client_name")) or "needs_info"
     return None
 
 
@@ -1176,6 +1207,8 @@ def start_session(
         except sqlite3.IntegrityError as exc:
             raise ValueError("active session already exists; use switch or end first") from exc
         session = row_to_dict(conn.execute("SELECT * FROM active_sessions WHERE session_id = ?", (session_id,)).fetchone())
+        if capture.get("suggested_job_type"):
+            session["suggested_job_type"] = capture["suggested_job_type"]
         log_event(conn, "start", f"started {capture['client_name']}: {capture['task_text']}", "active_session", session["session_id"], after=session, at=started)
         conn.commit()
     return session
@@ -1283,6 +1316,8 @@ def switch_session(
         capture = resolve_capture_with_metadata(conn, client, task, billable, job_type=job_type)
         session_id = _insert_active_session(conn, capture, switched_at)
         new_session = row_to_dict(conn.execute("SELECT * FROM active_sessions WHERE session_id = ?", (session_id,)).fetchone())
+        if capture.get("suggested_job_type"):
+            new_session["suggested_job_type"] = capture["suggested_job_type"]
         log_event(conn, "switch", f"switched to {capture['client_name']}: {capture['task_text']}", "active_session", new_session["session_id"], after={"closed_entry": closed, "new_active_session": new_session}, at=switched_at)
         conn.commit()
     return {"closed_entry": _flag_missing_notes(closed), "new_active_session": new_session}
@@ -1304,11 +1339,9 @@ def clarify_active_session(
             raise ValueError("no active session to clarify")
         next_client = client if client is not None else active["client_name"]
         next_task = task if task is not None else active["task_text"]
-        # Blank job_type passes as None so the resolved client's roster default
-        # fills it (a typed value is preserved as-is) — otherwise entries
-        # captured before the client was on the roster keep a blank Job Type
-        # column forever (issue #39 item 5).
-        current_job_type = active.get("job_type") or None
+        # Preserve stored job_type (including blank). Never auto-fill roster
+        # default — suggest via suggested_job_type only until the operator confirms.
+        current_job_type = active.get("job_type") if active.get("job_type") is not None else ""
         capture = resolve_capture_with_metadata(conn, next_client, next_task, billable if billable is not None else None, clarification=True, job_type=job_type, current_job_type=current_job_type)
         if client is not None and billable is None and active.get("capture_status") == "needs_info" and capture["capture_status"] == "needs_info":
             # The operator addressed the client; that confirms the open timer.
@@ -1341,6 +1374,10 @@ def clarify_active_session(
             ),
         )
         session = row_to_dict(conn.execute("SELECT * FROM active_sessions WHERE session_id = ?", (active["session_id"],)).fetchone())
+        if capture.get("suggested_job_type"):
+            session["suggested_job_type"] = capture["suggested_job_type"]
+        else:
+            _attach_suggested_job_type(conn, session)
         log_event(
             conn,
             "clarify_active",
@@ -1539,17 +1576,41 @@ def add_missing_entry(
     db_path: str | Path,
     client: str,
     task: str,
-    start: str,
-    end: str,
+    start: str | None = None,
+    end: str | None = None,
     billable: str | None = None,
     job_type: str | None = None,
     *,
+    date: str | None = None,
+    duration_minutes: int | None = None,
     confirm_client: bool = False,
 ) -> dict[str, Any]:
+    """Add a draft entry from either clock times or duration+date.
+
+    Clock path: start + end (existing).
+    Duration path: date + duration_minutes; engine synthesizes placeholder
+    start/end from midnight (packed after existing same-day blocks on collision).
+    """
     ensure_initialized(db_path)
-    start_iso = iso(parse_at(start))
-    end_iso = iso(parse_at(end))
-    duration = minutes_between(start_iso, end_iso)
+    duration_only = False
+    if start is not None and end is not None:
+        start_iso = iso(parse_at(start))
+        end_iso = iso(parse_at(end))
+        duration = minutes_between(start_iso, end_iso)
+    elif duration_minutes is not None and date:
+        duration_only = True
+        duration = int(duration_minutes)
+        if duration <= 0:
+            raise ValueError("duration_minutes must be a positive integer")
+        day = date.strip()[:10]
+        # Validate date shape via parse_at
+        parse_at(f"{day}T00:00:00")
+        with connect(db_path) as conn:
+            start_iso, end_iso = _pack_duration_window(conn, day, duration)
+    elif start is not None or end is not None:
+        raise ValueError("provide both start and end, or date + duration_minutes")
+    else:
+        raise ValueError("provide start+end, or date + duration_minutes")
     with connect(db_path) as conn:
         pending = client_confirm_gate(
             conn, client, confirm_client=confirm_client, db_path=db_path,
@@ -1557,6 +1618,10 @@ def add_missing_entry(
         if pending:
             return pending
         capture = resolve_capture_with_metadata(conn, client, task, billable, job_type=job_type)
+        if duration_only:
+            # Mark so review can prefer Duration over placeholder clocks.
+            note = capture.get("capture_note")
+            capture["capture_note"] = "duration_only" if not note else f"{note};duration_only"
         rounded = round_minutes(duration, *get_rounding(conn))
         review_status = "needs_info" if capture["capture_status"] == "needs_info" else "draft"
         cur = conn.execute(
@@ -1577,9 +1642,36 @@ def add_missing_entry(
             ),
         )
         entry = row_to_dict(conn.execute("SELECT * FROM time_entries WHERE entry_id = ?", (cur.lastrowid,)).fetchone())
+        if capture.get("suggested_job_type"):
+            entry["suggested_job_type"] = capture["suggested_job_type"]
+        if duration_only:
+            entry["duration_only"] = True
         log_event(conn, "add_missing", f"added missing time for {capture['client_name']}: {capture['task_text']}", "time_entry", entry["entry_id"], after=entry, at=end_iso)
         conn.commit()
     return entry
+
+
+def _pack_duration_window(conn, day: str, duration: int) -> tuple[str, str]:
+    """Synthesize start/end for a duration-only entry; pack after same-day blocks."""
+    rows = conn.execute(
+        """
+        SELECT start_at, end_at FROM time_entries
+        WHERE substr(start_at, 1, 10) = ? AND review_status != 'discarded'
+        ORDER BY start_at, entry_id
+        """,
+        (day,),
+    ).fetchall()
+    cursor = parse_at(f"{day}T00:00:00")
+    for row in rows:
+        block_start = parse_at(row["start_at"])
+        block_end = parse_at(row["end_at"])
+        candidate_end = cursor + timedelta(minutes=duration)
+        # Overlap if candidate intersects [block_start, block_end)
+        if cursor < block_end and candidate_end > block_start:
+            cursor = block_end
+    start_iso = iso(cursor)
+    end_iso = iso(cursor + timedelta(minutes=duration))
+    return start_iso, end_iso
 
 
 def reround_drafts(db_path: str | Path, date_value: str, rule: str | None = None, at: str | None = None) -> dict[str, Any]:
@@ -1645,9 +1737,8 @@ def edit_entry(
         was_needs_info = before["review_status"] == "needs_info"
         new_task = task if task is not None else before["task_text"]
         if client is not None or was_needs_info:
-            # Blank job_type passes as None so the resolved client's roster
-            # default fills it (a typed value is preserved as-is) — see the
-            # matching comment in clarify_active_session.
+            # Preserve stored job_type (including blank). Roster default is
+            # suggestion-only until the operator explicitly sets job_type.
             capture = resolve_capture_with_metadata(
                 conn,
                 client if client is not None else before["client_name"],
@@ -1655,13 +1746,12 @@ def edit_entry(
                 billable if billable is not None else None,
                 clarification=was_needs_info,
                 job_type=job_type,
-                current_job_type=before.get("job_type") or None,
+                current_job_type=before.get("job_type") if before.get("job_type") is not None else "",
             )
             if was_needs_info and client is not None and billable is None and capture["capture_status"] == "needs_info":
                 # The operator addressed the client; that is the confirmation.
-                # Known roster clients already resolved above with their roster
-                # default; unknown names resolve here keeping the entry's
-                # current billable rather than demanding it be retyped.
+                # Known roster clients already resolved above; unknown names
+                # resolve here keeping the entry's current billable.
                 capture = resolve_capture_with_metadata(
                     conn,
                     client,
@@ -1669,7 +1759,7 @@ def edit_entry(
                     bool(before["billable"]),
                     clarification=True,
                     job_type=job_type,
-                    current_job_type=before.get("job_type") or None,
+                    current_job_type=before.get("job_type") if before.get("job_type") is not None else "",
                 )
             if billable is None and client is None:
                 capture["billable"] = before["billable"]
@@ -1748,6 +1838,7 @@ def edit_entry(
             at=changed_at,
         )
         conn.commit()
+        _attach_suggested_job_type(conn, after)
     return after
 
 
@@ -1884,7 +1975,12 @@ def review_entries(db_path: str | Path, date_value: str, at: str | None = None, 
             entries = list_entries_for_date(conn, date_value)
         for entry in entries:
             entry["needs_review_reason"] = needs_review_reason(entry)
+            _attach_suggested_job_type(conn, entry)
+            if entry.get("capture_note") and "duration_only" in str(entry["capture_note"]):
+                entry["duration_only"] = True
         active = get_active_session(conn)
+        if active:
+            _attach_suggested_job_type(conn, active)
         stale_session_minutes = _int_setting(conn, "stale_session_minutes", 480)
         event_count = conn.execute("SELECT COUNT(*) AS c FROM event_log").fetchone()["c"]
         last_activity_at = conn.execute("SELECT MAX(created_at) AS m FROM event_log").fetchone()["m"]
@@ -1985,6 +2081,11 @@ def set_approval(db_path: str | Path, entry_id: int, approved: bool, at: str | N
             locked_reason = _locked_billable_reason(conn, before)
             if locked_reason:
                 raise ValueError(locked_reason)
+            if not (before.get("job_type") or "").strip():
+                raise ValueError(
+                    f"entry {entry_id} has no Job Code; set/confirm a Job Code before approve "
+                    "(suggest via list_job_codes or suggested_job_type — never auto-pick)"
+                )
         if before["review_status"] == status:
             return before
         conn.execute(
@@ -2005,6 +2106,8 @@ def approve_all(db_path: str | Path, date_value: str, at: str | None = None) -> 
     skipped_needs_info_minutes = 0
     skipped_locked_count = 0
     skipped_locked_minutes = 0
+    skipped_missing_job_code_count = 0
+    skipped_missing_job_code_minutes = 0
     with connect(db_path) as conn:
         skipped_rows = conn.execute(
             """
@@ -2037,6 +2140,10 @@ def approve_all(db_path: str | Path, date_value: str, at: str | None = None) -> 
                 skipped_locked_count += 1
                 skipped_locked_minutes += int(before["rounded_minutes"])
                 continue
+            if not (before.get("job_type") or "").strip():
+                skipped_missing_job_code_count += 1
+                skipped_missing_job_code_minutes += int(before["rounded_minutes"])
+                continue
             conn.execute(
                 "UPDATE time_entries SET review_status = 'approved', updated_at = ? WHERE entry_id = ?",
                 (changed_at, before["entry_id"]),
@@ -2052,6 +2159,8 @@ def approve_all(db_path: str | Path, date_value: str, at: str | None = None) -> 
         "skipped_needs_info_minutes": skipped_needs_info_minutes,
         "skipped_locked_count": skipped_locked_count,
         "skipped_locked_minutes": skipped_locked_minutes,
+        "skipped_missing_job_code_count": skipped_missing_job_code_count,
+        "skipped_missing_job_code_minutes": skipped_missing_job_code_minutes,
         "entries": approved,
     }
 
@@ -2238,11 +2347,11 @@ def write_sanitized_packet(db_path: str | Path, date_value: str, output: str | P
     if not safe_entries:
         lines.append("No entries for this date.")
     else:
-        lines.append("| Entry | Client | Job Type | Notes | Minutes | Status |")
-        lines.append("|---:|---|---|---|---:|---|")
+        lines.append("| Client | Job Type | Notes | Duration | Status |")
+        lines.append("|---|---|---|---:|---|")
         for entry in safe_entries:
             lines.append(
-                f"| {entry['entry_id']} | {entry['client_name']} | {entry.get('job_type') or ''} | {entry['task_text']} | {entry['rounded_minutes']} | {entry['review_status']} |"
+                f"| {entry['client_name']} | {entry.get('job_type') or ''} | {entry['task_text']} | {format_hhmm(int(entry['rounded_minutes']))} | {entry['review_status']} |"
             )
     lines.extend([
         "",
@@ -2415,24 +2524,28 @@ def render_review_html(review: dict[str, Any], output: str | Path, db_path: str 
 
     rows = []
     for entry in entries:
-        window = f"{html.escape(entry['start_at'][11:16])}–{html.escape(entry['end_at'][11:16])}"
+        if entry.get("duration_only") or (
+            entry.get("capture_note") and "duration_only" in str(entry.get("capture_note"))
+        ):
+            window = "—"
+        else:
+            window = f"{html.escape(entry['start_at'][11:16])}–{html.escape(entry['end_at'][11:16])}"
         reason = entry.get("needs_review_reason")
         status_html = status_pill(entry['review_status'])
         if reason:
             status_html += f"<div class='sub'>Needs review: {html.escape(reason)}</div>"
         rows.append(
             "<tr>"
-            f"<td class='entry-id'>#{entry['entry_id']}</td>"
             f"<td class='client'>{html.escape(entry['client_name'])}</td>"
             f"<td class='job-type'>{html.escape(entry.get('job_type') or '')}</td>"
             f"<td class='task'>{html.escape(entry['task_text'])}</td>"
             f"<td class='window'>{window}</td>"
-            f"<td class='mins'>{int(entry['rounded_minutes'])} min</td>"
+            f"<td class='mins'>{html.escape(format_hhmm(int(entry['rounded_minutes'])))}</td>"
             f"<td>{billable_pill(entry['billable'])}</td>"
             f"<td>{status_html}</td>"
             "</tr>"
         )
-    body_rows = "\n".join(rows) if rows else "<tr><td class='empty' colspan='8'>No entries captured yet for this day.</td></tr>"
+    body_rows = "\n".join(rows) if rows else "<tr><td class='empty' colspan='7'>No entries captured yet for this day.</td></tr>"
 
     active_note = ""
     if active:
@@ -2484,7 +2597,7 @@ def render_review_html(review: dict[str, Any], output: str | Path, db_path: str 
     </div>
 {active_note}    <div class="table-wrap">
       <table>
-        <thead><tr><th>Entry</th><th>Client</th><th>Job Type</th><th>Notes</th><th>Window</th><th>Rounded</th><th>Billable</th><th>Status</th></tr></thead>
+        <thead><tr><th>Client</th><th>Job Type</th><th>Notes</th><th>Window</th><th>Duration</th><th>Billable</th><th>Status</th></tr></thead>
         <tbody>{body_rows}</tbody>
       </table>
     </div>

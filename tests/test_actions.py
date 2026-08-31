@@ -32,6 +32,47 @@ def _seed_roster(test_case, *names: str) -> None:
     actions.import_clients(test_case.db, path, mode="merge")
 
 
+# Job Code is required before approve. Legacy tests that never set job_type still
+# exercise approve/export paths — fill a placeholder only when blank so those
+# suites stay meaningful. Call sites that assert the gate use _raw_set_approval /
+# _raw_approve_all.
+_raw_set_approval = actions.set_approval
+_raw_approve_all = actions.approve_all
+
+
+def _fill_blank_job_type(db_path, entry_id: int | None = None, *, date_value: str | None = None) -> None:
+    with db.connect(db_path) as conn:
+        if entry_id is not None:
+            conn.execute(
+                "UPDATE time_entries SET job_type = 'Tax' WHERE entry_id = ? AND TRIM(COALESCE(job_type, '')) = ''",
+                (entry_id,),
+            )
+        elif date_value is not None:
+            conn.execute(
+                """
+                UPDATE time_entries SET job_type = 'Tax'
+                WHERE substr(start_at, 1, 10) = ?
+                  AND review_status = 'draft'
+                  AND TRIM(COALESCE(job_type, '')) = ''
+                """,
+                (date_value,),
+            )
+        conn.commit()
+
+
+def _set_approval_compat(db_path, entry_id, approved, at=None):
+    if approved:
+        _fill_blank_job_type(db_path, entry_id=entry_id)
+    return _raw_set_approval(db_path, entry_id, approved, at)
+
+
+def _approve_all_compat(db_path, date_value, at=None):
+    _fill_blank_job_type(db_path, date_value=date_value)
+    return _raw_approve_all(db_path, date_value, at)
+
+
+actions.set_approval = _set_approval_compat  # type: ignore[assignment]
+actions.approve_all = _approve_all_compat  # type: ignore[assignment]
 
 class RoundingDefaultTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -702,7 +743,7 @@ class CaptureRosterTests(unittest.TestCase):
         review = actions.review_entries(self.db, "2026-05-28", "2026-05-28T10:00:00")
         needs_info = [item for item in review["entries"] if item["review_status"] == "needs_info"]
         self.assertEqual(len(needs_info), 1)
-        self.assertEqual(needs_info[0]["needs_review_reason"], "client_not_in_roster")
+        self.assertEqual(needs_info[0]["needs_review_reason"], "client 'Henderson' is not in the roster")
         self.assertEqual(review["skipped_needs_info_count"], 1)
 
     def test_clarify_active_session_resolves_pending_capture_without_changing_start_time(self) -> None:
@@ -1098,7 +1139,7 @@ class ExportHardeningTests(unittest.TestCase):
         out = self.work / "packet.md"
         actions.write_sanitized_packet(self.db, "2026-05-28", out)
         text = out.read_text()
-        self.assertIn("| Entry | Client | Job Type | Notes | Minutes | Status |", text)
+        self.assertIn("| Client | Job Type | Notes | Duration | Status |", text)
         self.assertNotIn("| Entry | Client | Task | Minutes | Status |", text)
         # job_type is free text that can embed real client detail, so the packet
         # redacts it to a sequential label (review finding I1).
@@ -1149,8 +1190,12 @@ class ExportHardeningTests(unittest.TestCase):
         text = out.read_text()
         self.assertIn("<th>Job Type</th>", text)
         self.assertIn("<th>Notes</th>", text)
+        self.assertIn("<th>Duration</th>", text)
         self.assertNotIn("<th>Task</th>", text)
+        self.assertNotIn("<th>Entry</th>", text)
+        self.assertNotIn("<th>Entry ID</th>", text)
         self.assertIn(">Tax<", text)
+        self.assertIn(">0:30<", text)
 
 
 class ExportFormatTests(unittest.TestCase):
@@ -1193,11 +1238,18 @@ class ExportFormatTests(unittest.TestCase):
         self.assertEqual(rows[0]["Billable"], "Yes")
 
     def test_export_empty_job_type(self) -> None:
+        # Approve normally requires a Job Code; seed an approved blank-code row
+        # so the CSV formatter still emits an empty Job Type cell.
         entry = actions.add_missing_entry(
             self.db, "Acme Co", "work",
             "2026-05-28T09:00:00", "2026-05-28T09:30:00", "yes",
         )
-        self._approve(entry["entry_id"])
+        with db.connect(self.db) as conn:
+            conn.execute(
+                "UPDATE time_entries SET review_status = 'approved', updated_at = ? WHERE entry_id = ?",
+                ("2026-05-28T10:00:00", entry["entry_id"]),
+            )
+            conn.commit()
         out = self.work / "qb.csv"
         actions.export_entries(self.db, "2026-05-28", out, at="2026-05-28T10:05:00")
         rows = list(csv.DictReader(out.read_text().splitlines()))
@@ -1761,12 +1813,12 @@ class BillableLockTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, r"administrative and cannot be billable"):
             actions.apply_client_policy(row, "yes", None)
 
-    def test_policy_known_inherits_default_job_type(self) -> None:
+    def test_policy_known_does_not_auto_apply_default_job_type(self) -> None:
         with db.connect(self.db) as conn:
             row = actions.resolve_client_row(conn, "Acme Co")
         billable, job_type = actions.apply_client_policy(row, None, None)
         self.assertEqual(billable, 1)
-        self.assertEqual(job_type, "Tax")
+        self.assertEqual(job_type, "")
 
     def test_policy_explicit_job_type_wins_for_unlocked(self) -> None:
         with db.connect(self.db) as conn:
@@ -1794,9 +1846,10 @@ class BillableLockTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, r"administrative and cannot be billable"):
             actions.start_session(self.db, "Holiday", "day off", billable="yes", at="2026-05-28T10:00:00")
 
-    def test_start_roster_inherits_default_job_type(self) -> None:
+    def test_start_roster_suggests_default_job_type_without_applying(self) -> None:
         session = actions.start_session(self.db, "Acme Co", "audit", at="2026-05-28T10:00:00")
-        self.assertEqual(session["job_type"], "Tax")
+        self.assertEqual(session["job_type"], "")
+        self.assertEqual(session.get("suggested_job_type"), "Tax")
 
     def test_start_explicit_job_type_wins(self) -> None:
         session = actions.start_session(self.db, "Acme Co", "audit", at="2026-05-28T10:00:00", job_type="Audit")
@@ -1947,9 +2000,9 @@ class ApplyClientPolicyCurrentValueTests(unittest.TestCase):
             self._row(), None, None, current_job_type="")
         self.assertEqual(job_type, "")
 
-    def test_fresh_capture_takes_roster_default(self) -> None:
+    def test_fresh_capture_leaves_job_type_blank(self) -> None:
         billable, job_type = actions.apply_client_policy(self._row(), None, None)
-        self.assertEqual(job_type, "Bookkeeping")
+        self.assertEqual(job_type, "")
 
     def test_current_billable_preserved_when_not_requested(self) -> None:
         billable, _ = actions.apply_client_policy(
@@ -2379,7 +2432,8 @@ class AddClientTests(unittest.TestCase):
         actions.add_client(self.db, "Acme Widgets", default_job_type="Bookkeeping")
         fixed = actions.edit_entry(self.db, entry["entry_id"], client="Acme Widgets")
         self.assertEqual(fixed["review_status"], "draft")
-        self.assertEqual(fixed["job_type"], "Bookkeeping")
+        self.assertEqual(fixed["job_type"], "")
+        self.assertEqual(fixed.get("suggested_job_type"), "Bookkeeping")
         self.assertEqual(fixed["billable"], 1)
 
 
@@ -2953,6 +3007,59 @@ class RangeExportTests(unittest.TestCase):
             actions.export_entries(
                 self.db, "2026-06-01", self.out, end_date="not-a-date",
             )
+
+
+class JobCodeGateAndDurationCaptureTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.db = Path(self.tmp.name) / "timeassist.sqlite"
+        actions.init_state(self.db, "2026-05-28T09:00:00")
+        _seed_roster(self, "Acme Co")
+
+    def test_approve_refuses_blank_job_code(self) -> None:
+        entry = actions.add_missing_entry(
+            self.db, "Acme Co", "work", "2026-05-28T09:00:00", "2026-05-28T09:30:00", "yes",
+        )
+        self.assertEqual(entry["job_type"], "")
+        with self.assertRaisesRegex(ValueError, "no Job Code"):
+            _raw_set_approval(self.db, entry["entry_id"], True)
+
+    def test_approve_all_skips_missing_job_code(self) -> None:
+        actions.add_missing_entry(
+            self.db, "Acme Co", "a", "2026-05-28T09:00:00", "2026-05-28T09:30:00", "yes",
+        )
+        actions.add_missing_entry(
+            self.db, "Acme Co", "b", "2026-05-28T10:00:00", "2026-05-28T10:30:00", "yes",
+            job_type="Tax",
+        )
+        result = _raw_approve_all(self.db, "2026-05-28")
+        self.assertEqual(result["approved_count"], 1)
+        self.assertEqual(result["skipped_missing_job_code_count"], 1)
+        self.assertEqual(result["skipped_missing_job_code_minutes"], 30)
+
+    def test_duration_only_add_missing_packs_from_midnight(self) -> None:
+        entry = actions.add_missing_entry(
+            self.db, "Acme Co", "tax prep", billable="yes", job_type="1065",
+            date="2026-05-28", duration_minutes=105,
+        )
+        self.assertTrue(entry.get("duration_only"))
+        self.assertEqual(entry["duration_minutes"], 105)
+        self.assertEqual(entry["start_at"], "2026-05-28T00:00:00")
+        self.assertEqual(entry["end_at"], "2026-05-28T01:45:00")
+        self.assertEqual(actions.format_hhmm(105), "1:45")
+
+    def test_duration_only_packs_after_existing_block(self) -> None:
+        actions.add_missing_entry(
+            self.db, "Acme Co", "first", "2026-05-28T00:00:00", "2026-05-28T01:00:00",
+            "yes", job_type="Tax",
+        )
+        second = actions.add_missing_entry(
+            self.db, "Acme Co", "second", billable="yes", job_type="Tax",
+            date="2026-05-28", duration_minutes=30,
+        )
+        self.assertEqual(second["start_at"], "2026-05-28T01:00:00")
+        self.assertEqual(second["end_at"], "2026-05-28T01:30:00")
 
 
 if __name__ == "__main__":

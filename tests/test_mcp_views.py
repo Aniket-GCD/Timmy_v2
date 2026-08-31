@@ -42,9 +42,11 @@ class SlimEntryTests(unittest.TestCase):
         self.assertEqual(slim["job_code"], "Accounts")
         self.assertEqual(slim["hours"], 0.5)
 
-    def test_empty_job_type_omitted_after_drop_nones(self) -> None:
+    def test_empty_job_type_kept_as_blank_string(self) -> None:
         shaped = mcp_views.shape("edit", dict(FULL_ENTRY, job_type=""))
-        self.assertNotIn("job_type", shaped)
+        self.assertEqual(shaped["job_type"], "")
+        self.assertEqual(shaped["job_code"], "")
+        self.assertEqual(shaped["duration"], "0:30")
 
     def test_notes_missing_passes_through(self) -> None:
         slim = mcp_views.slim_entry(dict(FULL_ENTRY, notes_missing=True))
@@ -78,9 +80,10 @@ class SlimSessionTests(unittest.TestCase):
         self.assertEqual(slim["job_type"], "Payroll")
         self.assertEqual(slim["job_code"], "Payroll")
 
-    def test_session_empty_job_type_omitted_after_drop_nones(self) -> None:
+    def test_session_empty_job_type_kept_as_blank_string(self) -> None:
         shaped = mcp_views.shape("start", dict(FULL_SESSION, job_type="", capture_status="resolved"))
-        self.assertNotIn("job_type", shaped)
+        self.assertEqual(shaped["job_type"], "")
+        self.assertEqual(shaped["job_code"], "")
 
     def test_non_active_status_included(self) -> None:
         slim = mcp_views.slim_session(dict(FULL_SESSION, status="canceled", capture_status="resolved"))
@@ -176,14 +179,19 @@ class ShapeTests(unittest.TestCase):
         shaped = mcp_views.shape("review", result)
         self.assertNotIn("active_timer", shaped)
 
-    def test_approve_all_view_drops_entries(self) -> None:
+    def test_approve_all_view_keeps_entries_and_submit_fields(self) -> None:
         shaped = mcp_views.shape("approve_all", {
             "date": "2026-05-28", "approved_count": 3,
             "skipped_needs_info_count": 1, "skipped_needs_info_minutes": 12,
-            "entries": [FULL_ENTRY] * 3,
+            "skipped_missing_job_code_count": 1, "skipped_missing_job_code_minutes": 30,
+            "submitted_count": 2, "submit_failed_count": 1,
+            "entries": [dict(FULL_ENTRY, job_type="Tax")] * 3,
+            "submit_results": [{"entry_id": 7, "ok": True}],
         })
         self.assertEqual(shaped["approved_count"], 3)
-        self.assertNotIn("entries", shaped)
+        self.assertEqual(len(shaped["entries"]), 3)
+        self.assertEqual(shaped["skipped_missing_job_code_count"], 1)
+        self.assertEqual(shaped["submitted_count"], 2)
 
     def test_approve_all_view_surfaces_skipped_locked_counts(self) -> None:
         shaped = mcp_views.shape("approve_all", {

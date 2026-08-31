@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .actions import capture_note_text
+from .actions import capture_note_text, format_hhmm
 
 
 def drop_nones(value: Any) -> Any:
@@ -24,20 +24,34 @@ def drop_nones(value: Any) -> Any:
 
 
 def slim_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    minutes = entry.get("rounded_minutes")
+    job = entry.get("job_type")
+    if job is None:
+        job = ""
+    else:
+        job = str(job)
     slim: dict[str, Any] = {
         "entry_id": entry.get("entry_id"),
         "client": entry.get("client_name"),
         "notes": entry.get("task_text"),
-        "job_type": entry.get("job_type") or None,
-        "job_code": (entry.get("job_type") or None),
+        # Always emit Job Type (blank string OK) so the snapshot table keeps the column.
+        "job_type": job,
+        "job_code": job,
         "billable": "yes" if entry.get("billable") else "no",
         "start": entry.get("start_at"),
         "end": entry.get("end_at"),
-        "minutes": entry.get("rounded_minutes"),
+        "minutes": minutes,
         "status": entry.get("review_status"),
     }
-    if entry.get("rounded_minutes") is not None:
-        slim["hours"] = int(entry["rounded_minutes"]) / 60
+    if minutes is not None:
+        slim["hours"] = int(minutes) / 60
+        slim["duration"] = format_hhmm(int(minutes))
+    if entry.get("duration_only") or (
+        entry.get("capture_note") and "duration_only" in str(entry.get("capture_note"))
+    ):
+        slim["duration_only"] = True
+    if entry.get("suggested_job_type"):
+        slim["suggested_job_type"] = entry["suggested_job_type"]
     if entry.get("submitted_at"):
         slim["submitted_at"] = entry["submitted_at"]
     if entry.get("supabase_id"):
@@ -54,19 +68,30 @@ def slim_entry(entry: dict[str, Any]) -> dict[str, Any]:
             or entry.get("needs_review_reason")
             or "needs_info"
         )
+    if entry.get("submit_result") is not None:
+        slim["submit_result"] = entry["submit_result"]
+    if entry.get("submit_error") is not None:
+        slim["submit_error"] = entry["submit_error"]
     return slim
 
 
 def slim_session(session: dict[str, Any] | None) -> dict[str, Any] | None:
     if not session:
         return None
+    job = session.get("job_type")
+    if job is None:
+        job = ""
+    else:
+        job = str(job)
     slim: dict[str, Any] = {
         "client": session.get("client_name"),
         "notes": session.get("task_text"),
-        "job_type": session.get("job_type") or None,
-        "job_code": (session.get("job_type") or None),
+        "job_type": job,
+        "job_code": job,
         "started_at": session.get("started_at"),
     }
+    if session.get("suggested_job_type"):
+        slim["suggested_job_type"] = session["suggested_job_type"]
     if session.get("raw_client_name"):
         slim["spoken_client"] = session["raw_client_name"]
     if session.get("last_checkin_at") and session.get("last_checkin_at") != session.get("started_at"):
@@ -127,6 +152,17 @@ def _view_approve_all(result: dict[str, Any]) -> dict[str, Any]:
     if result.get("skipped_locked_count"):
         shaped["skipped_locked_count"] = result["skipped_locked_count"]
         shaped["skipped_locked_minutes"] = result["skipped_locked_minutes"]
+    if result.get("skipped_missing_job_code_count"):
+        shaped["skipped_missing_job_code_count"] = result["skipped_missing_job_code_count"]
+        shaped["skipped_missing_job_code_minutes"] = result["skipped_missing_job_code_minutes"]
+    if result.get("submitted_count") is not None:
+        shaped["submitted_count"] = result["submitted_count"]
+    if result.get("submit_failed_count"):
+        shaped["submit_failed_count"] = result["submit_failed_count"]
+    if result.get("submit_results"):
+        shaped["submit_results"] = result["submit_results"]
+    if result.get("entries"):
+        shaped["entries"] = [slim_entry(e) for e in result["entries"]]
     return shaped
 
 
@@ -304,7 +340,11 @@ _VIEWS = {
 
 
 def shape(tool_name: str, result: dict[str, Any]) -> dict[str, Any]:
-    """Return the compact model-facing view of a tool result."""
+    """Return the compact model-facing view of a tool result.
+
+    job_type/job_code blank strings must survive so review snapshots keep the
+    Job Type column — strip only true Nones.
+    """
     view = _VIEWS.get(tool_name)
     shaped = view(result) if view else result
     return drop_nones(shaped)

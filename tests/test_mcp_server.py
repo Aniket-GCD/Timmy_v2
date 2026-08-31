@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import os
-from timeassist import mcp_server
+from timeassist import mcp_server, db as ta_db
 from tests.remote_roster import install_live_clients
 
 # Escape hatch for legacy import_clients seeding in MCP tests.
@@ -36,6 +36,20 @@ class McpServerTests(unittest.TestCase):
         result = self.call(name, arguments)
         self.assertNotIn("isError", result, f"unexpected tool error: {result}")
         return json.loads(result["content"][0]["text"])
+
+    def stamp_job_and_review(self, date: str = "2026-05-28") -> dict:
+        """Fill blank Job Codes then return a fresh review (token stays valid)."""
+        self.ensure_job_codes()
+        return self.payload("review", {"date": date})
+
+    def ensure_job_codes(self, job_type: str = "Tax") -> None:
+        """Stamp blank drafts so approve/export tests can proceed."""
+        with ta_db.connect(self.db) as conn:
+            conn.execute(
+                "UPDATE time_entries SET job_type = ? WHERE TRIM(COALESCE(job_type, '')) = ''",
+                (job_type,),
+            )
+            conn.commit()
 
     def token(self, date: str = "2026-05-28") -> str:
         return self.payload("review", {"date": date})["review_token"]
@@ -152,15 +166,21 @@ class McpServerTests(unittest.TestCase):
         self.payload("init_state", {"at": "2026-05-28T08:55:00"})
         self.seed_roster("Client A")  # Client B stays off-roster -> needs_info
 
-        self.payload("start", {"client": "Client A", "task": "monthly cleanup", "billable": "yes", "at": "2026-05-28T09:00:00"})
-        switched = self.payload("switch", {"client": "Client B", "task": "tax question", "at": "2026-05-28T09:24:00"})
+        self.payload("start", {
+            "client": "Client A", "task": "monthly cleanup", "billable": "yes",
+            "job_type": "Tax", "at": "2026-05-28T09:00:00",
+        })
+        switched = self.payload("switch", {
+            "client": "Client B", "task": "tax question", "job_type": "Tax", "at": "2026-05-28T09:24:00",
+        })
         self.assertEqual(switched["closed_entry"]["minutes"], 24)
 
         ended = self.payload("end", {"at": "2026-05-28T09:42:00"})
         self.assertEqual(ended["minutes"], 18)
 
         added = self.payload("add_missing", {
-            "client": "Client A", "task": "call notes", "start": "2026-05-28T10:00:00", "end": "2026-05-28T10:18:00",
+            "client": "Client A", "task": "call notes", "job_type": "Tax",
+            "start": "2026-05-28T10:00:00", "end": "2026-05-28T10:18:00",
         })
         self.assertEqual(added["minutes"], 18)
 
@@ -179,6 +199,8 @@ class McpServerTests(unittest.TestCase):
         self.assertEqual(review["totals"]["draft_minutes"], 60)
         self.assertEqual([e["status"] for e in review["entries"]], ["draft", "draft", "draft"])
 
+        self.ensure_job_codes()
+        review = self.payload("review", {"date": "2026-05-28"})
         self.payload("approve", {"entry_id": 1, "review_token": review["review_token"], "at": "2026-05-28T10:45:00"})
         review = self.payload("review", {"date": "2026-05-28"})
         self.payload("approve", {"entry_id": 2, "review_token": review["review_token"], "at": "2026-05-28T10:46:00"})
@@ -201,7 +223,7 @@ class McpServerTests(unittest.TestCase):
         review = self.payload("review", {"date": "2026-05-28"})
         rejected = self.call("approve", {"entry_id": entry["entry_id"], "review_token": review["review_token"]})
         self.assertTrue(rejected.get("isError"))
-        confirmed = self.payload("edit", {"entry_id": entry["entry_id"], "client": "acme"})
+        confirmed = self.payload("edit", {"entry_id": entry["entry_id"], "client": "acme", "job_type": "Tax"})
         self.assertEqual(confirmed["status"], "draft")
         self.assertNotIn("needs_info", confirmed)
         review = self.payload("review", {"date": "2026-05-28"})
@@ -213,7 +235,7 @@ class McpServerTests(unittest.TestCase):
         self.seed_roster("Client 0", "Client 1", "Client 2")
         for i in range(3):
             self.payload("add_missing", {
-                "client": f"Client {i}", "task": "work",
+                "client": f"Client {i}", "task": "work", "job_type": "Tax",
                 "start": f"2026-05-28T1{i}:00:00", "end": f"2026-05-28T1{i}:24:00",
             })
         review = self.payload("review", {"date": "2026-05-28"})
@@ -259,7 +281,8 @@ class McpServerTests(unittest.TestCase):
         self.payload("init_state", {"at": "2026-05-28T08:55:00"})
         self.seed_roster("Client A")
         self.payload("add_missing", {
-            "client": "Client A", "task": "work", "start": "2026-05-28T10:00:00", "end": "2026-05-28T10:24:00",
+            "client": "Client A", "task": "work", "job_type": "Tax",
+            "start": "2026-05-28T10:00:00", "end": "2026-05-28T10:24:00",
         })
         review = self.payload("review", {"date": "2026-05-28"})
         self.payload("approve", {"entry_id": 1, "review_token": review["review_token"]})
@@ -370,7 +393,10 @@ class McpServerTests(unittest.TestCase):
         self.assertNotIn("active_session", review)
         self.assertNotIn("active_timer", review)  # idle: omitted entirely
         entry = review["entries"][0]
-        self.assertEqual(sorted(entry), ["billable", "client", "end", "entry_id", "hours", "minutes", "notes", "start", "status"])
+        self.assertEqual(sorted(entry), [
+            "billable", "client", "duration", "end", "entry_id", "hours",
+            "job_code", "job_type", "minutes", "notes", "start", "status",
+        ])
 
     def test_tool_error_is_reported_as_iserror(self) -> None:
         self.payload("init_state", {"at": "2026-05-28T08:55:00"})
@@ -427,7 +453,8 @@ class McpServerTests(unittest.TestCase):
         self.payload("init_state", {"at": "2026-05-28T08:55:00"})
         self.seed_roster("Client A")
         self.payload("add_missing", {
-            "client": "Client A", "task": "cleanup", "start": "2026-05-28T10:00:00", "end": "2026-05-28T10:24:00",
+            "client": "Client A", "task": "cleanup", "job_type": "Tax",
+            "start": "2026-05-28T10:00:00", "end": "2026-05-28T10:24:00",
         })
         review = self.payload("review", {"date": "2026-05-28"})
         self.payload("approve", {"entry_id": 1, "review_token": review["review_token"], "at": "2026-05-28T10:45:00"})
@@ -763,11 +790,11 @@ class McpServerTests(unittest.TestCase):
         self.payload("init_state", {"at": "2026-05-27T08:55:00"})
         self.seed_roster("Client A")
         self.payload("add_missing", {
-            "client": "Client A", "task": "day1",
+            "client": "Client A", "task": "day1", "job_type": "Tax",
             "start": "2026-05-27T09:00:00", "end": "2026-05-27T09:30:00",
         })
         self.payload("add_missing", {
-            "client": "Client A", "task": "day2",
+            "client": "Client A", "task": "day2", "job_type": "Tax",
             "start": "2026-05-28T10:00:00", "end": "2026-05-28T10:30:00",
         })
         # Approve each day using its single-day token
@@ -824,7 +851,7 @@ class McpServerTests(unittest.TestCase):
         self.seed_roster("Client A")
         self.payload("config", {"operator_code": "JW", "confirm": True})
         self.payload("add_missing", {
-            "client": "Client A", "task": "work",
+            "client": "Client A", "task": "work", "job_type": "Tax",
             "start": "2026-05-28T09:00:00", "end": "2026-05-28T09:30:00",
         })
         review = self.payload("review", {"date": "2026-05-28"})
@@ -842,7 +869,7 @@ class McpServerTests(unittest.TestCase):
         self.payload("init_state", {"at": "2026-05-28T08:55:00"})
         self.seed_roster("Client A")
         self.payload("add_missing", {
-            "client": "Client A", "task": "work",
+            "client": "Client A", "task": "work", "job_type": "Tax",
             "start": "2026-05-28T09:00:00", "end": "2026-05-28T09:30:00",
         })
         review = self.payload("review", {"date": "2026-05-28"})
@@ -854,6 +881,94 @@ class McpServerTests(unittest.TestCase):
             "review_token": review["review_token"],
         })
         self.assertNotIn("operator_code", export)
+
+
+    def test_approve_auto_submits_and_surfaces_result(self) -> None:
+        self.payload("init_state", {"at": "2026-05-28T08:55:00"})
+        self.seed_roster("Client A")
+        added = self.payload("add_missing", {
+            "client": "Client A", "task": "work", "job_type": "Tax",
+            "start": "2026-05-28T10:00:00", "end": "2026-05-28T10:30:00",
+        })
+        review = self.payload("review", {"date": "2026-05-28"})
+        with unittest.mock.patch(
+            "timeassist.supabase_submit.submit_entry",
+            return_value={"submitted": True, "supabase_id": "sb-1"},
+        ) as submit:
+            approved = self.payload("approve", {
+                "entry_id": added["entry_id"],
+                "review_token": review["review_token"],
+                "at": "2026-05-28T11:00:00",
+            })
+        submit.assert_called_once()
+        self.assertEqual(approved["status"], "approved")
+        self.assertEqual(approved["submit_result"]["submitted"], True)
+        self.assertNotIn("submit_error", approved)
+
+    def test_approve_keeps_local_approval_when_submit_fails(self) -> None:
+        self.payload("init_state", {"at": "2026-05-28T08:55:00"})
+        self.seed_roster("Client A")
+        added = self.payload("add_missing", {
+            "client": "Client A", "task": "work", "job_type": "Tax",
+            "start": "2026-05-28T10:00:00", "end": "2026-05-28T10:30:00",
+        })
+        review = self.payload("review", {"date": "2026-05-28"})
+        with unittest.mock.patch(
+            "timeassist.supabase_submit.submit_entry",
+            side_effect=RuntimeError("supabase down"),
+        ):
+            approved = self.payload("approve", {
+                "entry_id": added["entry_id"],
+                "review_token": review["review_token"],
+                "at": "2026-05-28T11:00:00",
+            })
+        self.assertEqual(approved["status"], "approved")
+        self.assertIn("supabase down", approved["submit_error"])
+
+    def test_approve_all_auto_submits_each_approved_entry(self) -> None:
+        self.payload("init_state", {"at": "2026-05-28T08:55:00"})
+        self.seed_roster("Client A", "Client B")
+        self.payload("add_missing", {
+            "client": "Client A", "task": "a", "job_type": "Tax",
+            "start": "2026-05-28T10:00:00", "end": "2026-05-28T10:30:00",
+        })
+        self.payload("add_missing", {
+            "client": "Client B", "task": "b", "job_type": "Tax",
+            "start": "2026-05-28T11:00:00", "end": "2026-05-28T11:30:00",
+        })
+        review = self.payload("review", {"date": "2026-05-28"})
+        with unittest.mock.patch(
+            "timeassist.supabase_submit.submit_entry",
+            side_effect=[
+                {"submitted": True, "supabase_id": "sb-a"},
+                {"submitted": True, "supabase_id": "sb-b"},
+            ],
+        ) as submit:
+            result = self.payload("approve_all", {
+                "date": "2026-05-28",
+                "review_token": review["review_token"],
+                "at": "2026-05-28T17:00:00",
+            })
+        self.assertEqual(result["approved_count"], 2)
+        self.assertEqual(submit.call_count, 2)
+        self.assertEqual(result["submitted_count"], 2)
+        self.assertEqual(len(result["submit_results"]), 2)
+
+    def test_add_missing_duration_path_via_mcp(self) -> None:
+        self.payload("init_state", {"at": "2026-05-28T08:55:00"})
+        self.seed_roster("Client A")
+        added = self.payload("add_missing", {
+            "client": "Client A",
+            "task": "after the fact",
+            "job_type": "1065",
+            "date": "2026-05-28",
+            "duration_minutes": 105,
+        })
+        self.assertEqual(added["minutes"], 105)
+        self.assertEqual(added["duration"], "1:45")
+        self.assertTrue(added.get("duration_only"))
+        self.assertEqual(added["start"], "2026-05-28T00:00:00")
+        self.assertEqual(added["end"], "2026-05-28T01:45:00")
 
 
 if __name__ == "__main__":

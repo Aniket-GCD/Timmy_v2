@@ -101,7 +101,9 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "add_missing",
         "description": (
-            "Add an explicit missing time block as a draft entry. Soft nickname matches and "
+            "Add an explicit missing time block as a draft entry. Prefer date + "
+            "duration_minutes when the operator gives how long (not clock times); "
+            "or pass start+end when they give a window. Soft nickname matches and "
             "unknown names return needs_client_confirm with an ask string — relay it to the "
             "operator; on yes retry with suggested_client (or confirm_client=true); on new "
             "client use Unassigned + NEW CLIENT notes + draft_reception_email."
@@ -111,16 +113,22 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "client": {"type": "string"},
                 "task": {"type": "string", "description": "notes: what was done."},
-                "job_type": {"type": "string", "description": "Job Code from list_job_codes (stored locally as job_type)."},
-                "start": {"type": "string", "description": "ISO start timestamp."},
-                "end": {"type": "string", "description": "ISO end timestamp."},
+                "job_type": {"type": "string", "description": "Job Code from list_job_codes (stored locally as job_type). Only set after operator confirmation."},
+                "start": {"type": "string", "description": "ISO start timestamp (optional if date+duration_minutes given)."},
+                "end": {"type": "string", "description": "ISO end timestamp (optional if date+duration_minutes given)."},
+                "date": {"type": "string", "description": "Work date YYYY-MM-DD for duration-only capture."},
+                "duration_minutes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Billable duration in minutes when start/end are omitted.",
+                },
                 "billable": {"type": "string", "enum": ["yes", "no"], "description": "Omit to use roster default (else yes)."},
                 "confirm_client": {
                     "type": "boolean",
                     "description": "True after the operator confirmed a soft match or unmatched spoken name.",
                 },
             },
-            "required": ["client", "task", "start", "end"],
+            "required": ["client", "task"],
         },
     },
     {
@@ -156,7 +164,11 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "approve",
-        "description": "Approve a single draft entry. Human-authority action: only call after the person confirms this specific entry from the current review.",
+        "description": (
+            "Approve a single draft entry, then immediately submit it to Supabase. "
+            "Requires a confirmed Job Code. Human-authority: only after the person "
+            "confirms this entry from the current review. Do not offer CSV afterward."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -169,7 +181,12 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "approve_all",
-        "description": "Approve ALL draft entries for a date. Only when the operator explicitly asks to approve everything from the current review — never on your own initiative.",
+        "description": (
+            "Approve ALL draft entries for a date that have a Job Code, then submit each "
+            "to Supabase. Skips needs_info and missing Job Code (reported). Only when the "
+            "operator explicitly asks to approve everything — never on your own. Do not "
+            "offer CSV afterward."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -376,7 +393,7 @@ TOOLS: list[dict[str, Any]] = [
                 "display_name": {"type": "string"},
                 "aliases": {"type": "string", "description": "Optional ';'-separated alternate names."},
                 "default_billable": {"type": "string", "enum": ["yes", "no"], "description": "Defaults to yes."},
-                "default_job_type": {"type": "string", "description": "Auto-fills Job Code on new entries for this client."},
+                "default_job_type": {"type": "string", "description": "Suggested Job Code for this client (never auto-applied; operator must confirm)."},
                 "client_key": {"type": "string", "description": "Optional stable key; derived from display_name when omitted."},
                 "at": {"type": "string", "description": "Optional ISO timestamp."},
             },
@@ -541,10 +558,12 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
             db_path,
             arguments["client"],
             arguments["task"],
-            arguments["start"],
-            arguments["end"],
+            arguments.get("start"),
+            arguments.get("end"),
             arguments.get("billable"),
             job_type=arguments.get("job_type"),
+            date=arguments.get("date"),
+            duration_minutes=int(arguments["duration_minutes"]) if arguments.get("duration_minutes") is not None else None,
             confirm_client=bool(arguments.get("confirm_client")),
         )
     if name == "edit":
@@ -579,11 +598,42 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
     if name == "approve":
         entry_id = int(arguments["entry_id"])
         _validate_token_for_entry(db_path, entry_id, arguments)
-        return actions.set_approval(db_path, entry_id, True, arguments.get("at"))
+        approved = actions.set_approval(db_path, entry_id, True, arguments.get("at"))
+        # Approve → immediate Supabase submit (CSV/export is opt-in only).
+        from . import supabase_submit
+
+        try:
+            submit_result = supabase_submit.submit_entry(db_path, entry_id, at=arguments.get("at"))
+            approved = dict(approved)
+            approved["submit_result"] = submit_result
+        except Exception as exc:  # leave approved locally; surface submit failure
+            approved = dict(approved)
+            approved["submit_error"] = str(exc)
+        return approved
     if name == "approve_all":
         date_value = _date(arguments.get("date"))
         _validate_token_for_date(db_path, date_value, arguments)
-        return actions.approve_all(db_path, date_value, arguments.get("at"))
+        result = actions.approve_all(db_path, date_value, arguments.get("at"))
+        from . import supabase_submit
+
+        submit_results: list[dict] = []
+        submitted_count = 0
+        submit_failed_count = 0
+        for entry in result.get("entries") or []:
+            eid = int(entry["entry_id"])
+            try:
+                sr = supabase_submit.submit_entry(db_path, eid, at=arguments.get("at"))
+                submit_results.append({"entry_id": eid, "ok": True, **{k: sr.get(k) for k in ("submitted", "skipped", "reason", "supabase_id")}})
+                if sr.get("submitted") or sr.get("skipped"):
+                    submitted_count += 1
+            except Exception as exc:
+                submit_failed_count += 1
+                submit_results.append({"entry_id": eid, "ok": False, "error": str(exc)})
+        result = dict(result)
+        result["submitted_count"] = submitted_count
+        result["submit_failed_count"] = submit_failed_count
+        result["submit_results"] = submit_results
+        return result
     if name == "unapprove":
         return actions.set_approval(db_path, int(arguments["entry_id"]), False, arguments.get("at"))
     if name == "discard_entry":
