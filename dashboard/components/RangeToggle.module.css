@@ -1,5 +1,6 @@
 .wrap {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   padding: 3px;
   gap: 2px;
   background: var(--white);

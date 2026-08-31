@@ -9,6 +9,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { formatHoursHM } from "@/lib/hours-format";
 import type { DailyTotal } from "@/lib/aggregations";
 
 type Props = {
@@ -27,7 +28,6 @@ export function WeekChart({ data, selectedDate, onSelectDate }: Props) {
             data={data}
             margin={{ top: 8, right: 8, left: -12, bottom: 0 }}
             onClick={(state) => {
-              // Recharts v3 click payload shape is loosely typed.
               const active = state as { activePayload?: { payload?: DailyTotal }[] };
               const payload = active.activePayload?.[0]?.payload;
               if (payload?.date) onSelectDate(payload.date);
@@ -38,35 +38,18 @@ export function WeekChart({ data, selectedDate, onSelectDate }: Props) {
             <YAxis tick={{ fill: "#6b6b6b", fontSize: 12 }} axisLine={false} tickLine={false} width={36} />
             <Tooltip
               cursor={{ fill: "rgba(95, 139, 85, 0.08)" }}
-              contentStyle={{
-                borderRadius: 8,
-                borderColor: "#d8d6d3",
-                fontFamily: "var(--font-body)",
-              }}
+              contentStyle={{ borderRadius: 8, borderColor: "#d8d6d3", fontFamily: "var(--font-body)" }}
               formatter={(value, name) => [
-                `${value ?? 0}h`,
-                name === "billable" ? "Billable" : "Non-billable",
+                formatHoursHM(Number(value ?? 0)),
+                name === "admin" ? "Admin" : "Billable & other",
               ]}
               labelFormatter={(_, payload) => {
                 const row = payload?.[0]?.payload as DailyTotal | undefined;
-                return row ? `${row.label} · ${row.total}h total` : "";
+                return row ? `${row.label} · ${formatHoursHM(row.total)} total` : "";
               }}
             />
-            <Bar
-              dataKey="billable"
-              stackId="h"
-              fill="#0e5727"
-              radius={[0, 0, 0, 0]}
-              style={{ cursor: "pointer" }}
-              opacity={1}
-            />
-            <Bar
-              dataKey="nonBillable"
-              stackId="h"
-              fill="#5f8b55"
-              radius={[4, 4, 0, 0]}
-              style={{ cursor: "pointer" }}
-            />
+            <Bar dataKey="nonAdmin" stackId="h" fill="#0e5727" style={{ cursor: "pointer" }} />
+            <Bar dataKey="admin" stackId="h" fill="#5f8b55" radius={[4, 4, 0, 0]} style={{ cursor: "pointer" }} />
           </BarChart>
         </ResponsiveContainer>
       </div>

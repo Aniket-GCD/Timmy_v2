@@ -1,13 +1,16 @@
 "use client";
 
 import styles from "./RangeToggle.module.css";
+import type { RangeKey } from "@/lib/dates";
 
-export type RangeKey = "yesterday" | "today" | "week";
+export type { RangeKey };
 
 const OPTIONS: { key: RangeKey; label: string }[] = [
-  { key: "yesterday", label: "Yesterday" },
   { key: "today", label: "Today" },
+  { key: "yesterday", label: "Yesterday" },
   { key: "week", label: "This week" },
+  { key: "thisPayPeriod", label: "This pay period" },
+  { key: "lastPayPeriod", label: "Last pay period" },
 ];
 
 type Props = {

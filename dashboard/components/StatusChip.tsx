@@ -1,10 +1,15 @@
 import styles from "./StatusChip.module.css";
-import type { EntryStatus } from "@/lib/mock-data";
 
-const LABELS: Record<EntryStatus, string> = {
+export type StatusKind = "submitted" | "draft" | "locked" | "saving" | "error";
+
+const LABELS: Record<StatusKind, string> = {
   submitted: "Submitted",
+  draft: "Draft",
+  locked: "Locked",
+  saving: "Saving…",
+  error: "Error",
 };
 
-export function StatusChip({ status }: { status: EntryStatus }) {
-  return <span className={styles.chip}>{LABELS[status]}</span>;
+export function StatusChip({ status }: { status: StatusKind }) {
+  return <span className={`${styles.chip} ${styles[status] ?? ""}`}>{LABELS[status]}</span>;
 }

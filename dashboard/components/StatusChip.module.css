@@ -8,3 +8,25 @@
   border: 1px solid #c9dcc4;
   white-space: nowrap;
 }
+
+.locked {
+  background: #f0f0f0;
+  color: var(--muted);
+  border-color: #ddd;
+}
+
+.draft {
+  background: #fff8e6;
+  border-color: #ecd89a;
+}
+
+.saving {
+  background: #eef4ff;
+  border-color: #c5d7f5;
+}
+
+.error {
+  background: #fdecea;
+  color: #8b2e24;
+  border-color: #f0c4bf;
+}

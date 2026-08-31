@@ -1,76 +1,79 @@
-import { weekdayShort, weekDateISOs } from "./dates";
-import type { MockEntry } from "./mock-data";
+import { weekdayShort } from "./dates";
+import { isAdminEntry, type TimeEntry } from "./types/time-entry";
 
 export type Metrics = {
   totalHours: number;
   billableHours: number;
-  nonBillableHours: number;
-  entryCount: number;
+  adminHours: number;
+  adminPercent: number;
+  clientCount: number;
 };
 
-export function computeMetrics(entries: MockEntry[]): Metrics {
+export function computeMetrics(entries: TimeEntry[]): Metrics {
   let totalHours = 0;
   let billableHours = 0;
-  let nonBillableHours = 0;
+  let adminHours = 0;
+  const clients = new Set<string>();
   for (const e of entries) {
     totalHours += e.hours;
     if (e.billable) billableHours += e.hours;
-    else nonBillableHours += e.hours;
+    if (isAdminEntry(e)) adminHours += e.hours;
+    clients.add(e.client);
   }
   return {
-    totalHours: round1(totalHours),
-    billableHours: round1(billableHours),
-    nonBillableHours: round1(nonBillableHours),
-    entryCount: entries.length,
+    totalHours: round2(totalHours),
+    billableHours: round2(billableHours),
+    adminHours: round2(adminHours),
+    adminPercent: totalHours > 0 ? Math.round((adminHours / totalHours) * 100) : 0,
+    clientCount: clients.size,
   };
 }
 
 export type DailyTotal = {
   date: string;
   label: string;
-  billable: number;
-  nonBillable: number;
+  admin: number;
+  nonAdmin: number;
   total: number;
 };
 
-export function dailyTotals(anchor = new Date(), entries: MockEntry[]): DailyTotal[] {
-  const days = weekDateISOs(anchor);
-  return days.map((date) => {
+export function dailyTotals(chartDays: string[], entries: TimeEntry[]): DailyTotal[] {
+  return chartDays.map((date) => {
     const dayEntries = entries.filter((e) => e.entry_date === date);
-    let billable = 0;
-    let nonBillable = 0;
+    let admin = 0;
+    let nonAdmin = 0;
     for (const e of dayEntries) {
-      if (e.billable) billable += e.hours;
-      else nonBillable += e.hours;
+      if (isAdminEntry(e)) admin += e.hours;
+      else nonAdmin += e.hours;
     }
     return {
       date,
       label: weekdayShort(date),
-      billable: round1(billable),
-      nonBillable: round1(nonBillable),
-      total: round1(billable + nonBillable),
+      admin: round2(admin),
+      nonAdmin: round2(nonAdmin),
+      total: round2(admin + nonAdmin),
     };
   });
 }
 
-export type NamedHours = { name: string; hours: number };
+export type NamedHours = { name: string; hours: number; key: string };
 
-export function aggregateByClient(entries: MockEntry[], limit = 8): NamedHours[] {
+export function aggregateByClient(entries: TimeEntry[], limit = 8): NamedHours[] {
   return topNamed(entries, (e) => e.client, limit);
 }
 
-export function aggregateByJob(entries: MockEntry[], limit = 8): NamedHours[] {
+export function aggregateByJob(entries: TimeEntry[], limit = 8): NamedHours[] {
   return topNamed(entries, (e) => e.job_code, limit);
 }
 
 export type ClientGroup = {
   client: string;
-  entries: MockEntry[];
+  entries: TimeEntry[];
   subtotal: number;
 };
 
-export function groupByClient(entries: MockEntry[]): ClientGroup[] {
-  const map = new Map<string, MockEntry[]>();
+export function groupByClient(entries: TimeEntry[]): ClientGroup[] {
+  const map = new Map<string, TimeEntry[]>();
   for (const e of entries) {
     const list = map.get(e.client) ?? [];
     list.push(e);
@@ -80,14 +83,14 @@ export function groupByClient(entries: MockEntry[]): ClientGroup[] {
     .map(([client, rows]) => ({
       client,
       entries: rows,
-      subtotal: round1(rows.reduce((s, r) => s + r.hours, 0)),
+      subtotal: round2(rows.reduce((s, r) => s + r.hours, 0)),
     }))
     .sort((a, b) => a.client.localeCompare(b.client));
 }
 
 function topNamed(
-  entries: MockEntry[],
-  keyFn: (e: MockEntry) => string,
+  entries: TimeEntry[],
+  keyFn: (e: TimeEntry) => string,
   limit: number,
 ): NamedHours[] {
   const map = new Map<string, number>();
@@ -96,15 +99,15 @@ function topNamed(
     map.set(k, (map.get(k) ?? 0) + e.hours);
   }
   return Array.from(map.entries())
-    .map(([name, hours]) => ({ name, hours: round1(hours) }))
+    .map(([name, hours], i) => ({
+      name,
+      hours: round2(hours),
+      key: `${name}-${i}`,
+    }))
     .sort((a, b) => b.hours - a.hours)
     .slice(0, limit);
 }
 
-function round1(n: number): number {
-  return Math.round(n * 10) / 10;
-}
-
-export function formatHours(n: number): string {
-  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }

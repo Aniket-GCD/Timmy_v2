@@ -15,6 +15,43 @@
   border-bottom: 1px solid var(--border);
 }
 
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.cellInput {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.25rem 0.4rem;
+  font-family: inherit;
+  font-size: 0.88rem;
+}
+
+.saveBtn,
+.cancelBtn {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+  background: var(--off-white);
+}
+
+.saveBtn {
+  background: var(--mysterious-mixture);
+  color: var(--white);
+  border-color: var(--mysterious-mixture);
+}
+
+.error {
+  color: #8b2e24;
+  font-size: 0.75rem;
+  margin-top: 2px;
+}
+
 .toggle {
   border: 1px solid var(--border);
   background: var(--off-white);

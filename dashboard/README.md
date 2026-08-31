@@ -1,6 +1,6 @@
-# Timmy personal hours dashboard (mock)
+# Timmy personal hours dashboard
 
-Clickable frontend preview for lead feedback. Uses fake `time_entries_timmy_v2`-shaped data — no Supabase yet.
+Interactive hours dashboard with exec KPIs, pay-period ranges, and inline day-detail editing.
 
 ## Run locally
 
@@ -10,14 +10,34 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:4321](http://localhost:4321).
+Open http://localhost:4321
 
-## What to demo
+## Modes
 
-1. Switch **Yesterday / Today / This week**
-2. Click a bar on **Hours by day** to focus the day table
-3. Expand/collapse client groups; toggle **Show times**
+| Env | Behavior |
+|-----|----------|
+| `NEXT_PUBLIC_DASHBOARD_DATA_SOURCE=mock` (default) | In-memory data; full edit/add UX, no Supabase |
+| `supabase` | Live read/write on `time_entries_timmy_v2` only |
 
-## Brand
+### Supabase env (pilot)
 
-GCD palette: Hippie Green, Mysterious Mixture, Tartlet, Off White, Dark Grey. Fonts: Marcellus + PT Serif.
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_KEY`
+- `DASHBOARD_STAFF_NAME` / `DASHBOARD_OFFICE`
+- Optional: `SUPABASE_ENTRIES_TABLE`, `SUPABASE_CLIENTS_TABLE`, `SUPABASE_JOB_CODES_TABLE`
+
+**Never writes** to `clients` or `job_codes` — read-only for combobox validation.
+
+## Features
+
+- Ranges: Today, Yesterday, This week (Sun–Sat), This/Last pay period (US Central)
+- KPIs: Total, Billable, Admin (+ %), Clients
+- Charts: Admin vs non-admin by day, top 8 clients, job codes
+- Day detail: editable Client/Job Code (validated), free Notes/Times, Add entry
+- Pay-period edit window matches Timmy plugin (`timeassist/pay_period.py`)
+
+## Tests
+
+```bash
+npm test
+```
