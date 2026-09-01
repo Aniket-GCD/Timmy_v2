@@ -547,3 +547,39 @@ class LiveClientRosterTests(unittest.TestCase):
         self.assertEqual(entry["client_name"], "Acme Co")
         self.assertEqual(entry.get("capture_status") or "resolved", "resolved")
 
+
+class PostgrestPaginationTests(unittest.TestCase):
+    def test_get_clients_pages_past_default_cap(self) -> None:
+        calls: list[dict[str, str]] = []
+
+        def fake_request(method, table, **kwargs):  # noqa: ANN001
+            query = kwargs.get("query") or {}
+            calls.append(dict(query))
+            offset = int(query.get("offset", 0))
+            if offset == 0:
+                return [{"client": f"Client {i}", "active": True} for i in range(1000)]
+            if offset == 1000:
+                return [{"client": f"Client {i}", "active": True} for i in range(1000, 1250)]
+            return []
+
+        with patch("timeassist.supabase_ref.request_json", side_effect=fake_request):
+            rows = supabase_ref.get_clients(environ=ENV)
+        self.assertEqual(len(rows), 1250)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0]["offset"], "0")
+        self.assertEqual(calls[1]["offset"], "1000")
+
+    def test_get_job_codes_pages_past_default_cap(self) -> None:
+        def fake_request(method, table, **kwargs):  # noqa: ANN001
+            query = kwargs.get("query") or {}
+            offset = int(query.get("offset", 0))
+            if offset == 0:
+                return [{"job_code": f"JC{i}"} for i in range(1000)]
+            if offset == 1000:
+                return [{"job_code": "JC1000"}]
+            return []
+
+        with patch("timeassist.supabase_ref.request_json", side_effect=fake_request):
+            rows = supabase_ref.get_job_codes(environ=ENV)
+        self.assertEqual(len(rows), 1001)
+

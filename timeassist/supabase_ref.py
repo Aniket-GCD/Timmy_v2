@@ -18,6 +18,9 @@ from urllib.request import Request, urlopen
 # curl-like UA so secret keys are not blocked as a browser client.
 USER_AGENT = "curl/8.5.0"
 
+# PostgREST returns at most this many rows per request unless paginated.
+POSTGREST_PAGE_SIZE = 1000
+
 
 class DuplicateTimeEntryError(ValueError):
     """Raised when Supabase unique(staff_name, office, entry_date, start_time, end_time) fires."""
@@ -125,6 +128,34 @@ def _http_error(status: int, detail: str) -> Exception:
     return ValueError(f"Supabase HTTP {status}" + (f": {snippet}" if snippet else ""))
 
 
+def _fetch_table_rows(
+    table: str,
+    *,
+    environ: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch every row from a PostgREST table, paging past the 1k default cap."""
+    all_rows: list[dict[str, Any]] = []
+    offset = 0
+    while True:
+        page = request_json(
+            "GET",
+            table,
+            query={
+                "select": "*",
+                "limit": str(POSTGREST_PAGE_SIZE),
+                "offset": str(offset),
+            },
+            environ=environ,
+        )
+        if not isinstance(page, list) or not page:
+            break
+        all_rows.extend(page)
+        if len(page) < POSTGREST_PAGE_SIZE:
+            break
+        offset += POSTGREST_PAGE_SIZE
+    return all_rows
+
+
 def get_clients(
     environ: dict[str, str] | None = None,
     db_path: str | Path | None = None,
@@ -132,8 +163,7 @@ def get_clients(
     from .supabase_config import clients_table
 
     table = clients_table(db_path=db_path, environ=environ)
-    rows = request_json("GET", table, query={"select": "*"}, environ=environ)
-    return rows if isinstance(rows, list) else []
+    return _fetch_table_rows(table, environ=environ)
 
 
 def get_job_codes(
@@ -143,8 +173,7 @@ def get_job_codes(
     from .supabase_config import job_codes_table
 
     table = job_codes_table(db_path=db_path, environ=environ)
-    rows = request_json("GET", table, query={"select": "*"}, environ=environ)
-    return rows if isinstance(rows, list) else []
+    return _fetch_table_rows(table, environ=environ)
 
 
 def slim_job_code(row: dict[str, Any]) -> dict[str, Any]:
