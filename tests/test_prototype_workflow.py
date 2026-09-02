@@ -62,6 +62,8 @@ class PrototypeWorkflowTests(_CliHarness):
             "monthly cleanup",
             "--billable",
             "yes",
+            "--job-type",
+            "Tax",
             "--at",
             "2026-05-28T09:00:00",
         )
@@ -76,6 +78,8 @@ class PrototypeWorkflowTests(_CliHarness):
             "tax question",
             "--billable",
             "yes",
+            "--job-type",
+            "Consulting",
             "--at",
             "2026-05-28T09:24:00",
         )
@@ -92,6 +96,8 @@ class PrototypeWorkflowTests(_CliHarness):
             "tax question",
             "--billable",
             "yes",
+            "--job-type",
+            "Consulting",
             "--at",
             "2026-05-28T09:30:00",
         )
@@ -147,7 +153,7 @@ class PrototypeWorkflowTests(_CliHarness):
         self.assertNotIn("Service", rows[0])
         self.assertEqual(
             list(rows[0].keys()),
-            ["Date", "Client", "Job Type", "Notes", "Duration", "Billable"],
+            ["Date", "Client", "Job Code", "Notes", "Duration", "Billable"],
         )
 
         packet_path = self.workdir / "sanitized-packet.md"
@@ -250,6 +256,8 @@ class PrototypeWorkflowTests(_CliHarness):
             "Client A",
             "--task",
             "work",
+            "--job-type",
+            "Tax",
             "--start",
             "2026-05-28T10:00:00",
             "--end",
@@ -445,10 +453,12 @@ class RangeCLITests(_CliHarness):
         self.json_cli("import-clients", "--file", str(roster), "--mode", "merge")
         self.json_cli(
             "add-missing", "--client", "Acme Co", "--task", "June first work",
+            "--job-type", "Tax",
             "--start", "2026-06-01T09:00:00", "--end", "2026-06-01T09:30:00",
         )
         self.json_cli(
             "add-missing", "--client", "Acme Co", "--task", "June last work",
+            "--job-type", "Tax",
             "--start", "2026-06-30T14:00:00", "--end", "2026-06-30T15:00:00",
         )
 
@@ -632,6 +642,7 @@ class RangeCLITests(_CliHarness):
         self.json_cli("import-clients", "--file", str(roster), "--mode", "merge")
         self.json_cli(
             "add-missing", "--client", "Acme Co", "--task", "billable work",
+            "--job-type", "Tax",
             "--start", "2026-06-01T09:00:00", "--end", "2026-06-01T10:00:00",
         )
         # Set operator code

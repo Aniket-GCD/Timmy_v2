@@ -816,6 +816,23 @@ def list_clients(
     return {"clients": clients, "client_count": len(clients)}
 
 
+# Always non-billable. auto_job=True sets Administrative when unset; Admin is suggest-only.
+SPECIAL_CLIENT_POLICY: dict[str, dict[str, Any]] = {
+    "admin": {"auto_job": False, "job_code": "Administrative"},
+    "vacation": {"auto_job": True, "job_code": "Administrative"},
+    "holiday": {"auto_job": True, "job_code": "Administrative"},
+    "early out": {"auto_job": True, "job_code": "Administrative"},
+    "staff meeting": {"auto_job": True, "job_code": "Administrative"},
+}
+
+
+def special_client_policy(display_name: str | None) -> dict[str, Any] | None:
+    """Firm special clients: always non-billable; job code auto or suggest-only."""
+    if not display_name:
+        return None
+    return SPECIAL_CLIENT_POLICY.get(display_name.strip().casefold())
+
+
 def apply_client_policy(
     row: sqlite3.Row | None,
     billable_requested: str | bool | None,
@@ -824,34 +841,41 @@ def apply_client_policy(
     current_billable: int | None = None,
     current_job_type: str | None = None,
 ) -> tuple[int, str]:
-    """Engine-enforced client policy (pilot feedback #34). Pinned by tests.
+    """Engine-enforced client policy (pilot feedback #34 + senior specials).
 
-    Locked (administrative) clients can never be billable; their job_type is
-    always the roster default. Explicit billable=yes on a locked client is an
-    operator error, rejected in plain language. Enforcement keys off the
-    `billable_locked` column, never off client names, so an operator roster
-    override degrades safely.
-
-    Precedence for job_type: explicit request (job_type="" clears), then the
-    caller's current stored value (clarify/edit preservation), else blank.
-    Roster default_job_type is never auto-applied for unlocked clients — it is
-    suggestion-only (see suggested_job_type on capture results).
+    Special clients (Admin, Vacation, Holiday, Early Out, Staff Meeting) are
+    never billable. Vacation/Holiday/Early Out/Staff Meeting auto-set
+    Administrative when job_type is unset; Admin is suggest-only (blank until
+    confirmed). Legacy ``billable_locked`` rows that are not special still force
+    non-billable and apply ``default_job_type``.
     """
-    if row is not None and int(row["billable_locked"]):
+    display = row["display_name"] if row is not None else None
+    special = special_client_policy(display)
+    locked = row is not None and int(row["billable_locked"])
+    force_non_billable = locked or special is not None
+
+    if force_non_billable:
         if billable_requested is not None and bool_to_int(billable_requested) == 1:
-            raise ValueError(f"client '{row['display_name']}' is administrative and cannot be billable")
-        return 0, row["default_job_type"]
-    if billable_requested is not None:
+            label = display or "client"
+            raise ValueError(f"client '{label}' is administrative and cannot be billable")
+        billable = 0
+    elif billable_requested is not None:
         billable = bool_to_int(billable_requested)
     elif current_billable is not None:
         billable = int(current_billable)
     else:
         billable = int(row["default_billable"]) if row is not None else 1
+
     if job_type_requested is not None:
         job_type = job_type_requested.strip()
     elif current_job_type is not None:
         job_type = current_job_type
+    elif special is not None and special["auto_job"]:
+        job_type = str(special["job_code"])
+    elif locked and special is None:
+        job_type = row["default_job_type"]
     else:
+        # Admin special (auto_job=False) and unlocked clients: blank until confirmed.
         job_type = ""
     return billable, job_type
 
@@ -875,7 +899,8 @@ def resolve_capture_with_metadata(
     with billable intent can resolve the pending metadata without changing time.
     Billable/job_type policy is enforced once, in `apply_client_policy`: an explicit
     job_type wins ("" clears), else the caller's `current_job_type` is preserved,
-    else job_type stays blank (roster default is suggestion-only).
+    else job_type stays blank (roster default is suggestion-only) except specials
+    with auto_job.
     """
     raw_client = client.strip()
     raw_task = task.strip()
@@ -898,12 +923,20 @@ def resolve_capture_with_metadata(
         )
     needs_info = not known_client and not (clarification and billable_explicit)
     client_changed = canonical.strip().lower() != raw_client.lower()
+    # Do not echo the client label into notes (senior feedback #2).
+    task_text = raw_task
+    if raw_task and not raw_task.upper().startswith("NEW CLIENT:"):
+        if raw_task.casefold() in {raw_client.casefold(), canonical.casefold()}:
+            task_text = ""
     suggested = ""
-    if row is not None and not int(row["billable_locked"]):
+    special = special_client_policy(canonical)
+    if special and not special["auto_job"] and not (job_type_resolved or "").strip():
+        suggested = str(special["job_code"])
+    elif row is not None and not int(row["billable_locked"]):
         suggested = (row["default_job_type"] or "").strip()
     result = {
         "client_name": canonical,
-        "task_text": raw_task,
+        "task_text": task_text,
         "billable": billable_int,
         "job_type": job_type_resolved,
         "raw_client_name": raw_client if (client_changed or needs_info) else None,
@@ -925,6 +958,10 @@ def _attach_suggested_job_type(conn, payload: dict[str, Any]) -> dict[str, Any]:
         return payload
     client_name = payload.get("client_name")
     if not client_name:
+        return payload
+    special = special_client_policy(client_name)
+    if special and not special["auto_job"]:
+        payload["suggested_job_type"] = str(special["job_code"])
         return payload
     row = resolve_client_row(conn, client_name)
     if row is None or int(row["billable_locked"]):
@@ -2222,14 +2259,14 @@ def export_entries(db_path: str | Path, date_value: str, output: str | Path, exp
         # clobbers a previously good CSV.
         tmp_path = output_path.with_name(f".{output_path.name}.tmp")
         with tmp_path.open("w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=["Date", "Client", "Job Type", "Notes", "Duration", "Billable"])
+            writer = csv.DictWriter(f, fieldnames=["Date", "Client", "Job Code", "Notes", "Duration", "Billable"])
             writer.writeheader()
             for entry in entries:
                 writer.writerow(
                     {
                         "Date": entry["start_at"][:10],
                         "Client": csv_safe(entry["client_name"]),
-                        "Job Type": csv_safe(entry.get("job_type") or ""),
+                        "Job Code": csv_safe(entry.get("job_type") or ""),
                         "Notes": csv_safe(entry["task_text"]),
                         "Duration": format_hhmm(entry["rounded_minutes"]),
                         "Billable": billable_text(entry["billable"]),
@@ -2319,7 +2356,7 @@ def anonymized_entries(entries: list[dict[str, Any]]) -> tuple[list[dict[str, An
         job_type = entry.get("job_type") or ""
         if job_type:
             if job_type not in job_type_mapping:
-                job_type_mapping[job_type] = f"Job Type {len(job_type_mapping) + 1}"
+                job_type_mapping[job_type] = f"Job Code {len(job_type_mapping) + 1}"
             safe["job_type"] = job_type_mapping[job_type]
         safe_entries.append(safe)
     return safe_entries, mapping
@@ -2347,11 +2384,11 @@ def write_sanitized_packet(db_path: str | Path, date_value: str, output: str | P
     if not safe_entries:
         lines.append("No entries for this date.")
     else:
-        lines.append("| Client | Job Type | Notes | Duration | Status |")
-        lines.append("|---|---|---|---:|---|")
+        lines.append("| Date | Client | Job Code | Notes | Duration | Status |")
+        lines.append("|---|---|---|---|---:|---|")
         for entry in safe_entries:
             lines.append(
-                f"| {entry['client_name']} | {entry.get('job_type') or ''} | {entry['task_text']} | {format_hhmm(int(entry['rounded_minutes']))} | {entry['review_status']} |"
+                f"| {entry['start_at'][:10]} | {entry['client_name']} | {entry.get('job_type') or ''} | {entry['task_text']} | {format_hhmm(int(entry['rounded_minutes']))} | {entry['review_status']} |"
             )
     lines.extend([
         "",
@@ -2536,6 +2573,7 @@ def render_review_html(review: dict[str, Any], output: str | Path, db_path: str 
             status_html += f"<div class='sub'>Needs review: {html.escape(reason)}</div>"
         rows.append(
             "<tr>"
+            f"<td class='date'>{html.escape(entry['start_at'][:10])}</td>"
             f"<td class='client'>{html.escape(entry['client_name'])}</td>"
             f"<td class='job-type'>{html.escape(entry.get('job_type') or '')}</td>"
             f"<td class='task'>{html.escape(entry['task_text'])}</td>"
@@ -2545,7 +2583,7 @@ def render_review_html(review: dict[str, Any], output: str | Path, db_path: str 
             f"<td>{status_html}</td>"
             "</tr>"
         )
-    body_rows = "\n".join(rows) if rows else "<tr><td class='empty' colspan='7'>No entries captured yet for this day.</td></tr>"
+    body_rows = "\n".join(rows) if rows else "<tr><td class='empty' colspan='8'>No entries captured yet for this day.</td></tr>"
 
     active_note = ""
     if active:
@@ -2597,7 +2635,7 @@ def render_review_html(review: dict[str, Any], output: str | Path, db_path: str 
     </div>
 {active_note}    <div class="table-wrap">
       <table>
-        <thead><tr><th>Client</th><th>Job Type</th><th>Notes</th><th>Window</th><th>Duration</th><th>Billable</th><th>Status</th></tr></thead>
+        <thead><tr><th>Date</th><th>Client</th><th>Job Code</th><th>Notes</th><th>Window</th><th>Duration</th><th>Billable</th><th>Status</th></tr></thead>
         <tbody>{body_rows}</tbody>
       </table>
     </div>

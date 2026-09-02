@@ -67,10 +67,10 @@ def _demo_steps(date_value: str, out: Path) -> list[list[str]]:
     return [
         ["init", "--at", f"{date_value}T08:55:00"],
         ["import-clients", "--file", str(clients_csv), "--mode", "replace", "--confirm-replace", "--at", f"{date_value}T08:56:00"],
-        ["start", "--client", "Client A", "--task", "monthly cleanup", "--billable", "yes", "--at", f"{date_value}T09:00:00"],
-        ["switch", "--client", "Client B", "--task", "tax question", "--billable", "yes", "--at", f"{date_value}T09:24:00"],
+        ["start", "--client", "Client A", "--task", "monthly cleanup", "--billable", "yes", "--job-type", "Bookkeeping", "--at", f"{date_value}T09:00:00"],
+        ["switch", "--client", "Client B", "--task", "tax question", "--billable", "yes", "--job-type", "Tax", "--at", f"{date_value}T09:24:00"],
         ["end", "--at", f"{date_value}T09:42:00"],
-        ["add-missing", "--client", "Client A", "--task", "call notes and follow-up", "--start", f"{date_value}T10:00:00", "--end", f"{date_value}T10:18:00", "--billable", "yes"],
+        ["add-missing", "--client", "Client A", "--task", "call notes and follow-up", "--start", f"{date_value}T10:00:00", "--end", f"{date_value}T10:18:00", "--billable", "yes", "--job-type", "Bookkeeping"],
         ["review", "--date", date_value, "--format", "html", "--output", str(out / "review-before-approval.html")],
         ["approve", "--entry-id", "1", "--at", f"{date_value}T10:45:00"],
         ["review", "--date", date_value],

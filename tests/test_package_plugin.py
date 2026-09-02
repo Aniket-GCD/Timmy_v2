@@ -9,7 +9,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "package_plugin.py"
-PLUGIN_BINARY = ROOT / "plugin" / "timeassist" / "bin" / "timeassist.exe"
+PLUGIN_BINARY = ROOT / "plugin" / "timeassist" / "engine" / "timeassist.exe"
 
 
 class PackagePluginTests(unittest.TestCase):
@@ -86,8 +86,10 @@ class PackagePluginTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(PLUGIN_BINARY.exists(), "packager should not leave a binary in the source plugin directory")
         with zipfile.ZipFile(out) as zf:
-            self.assertEqual(zf.read("timeassist/bin/timeassist.exe"), fake.read_bytes())
+            self.assertEqual(zf.read("timeassist/engine/timeassist.exe"), fake.read_bytes())
             names = zf.namelist()
+            self.assertNotIn("timeassist/bin/timeassist.exe", names)
+            self.assertFalse(any(n.startswith("timeassist/bin/") for n in names))
             self.assertIn("timeassist/.claude-plugin/plugin.json", names)
             self.assertIn("timeassist/config/supabase.json", names)
 

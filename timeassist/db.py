@@ -110,7 +110,7 @@ CLIENT_COLUMN_DEFINITIONS = {
     "default_job_type": "TEXT NOT NULL DEFAULT ''",
     "billable_locked": "INTEGER NOT NULL DEFAULT 0",
 }
-ADMIN_CLIENT_SEEDS = ("Admin", "Early Out", "Holiday", "Staff Meeting")
+ADMIN_CLIENT_SEEDS = ("Admin", "Early Out", "Holiday", "Staff Meeting", "Vacation")
 # Unassigned lives in Supabase only (live client list). Do not seed locally.
 
 

@@ -30,15 +30,20 @@ def slim_entry(entry: dict[str, Any]) -> dict[str, Any]:
         job = ""
     else:
         job = str(job)
+    start = entry.get("start_at")
+    entry_date = None
+    if isinstance(start, str) and len(start) >= 10:
+        entry_date = start[:10]
     slim: dict[str, Any] = {
         "entry_id": entry.get("entry_id"),
+        "entry_date": entry_date,
         "client": entry.get("client_name"),
         "notes": entry.get("task_text"),
-        # Always emit Job Type (blank string OK) so the snapshot table keeps the column.
+        # Always emit Job Code (blank string OK) so the snapshot table keeps the column.
         "job_type": job,
         "job_code": job,
         "billable": "yes" if entry.get("billable") else "no",
-        "start": entry.get("start_at"),
+        "start": start,
         "end": entry.get("end_at"),
         "minutes": minutes,
         "status": entry.get("review_status"),
@@ -343,7 +348,7 @@ def shape(tool_name: str, result: dict[str, Any]) -> dict[str, Any]:
     """Return the compact model-facing view of a tool result.
 
     job_type/job_code blank strings must survive so review snapshots keep the
-    Job Type column — strip only true Nones.
+    Job Code column — strip only true Nones.
     """
     view = _VIEWS.get(tool_name)
     shaped = view(result) if view else result

@@ -2,7 +2,7 @@
 """Assemble the timeassist Cowork plugin zip.
 
 The release bundle includes a freshly built Windows executable under
-``timeassist/bin/timeassist.exe`` inside the zip. The packager validates that the
+``timeassist/engine/timeassist.exe`` inside the zip. The packager validates that the
 binary is Windows-shaped by default and writes it directly into the archive so a
 local packaging attempt cannot leave a stale binary in the source plugin tree.
 """
@@ -14,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_DIR = ROOT / "plugin" / "timeassist"
+ENGINE_DIR = "engine"
 
 
 def _is_windows_pe(path: Path) -> bool:
@@ -23,9 +24,9 @@ def _is_windows_pe(path: Path) -> bool:
 
 def _should_skip_plugin_file(rel: Path, binary_name: str) -> bool:
     rel_text = rel.as_posix()
-    if rel_text == "bin/.gitignore":  # dev placeholder, not for the bundle
+    if rel_text == f"{ENGINE_DIR}/.gitignore":  # dev placeholder, not for the bundle
         return True
-    if rel_text == f"bin/{binary_name}":  # avoid stale source-tree binaries
+    if rel_text == f"{ENGINE_DIR}/{binary_name}":  # avoid stale source-tree binaries
         return True
     return False
 
@@ -34,7 +35,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Package the timeassist plugin zip.")
     parser.add_argument("--exe", required=True, help="path to the built timeassist binary")
     parser.add_argument("--out", required=True, help="output zip path")
-    parser.add_argument("--binary-name", default="timeassist.exe", help="filename for the bundled binary inside bin/")
+    parser.add_argument("--binary-name", default="timeassist.exe", help="filename for the bundled binary inside engine/")
     parser.add_argument("--allow-non-windows-binary", action="store_true", help="dev-only escape hatch for packaging a non-PE binary")
     args = parser.parse_args()
 
@@ -43,7 +44,7 @@ def main() -> int:
     if binary_name.name != args.binary_name or args.binary_name in {"", ".", ".."} or "/" in args.binary_name or "\\" in args.binary_name:
         parser.error("--binary-name must be a plain filename with no path components")
     if args.binary_name != "timeassist.exe":
-        parser.error("--binary-name must be timeassist.exe because the plugin manifest launches bin/timeassist.exe")
+        parser.error("--binary-name must be timeassist.exe because the plugin manifest launches engine/timeassist.exe")
     if not exe.exists() or not exe.is_file():
         parser.error(f"built binary not found: {exe}")
     if not args.allow_non_windows_binary and not _is_windows_pe(exe):
@@ -65,7 +66,7 @@ def main() -> int:
             if _should_skip_plugin_file(rel, args.binary_name):
                 continue
             zf.write(path, f"{top}/{rel.as_posix()}")
-        zf.write(exe, f"{top}/bin/{args.binary_name}")
+        zf.write(exe, f"{top}/{ENGINE_DIR}/{args.binary_name}")
         if supabase_config.is_file():
             zf.write(supabase_config, f"{top}/config/supabase.json")
 

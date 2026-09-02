@@ -31,6 +31,7 @@ class SlimEntryTests(unittest.TestCase):
         self.assertNotIn("task", slim)  # renamed to notes
         self.assertEqual(slim["billable"], "yes")
         self.assertEqual(slim["minutes"], 30)
+        self.assertEqual(slim["entry_date"], "2026-05-28")
         self.assertEqual(slim["status"], "draft")
         self.assertEqual(slim["raw_minutes"], 23)  # differs from rounded -> included
         for dropped in ("created_at", "updated_at", "raw_client_name", "export_path", "capture_status"):

@@ -500,6 +500,19 @@ class LiveClientRosterTests(unittest.TestCase):
         self.assertEqual(name, "Bill's Windsurf Shop")
         self.assertEqual(billable, 1)
 
+    def test_resolve_entity_punctuation_fold_match(self) -> None:
+        from timeassist import db as tdb
+        from timeassist.supabase_ref import classify_client_remote
+
+        install_live_clients(self, "TSG2 NC LP", "Acme Co")
+        classified = classify_client_remote("tsg2 nc, lp", environ=ENV, db_path=self.db)
+        self.assertEqual(classified["kind"], "fold")
+        self.assertEqual(classified["display_name"], "TSG2 NC LP")
+        with tdb.connect(self.db) as conn:
+            name, billable = actions.resolve_client(conn, "tsg2 nc, lp", environ=ENV)
+        self.assertEqual(name, "TSG2 NC LP")
+        self.assertEqual(billable, 1)
+
     def test_resolve_soft_ambiguous_stays_unmatched(self) -> None:
         from timeassist import db as tdb
         install_live_clients(self, "Bill's Windsurf Shop", "Bill's Bike Shop")

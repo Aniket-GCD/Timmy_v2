@@ -219,13 +219,22 @@ def client_display_name(row: dict[str, Any]) -> str:
 
 
 def name_fold(name: str) -> str:
-    """Fold 'Lastname, Firstname' to 'firstname lastname' (lower, collapsed spaces)."""
+    """Fold names for equality: lower, strip punctuation, optional Last/First swap.
+
+    Person-style ``Last, First`` (both sides a single token) becomes
+    ``first last``. Entity commas like ``TSG2 NC, LP`` are not swapped — they
+    normalize to the same key as ``TSG2 NC LP``.
+    """
     s = " ".join(name.lower().split())
     if "," in s:
         parts = [p.strip() for p in s.split(",")]
         if len(parts) == 2 and all(parts):
-            s = f"{parts[1]} {parts[0]}"
-    return s
+            left_toks = parts[0].split()
+            right_toks = parts[1].split()
+            if len(left_toks) == 1 and len(right_toks) == 1:
+                s = f"{parts[1]} {parts[0]}"
+    cleaned = "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in s)
+    return " ".join(cleaned.split())
 
 
 def _match_tokens(name: str) -> list[str]:

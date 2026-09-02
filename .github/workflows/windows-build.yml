@@ -219,12 +219,12 @@ jobs:
           # The marketplace fetches the plugin from git, so ship the built plugin
           # (binary included) on a single-commit `dist` branch the marketplace
           # source points at. Force-push keeps history from accumulating binaries.
-          cp dist/timeassist.exe plugin/timeassist/bin/timeassist.exe
+          cp dist/timeassist.exe plugin/timeassist/engine/timeassist.exe
           work="$RUNNER_TEMP/distrepo"
           rm -rf "$work"
           mkdir -p "$work/plugin"
           cp -r plugin/timeassist "$work/plugin/timeassist"
-          rm -f "$work/plugin/timeassist/bin/.gitignore"
+          rm -f "$work/plugin/timeassist/engine/.gitignore"
           cd "$work"
           git init -q
           git checkout -q -b dist

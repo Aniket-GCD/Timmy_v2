@@ -52,7 +52,7 @@ class PluginMcpConfigTests(unittest.TestCase):
         config = json.loads((ROOT / "plugin" / "timeassist" / ".mcp.json").read_text())
         server = config["mcpServers"]["timeassist"]
 
-        self.assertEqual(server["command"], "${CLAUDE_PLUGIN_ROOT}/bin/timeassist.exe")
+        self.assertEqual(server["command"], "${CLAUDE_PLUGIN_ROOT}/engine/timeassist.exe")
         self.assertEqual(server["args"], ["--db", "${CLAUDE_PLUGIN_DATA}/timeassist.sqlite", "mcp"])
         self.assertEqual(server["cwd"], "${CLAUDE_PLUGIN_DATA}")
         env = server.get("env") or {}

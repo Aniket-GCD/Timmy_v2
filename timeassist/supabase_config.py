@@ -4,7 +4,7 @@ Load order for file content (first found wins):
 1. TIMEASSIST_SUPABASE_CONFIG (path to JSON)
 2. <dir of --db>/supabase.json
 3. Plugin-shipped config next to the exe: ../config/supabase.json
-   (plugin zip layout: timeassist/bin/timeassist.exe + timeassist/config/supabase.json)
+   (plugin zip layout: timeassist/engine/timeassist.exe + timeassist/config/supabase.json)
 4. Built-in defaults (same as shipped config/supabase.json)
 
 Env overrides (win over file) for individual tables:
@@ -102,9 +102,9 @@ def _config_path_beside_db(db_path: str | Path | None) -> Path | None:
 
 
 def _config_path_plugin_shipped() -> Path | None:
-    """config/supabase.json shipped in the plugin zip next to bin/."""
+    """config/supabase.json shipped in the plugin zip next to engine/."""
     if getattr(sys, "frozen", False):
-        # .../timeassist/bin/timeassist.exe -> .../timeassist/config/supabase.json
+        # .../timeassist/engine/timeassist.exe -> .../timeassist/config/supabase.json
         candidate = Path(sys.executable).resolve().parent.parent / "config" / "supabase.json"
         if candidate.is_file():
             return candidate

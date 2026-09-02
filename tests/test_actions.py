@@ -253,6 +253,7 @@ class SchemaMigrationTests(unittest.TestCase):
                 ("Early Out", "Administrative", 0, 1),
                 ("Holiday", "Administrative", 0, 1),
                 ("Staff Meeting", "Administrative", 0, 1),
+                ("Vacation", "Administrative", 0, 1),
             ],
         )
         conn.close()
@@ -497,10 +498,15 @@ class NameFoldTests(unittest.TestCase):
         self.assertEqual(actions.name_fold("Acme Holdings LLC"), "acme holdings llc")
 
     def test_two_commas_do_not_swap(self) -> None:
-        self.assertEqual(actions.name_fold("Smith, John, Jr"), "smith, john, jr")
+        self.assertEqual(actions.name_fold("Smith, John, Jr"), "smith john jr")
 
-    def test_trailing_comma_does_not_swap(self) -> None:
-        self.assertEqual(actions.name_fold("Smith,"), "smith,")
+    def test_trailing_comma_strips_punctuation(self) -> None:
+        self.assertEqual(actions.name_fold("Smith,"), "smith")
+
+    def test_entity_comma_does_not_swap_lastname_firstname(self) -> None:
+        self.assertEqual(actions.name_fold("tsg2 nc, lp"), "tsg2 nc lp")
+        self.assertEqual(actions.name_fold("TSG2 NC LP"), "tsg2 nc lp")
+        self.assertEqual(actions.name_fold("tsg2 nc, lp"), actions.name_fold("TSG2 NC LP"))
 
 
 class ResolveClientFoldTests(unittest.TestCase):
@@ -1139,12 +1145,12 @@ class ExportHardeningTests(unittest.TestCase):
         out = self.work / "packet.md"
         actions.write_sanitized_packet(self.db, "2026-05-28", out)
         text = out.read_text()
-        self.assertIn("| Client | Job Type | Notes | Duration | Status |", text)
+        self.assertIn("| Date | Client | Job Code | Notes | Duration | Status |", text)
         self.assertNotIn("| Entry | Client | Task | Minutes | Status |", text)
         # job_type is free text that can embed real client detail, so the packet
         # redacts it to a sequential label (review finding I1).
         self.assertNotIn("Tax", text)
-        self.assertIn("| Client 1 | Job Type 1 |", text)
+        self.assertIn("| Client 1 | Job Code 1 |", text)
 
     def test_sanitized_packet_redacts_job_type(self) -> None:
         actions.add_missing_entry(
@@ -1155,7 +1161,7 @@ class ExportHardeningTests(unittest.TestCase):
         actions.write_sanitized_packet(self.db, "2026-05-28", out)
         packet = out.read_text()
         self.assertNotIn("Smith Family Trust", packet)
-        self.assertIn("Job Type 1", packet)
+        self.assertIn("Job Code 1", packet)
 
     def test_sanitized_packet_shares_job_type_label_and_keeps_blank(self) -> None:
         # Two entries with the SAME job_type share one label; an entry with an
@@ -1174,8 +1180,8 @@ class ExportHardeningTests(unittest.TestCase):
         packet = out.read_text()
         self.assertNotIn("Smith Family Trust", packet)
         # same job_type => one shared label, no second label generated
-        self.assertEqual(packet.count("Job Type 1"), 2)
-        self.assertNotIn("Job Type 2", packet)
+        self.assertEqual(packet.count("Job Code 1"), 2)
+        self.assertNotIn("Job Code 2", packet)
         # empty job_type renders an empty cell (double-space between the pipes)
         self.assertIn("| Client 1 |  | Task 3 |", packet)
 
@@ -1188,7 +1194,8 @@ class ExportHardeningTests(unittest.TestCase):
         out = self.work / "review.html"
         actions.render_review_html(review, out)
         text = out.read_text()
-        self.assertIn("<th>Job Type</th>", text)
+        self.assertIn("<th>Job Code</th>", text)
+        self.assertIn("<th>Date</th>", text)
         self.assertIn("<th>Notes</th>", text)
         self.assertIn("<th>Duration</th>", text)
         self.assertNotIn("<th>Task</th>", text)
@@ -1228,18 +1235,18 @@ class ExportFormatTests(unittest.TestCase):
         rows = list(csv.DictReader(out.read_text().splitlines()))
         self.assertEqual(
             list(rows[0].keys()),
-            ["Date", "Client", "Job Type", "Notes", "Duration", "Billable"],
+            ["Date", "Client", "Job Code", "Notes", "Duration", "Billable"],
         )
         self.assertEqual(rows[0]["Date"], "2026-05-28")
         self.assertEqual(rows[0]["Client"], "Acme Co")
-        self.assertEqual(rows[0]["Job Type"], "Tax")
+        self.assertEqual(rows[0]["Job Code"], "Tax")
         self.assertEqual(rows[0]["Notes"], "Reconcile Q3 payroll")
         self.assertEqual(rows[0]["Duration"], "1:30")
         self.assertEqual(rows[0]["Billable"], "Yes")
 
     def test_export_empty_job_type(self) -> None:
         # Approve normally requires a Job Code; seed an approved blank-code row
-        # so the CSV formatter still emits an empty Job Type cell.
+        # so the CSV formatter still emits an empty Job Code cell.
         entry = actions.add_missing_entry(
             self.db, "Acme Co", "work",
             "2026-05-28T09:00:00", "2026-05-28T09:30:00", "yes",
@@ -1253,7 +1260,7 @@ class ExportFormatTests(unittest.TestCase):
         out = self.work / "qb.csv"
         actions.export_entries(self.db, "2026-05-28", out, at="2026-05-28T10:05:00")
         rows = list(csv.DictReader(out.read_text().splitlines()))
-        self.assertEqual(rows[0]["Job Type"], "")
+        self.assertEqual(rows[0]["Job Code"], "")
 
 
 class DurabilityFoundationTests(unittest.TestCase):
@@ -1800,12 +1807,25 @@ class BillableLockTests(unittest.TestCase):
             )
 
     # --- apply_client_policy helper -------------------------------------
-    def test_policy_locked_forces_zero_and_default_job_type(self) -> None:
+    def test_policy_admin_forces_non_billable_without_auto_job(self) -> None:
         with db.connect(self.db) as conn:
             row = actions.resolve_client_row(conn, "Admin")
         billable, job_type = actions.apply_client_policy(row, None, None)
         self.assertEqual(billable, 0)
+        self.assertEqual(job_type, "")
+
+    def test_policy_staff_meeting_auto_sets_administrative(self) -> None:
+        with db.connect(self.db) as conn:
+            row = actions.resolve_client_row(conn, "Staff Meeting")
+        billable, job_type = actions.apply_client_policy(row, None, None)
+        self.assertEqual(billable, 0)
         self.assertEqual(job_type, "Administrative")
+
+    def test_policy_vacation_auto_sets_administrative(self) -> None:
+        with db.connect(self.db) as conn:
+            row = actions.resolve_client_row(conn, "Vacation")
+        billable, job_type = actions.apply_client_policy(row, None, None)
+        self.assertEqual((billable, job_type), (0, "Administrative"))
 
     def test_policy_locked_explicit_yes_raises(self) -> None:
         with db.connect(self.db) as conn:
@@ -1837,10 +1857,11 @@ class BillableLockTests(unittest.TestCase):
             self.assertEqual(actions.resolve_client(conn, "Nobody"), ("Nobody", None))
 
     # --- start_session --------------------------------------------------
-    def test_start_locked_client_forces_admin(self) -> None:
+    def test_start_admin_forces_non_billable_and_suggests_job(self) -> None:
         session = actions.start_session(self.db, "Admin", "inbox", at="2026-05-28T10:00:00")
         self.assertEqual(session["billable"], 0)
-        self.assertEqual(session["job_type"], "Administrative")
+        self.assertEqual(session["job_type"], "")
+        self.assertEqual(session.get("suggested_job_type"), "Administrative")
 
     def test_start_locked_client_explicit_billable_raises(self) -> None:
         with self.assertRaisesRegex(ValueError, r"administrative and cannot be billable"):
@@ -1874,11 +1895,12 @@ class BillableLockTests(unittest.TestCase):
         )
         self.assertEqual(result["new_active_session"]["job_type"], "Audit")
 
-    def test_switch_to_locked_forces_admin(self) -> None:
+    def test_switch_to_admin_forces_non_billable_suggests_job(self) -> None:
         actions.start_session(self.db, "Acme Co", "kickoff", at="2026-05-28T10:00:00")
         result = actions.switch_session(self.db, "Admin", "email", at="2026-05-28T10:20:00")
         self.assertEqual(result["new_active_session"]["billable"], 0)
-        self.assertEqual(result["new_active_session"]["job_type"], "Administrative")
+        self.assertEqual(result["new_active_session"]["job_type"], "")
+        self.assertEqual(result["new_active_session"].get("suggested_job_type"), "Administrative")
 
     # --- add_missing_entry ---------------------------------------------
     def test_add_missing_threads_job_type(self) -> None:
@@ -1887,12 +1909,27 @@ class BillableLockTests(unittest.TestCase):
         )
         self.assertEqual(entry["job_type"], "Audit")
 
-    def test_add_missing_locked_forces_admin(self) -> None:
+    def test_add_missing_admin_forces_non_billable_suggests_job(self) -> None:
         entry = actions.add_missing_entry(
             self.db, "Admin", "backfill", "2026-05-28T08:00:00", "2026-05-28T09:00:00"
         )
         self.assertEqual(entry["billable"], 0)
+        self.assertEqual(entry["job_type"], "")
+        self.assertEqual(entry.get("suggested_job_type"), "Administrative")
+
+    def test_add_missing_vacation_auto_job_and_non_billable(self) -> None:
+        entry = actions.add_missing_entry(
+            self.db, "Vacation", "vacation", "2026-05-28T08:00:00", "2026-05-28T16:00:00"
+        )
+        self.assertEqual(entry["billable"], 0)
         self.assertEqual(entry["job_type"], "Administrative")
+        self.assertEqual(entry["task_text"], "")  # client-label echo blanked
+
+    def test_add_missing_preserves_real_notes(self) -> None:
+        entry = actions.add_missing_entry(
+            self.db, "Admin", "email cleanup", "2026-05-28T08:00:00", "2026-05-28T09:00:00"
+        )
+        self.assertEqual(entry["task_text"], "email cleanup")
 
     # --- clarify_active_session ----------------------------------------
     def test_clarify_threads_job_type(self) -> None:
@@ -1942,22 +1979,23 @@ class BillableLockTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, r"administrative and cannot be billable"):
             actions.edit_entry(self.db, entry["entry_id"], billable="yes", at="2026-05-28T12:00:00")
 
-    def test_edit_client_to_locked_reforces(self) -> None:
+    def test_edit_client_to_admin_forces_non_billable(self) -> None:
         entry = actions.add_missing_entry(
             self.db, "Acme Co", "work", "2026-05-28T08:00:00", "2026-05-28T09:00:00", job_type="Audit"
         )
         edited = actions.edit_entry(self.db, entry["entry_id"], client="Admin", at="2026-05-28T12:00:00")
         self.assertEqual(edited["client_name"], "Admin")
         self.assertEqual(edited["billable"], 0)
-        self.assertEqual(edited["job_type"], "Administrative")
+        # Prior job preserved until operator changes it; Admin does not auto-overwrite.
+        self.assertEqual(edited["job_type"], "Audit")
 
-    def test_edit_locked_entry_times_still_work(self) -> None:
+    def test_edit_admin_entry_times_still_work(self) -> None:
         actions.start_session(self.db, "Admin", "email", at="2026-05-28T10:00:00")
         entry = actions.end_session(self.db, "2026-05-28T10:30:00")
         edited = actions.edit_entry(self.db, entry["entry_id"], end="2026-05-28T11:00:00", at="2026-05-28T12:00:00")
         self.assertEqual(edited["end_at"], "2026-05-28T11:00:00")
         self.assertEqual(edited["billable"], 0)
-        self.assertEqual(edited["job_type"], "Administrative")
+        self.assertEqual(edited["job_type"], "")
 
     def test_edit_fold_resolves_needs_info_client(self) -> None:
         # A needs_info entry captured as 'John Smith' (roster had no match yet).
@@ -2009,11 +2047,17 @@ class ApplyClientPolicyCurrentValueTests(unittest.TestCase):
             self._row(default_billable=1), None, None, current_billable=0)
         self.assertEqual(billable, 0)
 
-    def test_locked_row_ignores_currents(self) -> None:
+    def test_admin_row_forces_billable_preserves_current_job(self) -> None:
         row = self._row(display_name="Admin", default_job_type="Administrative",
                         billable_locked=1)
         billable, job_type = actions.apply_client_policy(
-            row, None, "Special", current_billable=1, current_job_type="X")
+            row, None, None, current_billable=1, current_job_type="X")
+        self.assertEqual((billable, job_type), (0, "X"))
+
+    def test_staff_meeting_auto_job_when_unset(self) -> None:
+        row = self._row(display_name="Staff Meeting", default_job_type="Administrative",
+                        billable_locked=1)
+        billable, job_type = actions.apply_client_policy(row, None, None)
         self.assertEqual((billable, job_type), (0, "Administrative"))
 
 
@@ -2049,7 +2093,8 @@ class EditPolicyGuardTests(unittest.TestCase):
             conn.commit()
         after = actions.edit_entry(self.db, entry["entry_id"], job_type="Whatever")
         self.assertEqual(after["billable"], 0)
-        self.assertEqual(after["job_type"], "Administrative")
+        # Admin: explicit Job Code wins (suggest-only default; operator may confirm others).
+        self.assertEqual(after["job_type"], "Whatever")
 
     def test_explicit_empty_job_type_edit_clears_it(self) -> None:
         entry = actions.add_missing_entry(
