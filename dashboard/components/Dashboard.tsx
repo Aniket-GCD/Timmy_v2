@@ -112,27 +112,6 @@ export function Dashboard() {
     setSelectedDay(defaultFocusDay(range, entries, todayISO()));
   }, [range, entries]);
 
-  const rangeEntries = useMemo(
-    () => filterEntriesByRange(entries, resolved),
-    [entries, resolved],
-  );
-
-  const chartEntries = useMemo(() => {
-    if (range === "today" || range === "yesterday") {
-      return filterEntriesByRange(entries, resolveRange("week"));
-    }
-    return rangeEntries;
-  }, [entries, range, rangeEntries]);
-
-  const weekBars = useMemo(
-    () => dailyTotals(resolved.chartDays, chartEntries),
-    [resolved.chartDays, chartEntries],
-  );
-
-  const metrics = useMemo(() => computeMetrics(rangeEntries), [rangeEntries]);
-  const byClient = useMemo(() => aggregateByClient(rangeEntries), [rangeEntries]);
-  const byJob = useMemo(() => aggregateByJob(rangeEntries), [rangeEntries]);
-
   const staffOptions = useMemo(() => {
     const names = new Set<string>();
     for (const e of employees) if (e.active && e.staff_name) names.add(e.staff_name);
@@ -144,6 +123,28 @@ export function Dashboard() {
     () => (staffFilter ? entries.filter((e) => e.staff_name === staffFilter) : entries),
     [entries, staffFilter],
   );
+
+  const rangeEntries = useMemo(
+    () => filterEntriesByRange(scopedEntries, resolved),
+    [scopedEntries, resolved],
+  );
+
+  const chartEntries = useMemo(() => {
+    if (range === "today" || range === "yesterday") {
+      return filterEntriesByRange(scopedEntries, resolveRange("week"));
+    }
+    return rangeEntries;
+  }, [scopedEntries, range, rangeEntries]);
+
+  const weekBars = useMemo(
+    () => dailyTotals(resolved.chartDays, chartEntries),
+    [resolved.chartDays, chartEntries],
+  );
+
+  const metrics = useMemo(() => computeMetrics(rangeEntries), [rangeEntries]);
+  const byClient = useMemo(() => aggregateByClient(rangeEntries), [rangeEntries]);
+  const byJob = useMemo(() => aggregateByJob(rangeEntries), [rangeEntries]);
+
   const dayEntries = useMemo(
     () => entriesForDay(selectedDay, scopedEntries),
     [selectedDay, scopedEntries],
@@ -164,10 +165,11 @@ export function Dashboard() {
     setStaffFilter(withHours ?? staffOptions[0] ?? "");
   };
 
+  const scopeLabel = staffFilter || "All staff";
   const contextLabel =
     range === "week" || range === "thisPayPeriod" || range === "lastPayPeriod"
-      ? `${resolved.label} · ${formatDisplayDate(selectedDay)}`
-      : formatDisplayDate(selectedDay);
+      ? `${resolved.label} · ${formatDisplayDate(selectedDay)} · ${scopeLabel}`
+      : `${formatDisplayDate(selectedDay)} · ${scopeLabel}`;
 
   const updatedLabel = updatedAt
     ? `Updated ${updatedAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
@@ -188,6 +190,21 @@ export function Dashboard() {
 
       <div className="section-head">
         <RangeToggle value={range} onChange={setRange} />
+        <label className="staff-filter">
+          <span className="muted">Employee</span>
+          <select
+            value={staffFilter}
+            onChange={(e) => setStaffFilter(e.target.value)}
+            aria-label="Filter by employee"
+          >
+            <option value="">All staff</option>
+            {staffOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {loading ? (
@@ -220,45 +237,28 @@ export function Dashboard() {
               <h2 className="section-title" style={{ marginBottom: 0 }}>
                 {detailView === "calendar" ? "Calendar" : "Day detail"}
               </h2>
-              <div className="detail-toolbar">
-                <label className="staff-filter">
-                  <span className="muted">Employee</span>
-                  <select
-                    value={staffFilter}
-                    onChange={(e) => setStaffFilter(e.target.value)}
-                    aria-label="Filter by employee"
-                  >
-                    <option value="">All staff</option>
-                    {staffOptions.map((name) => (
-                      <option key={name} value={name}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className={rangeStyles.wrap} role="tablist" aria-label="Detail view">
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={detailView === "detail"}
-                    className={detailView === "detail" ? rangeStyles.active : rangeStyles.btn}
-                    onClick={() => setDetailView("detail")}
-                  >
-                    Day Detail
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={detailView === "calendar"}
-                    className={detailView === "calendar" ? rangeStyles.active : rangeStyles.btn}
-                    onClick={() => {
-                      pickStaffForCalendar();
-                      setDetailView("calendar");
-                    }}
-                  >
-                    Calendar
-                  </button>
-                </div>
+              <div className={rangeStyles.wrap} role="tablist" aria-label="Detail view">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={detailView === "detail"}
+                  className={detailView === "detail" ? rangeStyles.active : rangeStyles.btn}
+                  onClick={() => setDetailView("detail")}
+                >
+                  Day Detail
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={detailView === "calendar"}
+                  className={detailView === "calendar" ? rangeStyles.active : rangeStyles.btn}
+                  onClick={() => {
+                    pickStaffForCalendar();
+                    setDetailView("calendar");
+                  }}
+                >
+                  Calendar
+                </button>
               </div>
             </div>
             {detailView === "detail" ? (

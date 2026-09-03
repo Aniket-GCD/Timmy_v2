@@ -44,11 +44,12 @@ Polling: submitted entries + currently-working every **30s** while the tab is vi
 
 - Header: **GCD · Firm hours**, range context, last-updated time
 - Ranges: Today, Yesterday, This week (Sun–Sat), This/Last pay period (US Central)
-- KPIs: firm Total, Billable, Admin (`job_code === "Admin"`) + %, Clients — hours as h:mm
+- KPIs: Total, Billable, Admin (`job_code === "Admin"`) + %, Clients — hours as h:mm
 - Charts: Admin vs non-admin by day, top 8 clients, job codes
-- On the clock: active `currently_working` rows (not billed hours)
-- Day detail: read-only, grouped by staff, Show/Hide detail
-- Calendar: same `chartDays` as Hours by Day; timed blocks + Unscheduled strip. **Employee** dropdown filters Day Detail and Calendar (Calendar requires one person; clicking Calendar with All staff picks someone who has hours). KPIs/charts stay firm-wide.
+- **Employee** dropdown (default All staff): scopes KPIs, charts, Day Detail. Calendar still needs one person (picking Calendar with All staff auto-selects someone with hours).
+- On the clock: active `currently_working` rows (firm-wide; not billed hours)
+- Day detail: read-only, grouped by staff when All staff; Show/Hide detail
+- Calendar: same `chartDays` as Hours by Day; timed blocks + duration-only strip
 - Default data is **mock** until `NEXT_PUBLIC_DASHBOARD_DATA_SOURCE=supabase`
 
 `staff_name` must match `"First Last"` from `GCD Employees 9.1.2026.csv` (example: `Hannah Curtis`).
