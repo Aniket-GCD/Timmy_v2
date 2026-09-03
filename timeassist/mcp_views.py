@@ -77,6 +77,8 @@ def slim_entry(entry: dict[str, Any]) -> dict[str, Any]:
         slim["submit_result"] = entry["submit_result"]
     if entry.get("submit_error") is not None:
         slim["submit_error"] = entry["submit_error"]
+    if entry.get("currently_working_sync") is not None:
+        slim["currently_working_sync"] = entry["currently_working_sync"]
     return slim
 
 
@@ -112,6 +114,8 @@ def slim_session(session: dict[str, Any] | None) -> dict[str, Any] | None:
             capture_note_text(session.get("capture_note"), session.get("client_name"))
             or "needs_info"
         )
+    if session.get("currently_working_sync") is not None:
+        slim["currently_working_sync"] = session["currently_working_sync"]
     return slim
 
 
@@ -292,6 +296,32 @@ def _view_list_clients(result: dict[str, Any]) -> dict[str, Any]:
     return shaped
 
 
+def _view_list_employees(result: dict[str, Any]) -> dict[str, Any]:
+    shaped: dict[str, Any] = {
+        "employees": result.get("employees", []),
+    }
+    if result.get("employee_count") is not None:
+        shaped["employee_count"] = result["employee_count"]
+    if result.get("message"):
+        shaped["message"] = result["message"]
+    return shaped
+
+
+def _view_config(result: dict[str, Any]) -> dict[str, Any]:
+    if result.get("needs_staff_confirm"):
+        return {
+            "needs_staff_confirm": True,
+            "match_kind": result.get("match_kind"),
+            "spoken_name": result.get("spoken_name"),
+            "suggested_staff_name": result.get("suggested_staff_name"),
+            "suggested_office": result.get("suggested_office"),
+            "ask": result.get("ask"),
+            "if_yes": result.get("if_yes"),
+        }
+    shaped = {key: result[key] for key in result if key != "noise" and result[key] is not None}
+    return shaped
+
+
 def _view_import_clients(result: dict[str, Any]) -> dict[str, Any]:
     # Counts only: the roster echo would burn tokens and now carries engine-only
     # columns (billable_locked, default_job_type); the model can call list_clients.
@@ -316,7 +346,14 @@ _VIEWS = {
     "checkin_status": _view_checkin_status,
     "status": _view_status,
     "list_clients": _view_list_clients,
+    "list_employees": _view_list_employees,
     "list_job_codes": lambda result: {"job_codes": result.get("job_codes", [])},
+    "config": _view_config,
+    "init_state": lambda result: {
+        key: result[key]
+        for key in ("created_at", "export_folder", "staff_setup")
+        if key in result and result[key] is not None
+    },
     "refresh_clients": lambda result: {
         "imported_count": result.get("imported_count"),
         "client_count": result.get("client_count"),

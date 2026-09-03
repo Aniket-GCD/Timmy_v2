@@ -276,6 +276,27 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "list_employees",
+        "description": (
+            "Live read-only GET of firm employees from Supabase (never written by Timmy). "
+            "Use during setup to find the exact staff_name before config. "
+            "Pass query to search, or confirm_full_list=true for the full active list."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Optional filter on staff_name (token soft-match).",
+                },
+                "confirm_full_list": {
+                    "type": "boolean",
+                    "description": "Required true to return every active employee when the operator asked for the full list.",
+                },
+            },
+        },
+    },
+    {
         "name": "unapprove",
         "description": "Return an approved entry to draft. Cannot unapprove an already-exported entry.",
         "inputSchema": {
@@ -315,7 +336,12 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "config",
-        "description": "Show local settings, or set staff_name/office (GCD or MH)/reception_email/rounding/export copy folder/strict roster/operator initials. Admin action — confirm with the operator before changing settings.",
+        "description": (
+            "Show local settings, or set staff_name/office (GCD or MH)/reception_email/rounding/"
+            "export copy folder/strict roster/operator initials. staff_name is cross-checked "
+            "against the read-only Supabase employees table (canonical spelling + office). "
+            "Admin action — confirm with the operator before changing settings."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -350,7 +376,11 @@ TOOLS: list[dict[str, Any]] = [
                 },
                 "staff_name": {
                     "type": "string",
-                    "description": "Your staff name as it should appear on submitted time_entries.",
+                    "description": "Your name as on the firm employees list. Soft matches return needs_staff_confirm before writing.",
+                },
+                "confirm_staff": {
+                    "type": "boolean",
+                    "description": "True after the operator confirmed a soft employee match (or retry with suggested_staff_name).",
                 },
                 "clear_staff_name": {
                     "type": "boolean",
@@ -358,7 +388,7 @@ TOOLS: list[dict[str, Any]] = [
                 },
                 "office": {
                     "type": "string",
-                    "description": "Office code for submit: GCD or MH.",
+                    "description": "Office code for submit: GCD or MH. Usually set automatically from employees when staff_name matches.",
                 },
                 "clear_office": {
                     "type": "boolean",
@@ -680,6 +710,7 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
         operator_code = arguments.get("operator_code")
         clear_operator_code = arguments.get("clear_operator_code") is True
         staff_name = arguments.get("staff_name")
+        confirm_staff = arguments.get("confirm_staff") is True
         clear_staff_name = arguments.get("clear_staff_name") is True
         office = arguments.get("office")
         clear_office = arguments.get("clear_office") is True
@@ -710,7 +741,12 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
             return actions.clear_setting(db_path, "operator_code")
         if staff_name:
             _require_confirm(arguments, "changing TimeAssist settings")
-            return actions.set_setting(db_path, "staff_name", staff_name)
+            return actions.configure_staff_name(
+                db_path,
+                staff_name,
+                confirm_staff=confirm_staff,
+                at=arguments.get("at"),
+            )
         if clear_staff_name:
             _require_confirm(arguments, "changing TimeAssist settings")
             return actions.clear_setting(db_path, "staff_name")
@@ -726,7 +762,11 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
         if clear_reception_email:
             _require_confirm(arguments, "changing TimeAssist settings")
             return actions.clear_setting(db_path, "reception_email")
-        return {"settings": actions.list_settings(db_path), "export_folder": actions.export_folder_status(db_path)}
+        return {
+            "settings": actions.list_settings(db_path),
+            "export_folder": actions.export_folder_status(db_path),
+            "staff_setup": actions.staff_setup_status(db_path),
+        }
     if name == "reround":
         if arguments.get("rule"):
             _require_confirm(arguments, "changing TimeAssist settings")
@@ -757,6 +797,12 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
         from .supabase_ref import list_job_codes
 
         return list_job_codes(db_path=db_path)
+    if name == "list_employees":
+        return actions.list_employees(
+            db_path,
+            query=arguments.get("query"),
+            confirm_full_list=bool(arguments.get("confirm_full_list")),
+        )
     if name == "refresh_clients":
         return actions.refresh_clients(db_path)
     if name == "submit":

@@ -415,3 +415,123 @@ def roster_row_from_display(display_name: str) -> dict[str, Any]:
         "aliases": "",
         "client_key": None,
     }
+
+
+def get_employees(
+    environ: dict[str, str] | None = None,
+    db_path: str | Path | None = None,
+) -> list[dict[str, Any]]:
+    """Read-only GET of the firm employees table (never written by Timmy)."""
+    from .supabase_config import employees_table
+
+    table = employees_table(db_path=db_path, environ=environ)
+    return _fetch_table_rows(table, environ=environ)
+
+
+def _employee_active(row: dict[str, Any]) -> bool:
+    active = row.get("active")
+    if active is None:
+        return True
+    if isinstance(active, bool):
+        return active
+    return str(active).strip().lower() in {"1", "true", "yes", "t"}
+
+
+def slim_employee(row: dict[str, Any]) -> dict[str, Any] | None:
+    staff = (row.get("staff_name") or "").strip()
+    if not staff:
+        return None
+    office = (row.get("office") or "").strip().upper() or None
+    return {
+        "staff_name": staff,
+        "office": office,
+        "first_name": (row.get("first_name") or "").strip() or None,
+        "last_name": (row.get("last_name") or "").strip() or None,
+        "active": _employee_active(row),
+    }
+
+
+def list_employees_remote(
+    environ: dict[str, str] | None = None,
+    db_path: str | Path | None = None,
+    query: str | None = None,
+    *,
+    active_only: bool = True,
+) -> list[dict[str, Any]]:
+    """Live read-only employee list. Optional query filters like list_clients."""
+    try:
+        rows = get_employees(environ=environ, db_path=db_path)
+    except ValueError as exc:
+        msg = str(exc).strip() or exc.__class__.__name__
+        raise ValueError(f"employee list unavailable: {msg}") from None
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        slim = slim_employee(row)
+        if not slim:
+            continue
+        if active_only and not slim["active"]:
+            continue
+        out.append(slim)
+    needle = (query or "").strip()
+    if needle:
+        tokens = _match_tokens(needle)
+        filtered: list[dict[str, Any]] = []
+        for slim in out:
+            name = slim["staff_name"]
+            if needle.casefold() in name.casefold() or name_fold(needle) == name_fold(name):
+                filtered.append(slim)
+                continue
+            if tokens:
+                name_toks = set(_match_tokens(name))
+                if name_toks and all(tok in name_toks for tok in tokens):
+                    filtered.append(slim)
+        out = filtered
+    out.sort(key=lambda row: row["staff_name"].casefold())
+    return out
+
+
+def classify_employee_remote(
+    name: str,
+    *,
+    environ: dict[str, str] | None = None,
+    db_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Classify a spoken staff name against Supabase employees (read-only).
+
+    kind: exact | fold | soft | none
+    """
+    target = (name or "").strip()
+    if not target:
+        return {"kind": "none", "staff_name": None, "office": None, "spoken": ""}
+    employees = list_employees_remote(environ=environ, db_path=db_path)
+    names = [row["staff_name"] for row in employees]
+    by_name = {row["staff_name"].casefold(): row for row in employees}
+    lowered = target.casefold()
+    if lowered in by_name:
+        hit = by_name[lowered]
+        return {
+            "kind": "exact",
+            "staff_name": hit["staff_name"],
+            "office": hit.get("office"),
+            "spoken": target,
+        }
+    folded_target = name_fold(target)
+    fold_matches = [display for display in names if name_fold(display) == folded_target]
+    if len(fold_matches) == 1:
+        hit = by_name[fold_matches[0].casefold()]
+        return {
+            "kind": "fold",
+            "staff_name": hit["staff_name"],
+            "office": hit.get("office"),
+            "spoken": target,
+        }
+    soft = soft_unique_match(target, names)
+    if soft:
+        hit = by_name[soft.casefold()]
+        return {
+            "kind": "soft",
+            "staff_name": hit["staff_name"],
+            "office": hit.get("office"),
+            "spoken": target,
+        }
+    return {"kind": "none", "staff_name": None, "office": None, "spoken": target}

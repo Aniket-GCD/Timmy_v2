@@ -51,6 +51,8 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--job-type", dest="job_type", help="job category, e.g. Administrative")
     start.add_argument("--billable", type=yes_no, default=None)
     start.add_argument("--at", help="ISO timestamp for demos/tests")
+    start.add_argument("--duration-minutes", type=int, dest="duration_minutes", help="planned duration; auto-stops to a local draft")
+    start.add_argument("--planned-end-at", dest="planned_end_at", help="ISO planned stop; auto-stops to a local draft")
     start.add_argument("--dry-run", action="store_true")
 
     switch = sub.add_parser("switch", help="close current session and start another")
@@ -60,6 +62,8 @@ def build_parser() -> argparse.ArgumentParser:
     switch.add_argument("--billable", type=yes_no, default=None)
     switch.add_argument("--at", help="ISO timestamp for demos/tests")
     switch.add_argument("--minutes-ago", type=int, help="retroactively switch as if the work changed this many minutes before --at/now")
+    switch.add_argument("--duration-minutes", type=int, dest="duration_minutes", help="planned duration for the NEW session")
+    switch.add_argument("--planned-end-at", dest="planned_end_at", help="ISO planned stop for the NEW session")
     switch.add_argument("--dry-run", action="store_true")
 
     clarify_active = sub.add_parser("clarify-active", help="clarify labels on the active timer without changing its start time")
@@ -143,7 +147,8 @@ def build_parser() -> argparse.ArgumentParser:
     config.add_argument("--confirm-default-user-export-dir", action="store_true", help="accept the default Documents/TimeAssist Exports copy folder during first-run setup")
     config.add_argument("--operator-code", dest="operator_code", help="set the 2-4 letter operator code used in export filenames (e.g. AVD)")
     config.add_argument("--clear-operator-code", dest="clear_operator_code", action="store_true", help="clear the operator code")
-    config.add_argument("--staff-name", dest="staff_name", help="staff name copied onto submitted time_entries")
+    config.add_argument("--staff-name", dest="staff_name", help="staff name from Supabase employees (cross-checked)")
+    config.add_argument("--confirm-staff", dest="confirm_staff", action="store_true", help="confirm a soft employee name match")
     config.add_argument("--clear-staff-name", dest="clear_staff_name", action="store_true", help="clear staff_name")
     config.add_argument("--office", dest="office", help="office for submit: GCD or MH")
     config.add_argument("--clear-office", dest="clear_office", action="store_true", help="clear office")
@@ -286,10 +291,29 @@ def run_command(args: argparse.Namespace) -> CommandResult:
         details = actions.init_state(db_path, args.at)
         return CommandResult(True, command, "initialized", "Local TimeAssist state is ready.", details)
     if command == "start":
-        session = actions.start_session(db_path, args.client, args.task, args.billable, args.at, job_type=args.job_type)
+        session = actions.start_session(
+            db_path,
+            args.client,
+            args.task,
+            args.billable,
+            args.at,
+            job_type=args.job_type,
+            duration_minutes=getattr(args, "duration_minutes", None),
+            planned_end_at=getattr(args, "planned_end_at", None),
+        )
         return CommandResult(True, command, "started", f"Started draft time for {args.client}.", {"active_session": session})
     if command == "switch":
-        details = actions.switch_session(db_path, args.client, args.task, args.billable, args.at, args.minutes_ago, job_type=args.job_type)
+        details = actions.switch_session(
+            db_path,
+            args.client,
+            args.task,
+            args.billable,
+            args.at,
+            args.minutes_ago,
+            job_type=args.job_type,
+            duration_minutes=getattr(args, "duration_minutes", None),
+            planned_end_at=getattr(args, "planned_end_at", None),
+        )
         return CommandResult(True, command, "switched", f"Switched draft time to {args.client}.", details)
     if command == "clarify-active":
         session = actions.clarify_active_session(db_path, args.client, args.task, args.billable, args.at, job_type=args.job_type)
@@ -395,7 +419,13 @@ def run_command(args: argparse.Namespace) -> CommandResult:
             return CommandResult(True, command, "config-updated", "Cleared operator_code.", details)
         if args.staff_name:
             require_confirm(args.confirm, "changing TimeAssist settings")
-            details = actions.set_setting(db_path, "staff_name", args.staff_name)
+            details = actions.configure_staff_name(
+                db_path,
+                args.staff_name,
+                confirm_staff=bool(getattr(args, "confirm_staff", False)),
+            )
+            if details.get("needs_staff_confirm"):
+                return CommandResult(True, command, "needs-staff-confirm", details.get("ask") or "Confirm staff name.", details)
             return CommandResult(True, command, "config-updated", f"Set staff_name to {details['value']}.", details)
         if args.clear_staff_name:
             require_confirm(args.confirm, "changing TimeAssist settings")
@@ -417,7 +447,17 @@ def run_command(args: argparse.Namespace) -> CommandResult:
             require_confirm(args.confirm, "changing TimeAssist settings")
             details = actions.clear_setting(db_path, "reception_email")
             return CommandResult(True, command, "config-updated", "Cleared reception_email.", details)
-        return CommandResult(True, command, "config", "Current local settings.", {"settings": actions.list_settings(db_path), "export_folder": actions.export_folder_status(db_path)})
+        return CommandResult(
+            True,
+            command,
+            "config",
+            "Current local settings.",
+            {
+                "settings": actions.list_settings(db_path),
+                "export_folder": actions.export_folder_status(db_path),
+                "staff_setup": actions.staff_setup_status(db_path),
+            },
+        )
     if command == "reround":
         date_value = normalized_date(args.date)
         if args.rounding_rule:

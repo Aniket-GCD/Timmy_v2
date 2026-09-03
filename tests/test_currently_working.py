@@ -112,10 +112,11 @@ class CurrentlyWorkingSyncTests(unittest.TestCase):
         self.addCleanup(currently_working.cancel_auto_end)
 
     def test_start_posts_currently_working_not_time_entries(self) -> None:
-        actions.start_session(
+        session = actions.start_session(
             self.db, "Acme Co", "books", "yes", "2026-05-28T09:00:00",
             duration_minutes=90,
         )
+        self.assertTrue(session["currently_working_sync"]["ok"])
         tables = {table for _method, table, _body in self.calls}
         self.assertIn("currently_working", tables)
         self.assertNotIn("time_entries_timmy_v2", tables)
@@ -131,6 +132,7 @@ class CurrentlyWorkingSyncTests(unittest.TestCase):
         self.calls.clear()
         entry = actions.end_session(self.db, "2026-05-28T09:20:00")
         self.assertEqual(entry["review_status"], "draft")
+        self.assertTrue(entry["currently_working_sync"]["ok"])
         patch_calls = [c for c in self.calls if c[0] == "PATCH"]
         self.assertEqual(patch_calls[0][1], "currently_working")
         self.assertEqual(patch_calls[0][2]["status"], "closed")
@@ -139,8 +141,9 @@ class CurrentlyWorkingSyncTests(unittest.TestCase):
     def test_cancel_patches_canceled(self) -> None:
         actions.start_session(self.db, "Acme Co", "books", "yes", "2026-05-28T09:00:00")
         self.calls.clear()
-        actions.cancel_session(self.db, "2026-05-28T09:05:00")
+        canceled = actions.cancel_session(self.db, "2026-05-28T09:05:00")
         self.assertEqual(self.calls[0][2]["status"], "canceled")
+        self.assertTrue(canceled["currently_working_sync"]["ok"])
 
     def test_network_failure_does_not_fail_local_timer(self) -> None:
         self.patcher.stop()
@@ -149,9 +152,22 @@ class CurrentlyWorkingSyncTests(unittest.TestCase):
                 self.db, "Acme Co", "books", "yes", "2026-05-28T09:00:00",
             )
         self.assertEqual(session["client_name"], "Acme Co")
+        self.assertFalse(session["currently_working_sync"]["ok"])
+        self.assertIn("network", session["currently_working_sync"]["error"])
         with patch("timeassist.currently_working.request_json", side_effect=ValueError("boom")):
             ended = actions.end_session(self.db, "2026-05-28T09:10:00")
         self.assertEqual(ended["review_status"], "draft")
+        self.assertFalse(ended["currently_working_sync"]["ok"])
+
+    def test_clarify_active_resyncs_currently_working(self) -> None:
+        actions.start_session(self.db, "Acme Co", "books", "yes", "2026-05-28T09:00:00")
+        self.calls.clear()
+        clarified = actions.clarify_active_session(self.db, task="month-end", at="2026-05-28T09:05:00")
+        self.assertEqual(clarified["task_text"], "month-end")
+        self.assertTrue(clarified["currently_working_sync"]["ok"])
+        self.assertTrue(any(method == "POST" or method == "PATCH" for method, table, _ in self.calls if table == "currently_working"))
+        notes = [body.get("notes") for method, table, body in self.calls if table == "currently_working" and body]
+        self.assertIn("month-end", notes)
 
     def test_mcp_start_schema_and_round_trip(self) -> None:
         msg = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}

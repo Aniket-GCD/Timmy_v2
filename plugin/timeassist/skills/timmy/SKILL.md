@@ -37,6 +37,7 @@ yourself, and never record anything in prose  -  every change goes through a too
 | Import client roster | `import_clients` | **Disabled**  -  clients live in Supabase |
 | Add one new roster client | `add_client` | **Disabled**  -  use Unassigned + draft |
 | List client roster | `list_clients` | Live Supabase only — `confirm_full_list=true` for full list, or `query` to search |
+| List employees (setup) | `list_employees` | Live Supabase only — read-only; `query` or `confirm_full_list=true` |
 | List Job Codes + accounts | `list_job_codes` |  -  |
 | Refresh roster from Supabase | `refresh_clients` | **Disabled** |
 | Submit one approved entry | `submit` | `entry_id` (only after local approve; skips if already submitted) |
@@ -109,9 +110,14 @@ more before approval. Never block or refuse approval over missing notes.
    If `suggested_job_type` is present and Job Code is blank, ask once to confirm
    or pick from `list_job_codes` — then `edit`/`clarify_active` with explicit `job_type`.
    When the operator says they are starting (or switching) for N hours/minutes,
-   pass `duration_minutes` or `planned_end_at` on `start`/`switch`. The engine
-   auto-stops to a **local draft** at that time — **never** submit to
-   `time_entries_timmy_v2` until they approve. Do not invent a planned end.
+   confirm once with the matched client name, Job Code (if known), and the
+   planned window, then pass `duration_minutes` or `planned_end_at` on
+   `start`/`switch`. That writes the live row to Supabase `currently_working`
+   (dashboard "on the clock") and the engine auto-stops to a **local draft** at
+   that time — **never** submit to `time_entries_timmy_v2` until they approve.
+   If the tool returns `currently_working_sync.ok=false`, say the local timer
+   still started but the live ticker write failed (relay the short `error`).
+   Do not invent a planned end.
 3. **After-the-fact** ("I worked 1 hour 45 on ..."): do **not** call `start`. Ask
    for **date + duration** (and Job Code) — start/end clock times are optional.
    Call `add_missing` with `date` + `duration_minutes` (e.g. 105 for 1:45). If the
@@ -143,6 +149,9 @@ more before approval. Never block or refuse approval over missing notes.
    choose a folder? Default -> `config` with `confirm_default_user_export_dir=true`
    and `confirm=true`; custom -> `user_export_dir` with `confirm=true`. Once
    `survey_required=false`, stop asking.
+8. When `init_state` / `config` shows `staff_setup.required=true`, ask their
+   name once, then set it via `config` (`staff_name` + `confirm=true`) so it
+   matches Supabase employees. Do not skip this before submit / currently_working.
 
 ## New / unmatched clients (confirm before write)
 
@@ -279,9 +288,14 @@ day to see them. Approval stays per-day: `approve`/`approve_all` never take
 per-day review. HTML review is single-day only  -  render it one day at a time.
 `operator_code` is the operator's initials code from the firm's employee
 list, set once during setup via `config` (admin action  -  confirm with the
-operator); it appears in export filenames. Also set `staff_name` and `office`
-(`GCD` or `MH`) once  -  `submit` refuses if either is unset. Optionally set
-`reception_email` once for new-client Reception drafts.
+operator); it appears in export filenames. **Staff identity:** on install /
+first use, ask their name, then `config` with `staff_name` (and `confirm=true`).
+Timmy cross-checks the spoken name against the read-only Supabase `employees`
+table and stores the **exact** `staff_name` plus `office` from that row so
+submissions stay uniform. Soft matches return `needs_staff_confirm` — relay
+`ask`, then retry with `suggested_staff_name` or `confirm_staff=true`. Unknown
+names are refused (use `list_employees` / ask an admin to add them). Never invent
+a staff name. Optionally set `reception_email` once for new-client Reception drafts.
 
 ## Housekeeping & privacy
 

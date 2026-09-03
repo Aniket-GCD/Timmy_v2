@@ -156,3 +156,22 @@ on conflict (staff_name) do nothing;
 ```
 
 Grant Timmy’s existing submit key **insert/update** on `currently_working`. Dashboard routes only **select**. Confirm one Timmy `staff_name` matches `employees.staff_name` exactly.
+
+Timmy also needs **read-only** access to `employees` for install identity:
+
+```sql
+GRANT SELECT ON public.employees TO anon;
+GRANT SELECT ON public.employees TO authenticated;
+```
+
+If RLS is enabled on `currently_working`, also allow the publishable (`anon`) key to write:
+
+```sql
+CREATE POLICY currently_working_insert_anon ON public.currently_working
+  FOR INSERT TO anon WITH CHECK (true);
+
+CREATE POLICY currently_working_update_anon ON public.currently_working
+  FOR UPDATE TO anon USING (true) WITH CHECK (true);
+```
+
+(Pilot alternative: `ALTER TABLE public.currently_working DISABLE ROW LEVEL SECURITY;`)

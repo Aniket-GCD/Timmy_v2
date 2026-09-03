@@ -204,7 +204,26 @@ def set_setting(db_path: str | Path, key: str, value: str, at: str | None = None
     if key == "operator_code":
         value = normalize_operator_code(value)
     if key == "staff_name":
-        value = normalize_staff_name(value)
+        # Prefer configure_staff_name from MCP/CLI (supports soft-match confirm).
+        # Direct set_setting still validates when Supabase credentials are present.
+        resolved = _resolve_staff_or_raise(db_path, value, confirm_staff=False)
+        value = resolved["staff_name"]
+        office_from_roster = resolved.get("office")
+        with connect(db_path) as conn:
+            before = get_setting(conn, key)
+            _upsert_setting(conn, key, value, changed_at)
+            office_changed = None
+            if office_from_roster in {"GCD", "MH"}:
+                before_office = get_setting(conn, "office")
+                if before_office != office_from_roster:
+                    _upsert_setting(conn, "office", office_from_roster, changed_at)
+                    office_changed = {"previous": before_office, "value": office_from_roster}
+            log_event(conn, "config", f"set {key} to {value}", "setting", None, before={"key": key, "value": before}, after={"key": key, "value": value}, at=changed_at)
+            conn.commit()
+        result: dict[str, Any] = {"key": key, "value": value, "previous": before, "matched_employee": True}
+        if office_changed is not None:
+            result["office"] = office_changed
+        return result
     if key == "office":
         value = normalize_office(value)
     if key == "reception_email":
@@ -219,10 +238,200 @@ def set_setting(db_path: str | Path, key: str, value: str, at: str | None = None
         log_event(conn, "config", f"set {key} to {value}", "setting", None, before={"key": key, "value": before}, after={"key": key, "value": value}, at=changed_at)
         export_folder = _export_folder_status_from_conn(conn) if key == "user_export_dir" else None
         conn.commit()
-    result: dict[str, Any] = {"key": key, "value": value, "previous": before}
+    result = {"key": key, "value": value, "previous": before}
     if export_folder is not None:
         result["export_folder"] = export_folder
     return result
+
+
+def _staff_confirm_payload(classified: dict[str, Any]) -> dict[str, Any]:
+    spoken = classified.get("spoken") or ""
+    kind = classified.get("kind")
+    suggested = classified.get("staff_name")
+    if kind == "soft" and suggested:
+        return {
+            "needs_staff_confirm": True,
+            "match_kind": "soft",
+            "spoken_name": spoken,
+            "suggested_staff_name": suggested,
+            "suggested_office": classified.get("office"),
+            "ask": (
+                f'Did you mean "{suggested}" on the firm employee list? '
+                f"If yes, I will set your Timmy identity to that exact name"
+                + (f' and office {classified["office"]}' if classified.get("office") in {"GCD", "MH"} else "")
+                + " so submissions stay uniform."
+            ),
+            "if_yes": {
+                "retry_with_staff_name": suggested,
+                "or_confirm_staff": True,
+            },
+        }
+    return {
+        "needs_staff_confirm": True,
+        "match_kind": "none",
+        "spoken_name": spoken,
+        "suggested_staff_name": None,
+        "suggested_office": None,
+        "ask": (
+            f'No match on the firm employees list for "{spoken}". '
+            f"Use list_employees (query=your name) to find the exact staff_name, "
+            f"or ask an admin to add you to Supabase employees. Timmy cannot invent names."
+        ),
+        "if_yes": None,
+    }
+
+
+def _resolve_staff_or_raise(
+    db_path: str | Path,
+    spoken: str,
+    *,
+    confirm_staff: bool = False,
+    environ: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Return {staff_name, office} from employees, or raise / skip when offline.
+
+    When Supabase credentials are absent (local unit tests), returns the
+    normalized spoken name with no office — same as pre-employees behavior.
+    """
+    spoken_norm = normalize_staff_name(spoken)
+    live_env = _supabase_environ(environ)
+    if live_env is None:
+        return {"staff_name": spoken_norm, "office": None}
+    from .supabase_ref import classify_employee_remote
+
+    classified = classify_employee_remote(spoken_norm, environ=live_env, db_path=db_path)
+    kind = classified["kind"]
+    if kind in {"exact", "fold"}:
+        return {"staff_name": classified["staff_name"], "office": classified.get("office")}
+    if kind == "soft" and confirm_staff:
+        return {"staff_name": classified["staff_name"], "office": classified.get("office")}
+    payload = _staff_confirm_payload(classified)
+    raise ValueError(payload["ask"])
+
+
+def configure_staff_name(
+    db_path: str | Path,
+    spoken: str,
+    *,
+    confirm_staff: bool = False,
+    at: str | None = None,
+    environ: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Set staff_name from the read-only employees table (canonical spelling + office)."""
+    ensure_initialized(db_path)
+    spoken_norm = normalize_staff_name(spoken)
+    live_env = _supabase_environ(environ)
+    if live_env is None:
+        return set_setting(db_path, "staff_name", spoken_norm, at=at)
+
+    from .supabase_ref import classify_employee_remote
+
+    classified = classify_employee_remote(spoken_norm, environ=live_env, db_path=db_path)
+    kind = classified["kind"]
+    if kind == "soft" and not confirm_staff:
+        return _staff_confirm_payload(classified)
+    if kind == "none":
+        return _staff_confirm_payload(classified)
+    if kind not in {"exact", "fold"} and not (kind == "soft" and confirm_staff):
+        return _staff_confirm_payload(classified)
+
+    canonical = classified["staff_name"]
+    office = classified.get("office")
+    changed_at = iso(parse_at(at)) if at else now_iso()
+    with connect(db_path) as conn:
+        before = get_setting(conn, "staff_name")
+        _upsert_setting(conn, "staff_name", canonical, changed_at)
+        office_result = None
+        if office in {"GCD", "MH"}:
+            before_office = get_setting(conn, "office")
+            _upsert_setting(conn, "office", office, changed_at)
+            office_result = {"previous": before_office, "value": office}
+            log_event(
+                conn,
+                "config",
+                f"set office to {office} from employees",
+                "setting",
+                None,
+                before={"key": "office", "value": before_office},
+                after={"key": "office", "value": office},
+                at=changed_at,
+            )
+        log_event(
+            conn,
+            "config",
+            f"set staff_name to {canonical}",
+            "setting",
+            None,
+            before={"key": "staff_name", "value": before},
+            after={"key": "staff_name", "value": canonical},
+            at=changed_at,
+        )
+        conn.commit()
+    result: dict[str, Any] = {
+        "key": "staff_name",
+        "value": canonical,
+        "previous": before,
+        "matched_employee": True,
+        "match_kind": kind if kind in {"exact", "fold"} else "soft",
+    }
+    if office_result is not None:
+        result["office"] = office_result
+    return result
+
+
+def staff_setup_status(db_path: str | Path) -> dict[str, Any]:
+    """Hint for first-run: staff_name must match Supabase employees."""
+    ensure_initialized(db_path)
+    with connect(db_path) as conn:
+        staff = (get_setting(conn, "staff_name") or "").strip()
+        office = (get_setting(conn, "office") or "").strip()
+    required = not staff or office not in {"GCD", "MH"}
+    return {
+        "required": required,
+        "staff_name": staff or None,
+        "office": office or None,
+        "message": (
+            "Set your identity with config staff_name (must match Supabase employees). "
+            "Timmy cross-checks the name and sets office from that row."
+            if required
+            else "Staff identity is set."
+        ),
+    }
+
+
+def list_employees(
+    db_path: str | Path,
+    *,
+    query: str | None = None,
+    confirm_full_list: bool = False,
+    environ: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Read-only employee directory for setup. Prefer query; full list needs confirm."""
+    live_env = _supabase_environ(environ)
+    if live_env is None:
+        raise ValueError(
+            "list_employees requires SUPABASE_URL/SUPABASE_KEY (employees live in Supabase only)."
+        )
+    from .supabase_ref import list_employees_remote
+
+    needle = (query or "").strip()
+    if not needle and not confirm_full_list:
+        return {
+            "employees": [],
+            "employee_count": None,
+            "message": (
+                "Pass query= to search the employees list, or confirm_full_list=true "
+                "to load every active staff_name."
+            ),
+        }
+    rows = list_employees_remote(environ=live_env, db_path=db_path, query=needle or None)
+    return {
+        "employees": [
+            {k: row[k] for k in ("staff_name", "office", "first_name", "last_name") if row.get(k)}
+            for row in rows
+        ],
+        "employee_count": len(rows),
+    }
 
 
 def clear_setting(db_path: str | Path, key: str, at: str | None = None) -> dict[str, Any]:
@@ -1181,7 +1390,12 @@ def init_state(db_path: str | Path, at: str | None = None) -> dict[str, Any]:
         log_event(conn, "init", "initialized local TimeAssist state", "database", None, at=created_at)
         export_folder = _export_folder_status_from_conn(conn)
         conn.commit()
-    return {"database": str(db_path), "created_at": created_at, "export_folder": export_folder}
+    return {
+        "database": str(db_path),
+        "created_at": created_at,
+        "export_folder": export_folder,
+        "staff_setup": staff_setup_status(db_path),
+    }
 
 
 def get_active_session(conn) -> dict[str, Any] | None:
@@ -1241,7 +1455,13 @@ def _insert_active_session(
     return cur.lastrowid
 
 
-def _sync_currently_working(kind: str, db_path: str | Path, session: dict[str, Any] | None = None, *, at: str | None = None) -> None:
+def _sync_currently_working(
+    kind: str,
+    db_path: str | Path,
+    session: dict[str, Any] | None = None,
+    *,
+    at: str | None = None,
+) -> dict[str, Any]:
     """Best-effort ticker sync. Never raises into the local timer path."""
     try:
         from . import currently_working as live
@@ -1252,8 +1472,10 @@ def _sync_currently_working(kind: str, db_path: str | Path, session: dict[str, A
         else:
             live.cancel_auto_end()
             live.close_live(db_path, status=kind, updated_at=at)
-    except Exception:
-        pass
+        return {"ok": True, "action": kind}
+    except Exception as exc:
+        # Local timer remains authority; surface a short error so Timmy can warn.
+        return {"ok": False, "action": kind, "error": str(exc).replace("\n", " ").strip()[:240]}
 
 
 def maybe_end_overdue_planned(db_path: str | Path, at: str | None = None) -> dict[str, Any] | None:
@@ -1308,7 +1530,7 @@ def start_session(
             session["suggested_job_type"] = capture["suggested_job_type"]
         log_event(conn, "start", f"started {capture['client_name']}: {capture['task_text']}", "active_session", session["session_id"], after=session, at=started)
         conn.commit()
-    _sync_currently_working("upsert", db_path, session)
+    session["currently_working_sync"] = _sync_currently_working("upsert", db_path, session)
     return session
 
 
@@ -1376,8 +1598,9 @@ def end_session(db_path: str | Path, at: str | None = None) -> dict[str, Any]:
     with connect(db_path) as conn:
         entry = close_active_session(conn, ended)
         conn.commit()
-    _sync_currently_working("closed", db_path, at=ended)
-    return _flag_missing_notes(entry)
+    entry = _flag_missing_notes(entry)
+    entry["currently_working_sync"] = _sync_currently_working("closed", db_path, at=ended)
+    return entry
 
 
 def switch_session(
@@ -1422,7 +1645,7 @@ def switch_session(
             new_session["suggested_job_type"] = capture["suggested_job_type"]
         log_event(conn, "switch", f"switched to {capture['client_name']}: {capture['task_text']}", "active_session", new_session["session_id"], after={"closed_entry": closed, "new_active_session": new_session}, at=switched_at)
         conn.commit()
-    _sync_currently_working("upsert", db_path, new_session)
+    new_session["currently_working_sync"] = _sync_currently_working("upsert", db_path, new_session)
     return {"closed_entry": _flag_missing_notes(closed), "new_active_session": new_session}
 
 
@@ -1492,6 +1715,7 @@ def clarify_active_session(
             at=clarified_at,
         )
         conn.commit()
+    session["currently_working_sync"] = _sync_currently_working("upsert", db_path, session)
     return session
 
 
@@ -1509,7 +1733,7 @@ def cancel_session(db_path: str | Path, at: str | None = None) -> dict[str, Any]
         after = row_to_dict(conn.execute("SELECT * FROM active_sessions WHERE session_id = ?", (active["session_id"],)).fetchone())
         log_event(conn, "cancel", f"canceled active session for {active['client_name']} (no entry created)", "active_session", active["session_id"], before=active, after=after, at=canceled_at)
         conn.commit()
-    _sync_currently_working("canceled", db_path, at=canceled_at)
+    after["currently_working_sync"] = _sync_currently_working("canceled", db_path, at=canceled_at)
     return after
 
 
