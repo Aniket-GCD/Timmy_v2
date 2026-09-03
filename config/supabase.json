@@ -2,7 +2,8 @@
   "tables": {
     "time_entries": "time_entries_timmy_v2",
     "clients": "clients",
-    "job_codes": "job_codes"
+    "job_codes": "job_codes",
+    "currently_working": "currently_working"
   },
   "unassigned_client_name": "Unassigned"
 }

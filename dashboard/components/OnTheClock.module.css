@@ -1,0 +1,47 @@
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.card,
+.cardOverdue {
+  min-width: 10rem;
+  flex: 1 1 10rem;
+  max-width: 16rem;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.7rem 0.85rem;
+}
+
+.cardOverdue {
+  border-color: #f2c9c8;
+  background: var(--tartlet);
+}
+
+.name {
+  font-family: var(--font-display);
+  color: var(--mysterious-mixture);
+  font-size: 1rem;
+}
+
+.client {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-top: 0.15rem;
+}
+
+.elapsed {
+  margin-top: 0.35rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--hippie-green);
+  font-size: 0.9rem;
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 0.35rem 0;
+}

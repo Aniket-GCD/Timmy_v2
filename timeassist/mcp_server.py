@@ -48,6 +48,15 @@ TOOLS: list[dict[str, Any]] = [
                 "job_type": {"type": "string", "description": "Job Code from list_job_codes (stored locally as job_type)."},
                 "billable": {"type": "string", "enum": ["yes", "no"], "description": "Omit to use roster default (else yes)."},
                 "at": {"type": "string", "description": "Optional ISO timestamp."},
+                "duration_minutes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Optional planned duration. Auto-stops to a local draft at start+this many minutes. Do not also pass planned_end_at.",
+                },
+                "planned_end_at": {
+                    "type": "string",
+                    "description": "Optional ISO planned stop. Auto-stops to a local draft at this time. Do not also pass duration_minutes.",
+                },
                 "confirm_client": {
                     "type": "boolean",
                     "description": "True after the operator confirmed a soft match (or to proceed with an unmatched spoken name).",
@@ -71,6 +80,15 @@ TOOLS: list[dict[str, Any]] = [
                 "billable": {"type": "string", "enum": ["yes", "no"], "description": "Omit to use roster default (else yes)."},
                 "at": {"type": "string", "description": "Optional ISO timestamp."},
                 "minutes_ago": {"type": "integer", "minimum": 1, "description": "If the operator says they switched N minutes ago, close/start at at-now minus this many minutes."},
+                "duration_minutes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Optional planned duration for the NEW session. Auto-stops to a local draft. Do not also pass planned_end_at.",
+                },
+                "planned_end_at": {
+                    "type": "string",
+                    "description": "Optional ISO planned stop for the NEW session. Auto-stops to a local draft. Do not also pass duration_minutes.",
+                },
                 "confirm_client": {"type": "boolean", "description": "True after the operator confirmed the client match."},
             },
             "required": ["client", "task"],
@@ -530,6 +548,8 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
             arguments.get("at"),
             job_type=arguments.get("job_type"),
             confirm_client=bool(arguments.get("confirm_client")),
+            duration_minutes=int(arguments["duration_minutes"]) if arguments.get("duration_minutes") is not None else None,
+            planned_end_at=arguments.get("planned_end_at"),
         )
     if name == "switch":
         return actions.switch_session(
@@ -541,6 +561,8 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
             arguments.get("minutes_ago"),
             job_type=arguments.get("job_type"),
             confirm_client=bool(arguments.get("confirm_client")),
+            duration_minutes=int(arguments["duration_minutes"]) if arguments.get("duration_minutes") is not None else None,
+            planned_end_at=arguments.get("planned_end_at"),
         )
     if name == "clarify_active":
         return actions.clarify_active_session(

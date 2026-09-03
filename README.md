@@ -104,6 +104,8 @@ python scripts/timeassist.py sanitize-packet --date today
 
 The current CLI creates local SQLite state, records draft entries, logs events, produces a review screen, exports approved synthetic entries, and generates an anonymized collaboration packet.
 
+Windows clock widget (this machine’s `staff_name`, polls `currently_working`): `python scripts/timeassist.py tray` — see `timeassist/TRAY.md`.
+
 ## Cowork / MCP plugin prototype
 
 The deterministic core is exposed over a local MCP stdio server so the same engine is reachable from Claude Cowork and Claude Code. The server is stdlib-only — no extra dependencies.

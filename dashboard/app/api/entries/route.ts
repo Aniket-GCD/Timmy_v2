@@ -12,14 +12,13 @@ import type { EntryWritePayload } from "@/lib/types/time-entry";
 
 export async function GET(req: NextRequest) {
   try {
-    const { staffName } = getDashboardStaff();
     const from = req.nextUrl.searchParams.get("from") ?? "";
     const to = req.nextUrl.searchParams.get("to") ?? "";
-    const staff = req.nextUrl.searchParams.get("staff") ?? staffName;
+    const staff = req.nextUrl.searchParams.get("staff")?.trim() ?? "";
     const table = entriesTable();
-    const rows = await supabaseFetch<Array<Record<string, unknown>>>(
-      `${table}?staff_name=eq.${encodeURIComponent(staff)}&entry_date=gte.${from}&entry_date=lte.${to}&order=entry_date,start_time`,
-    );
+    const filters = [`entry_date=gte.${from}`, `entry_date=lte.${to}`, "order=entry_date,start_time"];
+    if (staff) filters.unshift(`staff_name=eq.${encodeURIComponent(staff)}`);
+    const rows = await supabaseFetch<Array<Record<string, unknown>>>(`${table}?${filters.join("&")}`);
     return NextResponse.json(rows.map(normalizeSupabaseRow));
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

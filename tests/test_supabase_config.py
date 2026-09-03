@@ -29,6 +29,7 @@ class LoadConfigTests(unittest.TestCase):
         self.assertEqual(cfg["tables"]["time_entries"], "time_entries_timmy_v2")
         self.assertEqual(cfg["tables"]["clients"], "clients")
         self.assertEqual(cfg["tables"]["job_codes"], "job_codes")
+        self.assertEqual(cfg["tables"]["currently_working"], "currently_working")
         self.assertEqual(cfg["unassigned_client_name"], "Unassigned")
 
     def test_loads_plugin_layout_config_next_to_exe(self) -> None:

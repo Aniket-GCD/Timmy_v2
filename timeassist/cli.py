@@ -227,6 +227,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("mcp", help="run the MCP stdio server for Cowork/Claude Code")
 
+    tray = sub.add_parser("tray", help="always-on-top clock widget for this machine's currently_working row")
+    tray.add_argument(
+        "--interval",
+        type=int,
+        default=20,
+        help="seconds between currently_working polls (15-30 recommended)",
+    )
+
     return parser
 
 
@@ -490,6 +498,11 @@ def main(argv: list[str] | None = None) -> int:
 
         serve(args.db)
         return 0
+    if args.command == "tray":
+        from .tray import run_widget
+
+        interval = args.interval if args.interval and args.interval > 0 else 20
+        return run_widget(args.db, poll_seconds=interval)
     try:
         return run_command(args).emit()
     except Exception as exc:  # keep CLI stakeholder-friendly: structured error output

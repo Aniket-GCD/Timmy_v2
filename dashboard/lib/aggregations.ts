@@ -88,6 +88,28 @@ export function groupByClient(entries: TimeEntry[]): ClientGroup[] {
     .sort((a, b) => a.client.localeCompare(b.client));
 }
 
+export type StaffGroup = {
+  staff_name: string;
+  entries: TimeEntry[];
+  subtotal: number;
+};
+
+export function groupByStaff(entries: TimeEntry[]): StaffGroup[] {
+  const map = new Map<string, TimeEntry[]>();
+  for (const e of entries) {
+    const list = map.get(e.staff_name) ?? [];
+    list.push(e);
+    map.set(e.staff_name, list);
+  }
+  return Array.from(map.entries())
+    .map(([staff_name, rows]) => ({
+      staff_name,
+      entries: rows,
+      subtotal: round2(rows.reduce((s, r) => s + r.hours, 0)),
+    }))
+    .sort((a, b) => a.staff_name.localeCompare(b.staff_name));
+}
+
 function topNamed(
   entries: TimeEntry[],
   keyFn: (e: TimeEntry) => string,

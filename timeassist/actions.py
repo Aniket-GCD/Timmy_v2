@@ -1191,7 +1191,34 @@ def get_active_session(conn) -> dict[str, Any] | None:
     return row_to_dict(row) if row else None
 
 
-def _insert_active_session(conn, capture: dict[str, Any], started_at: str) -> int:
+def resolve_planned_end(
+    started_at: str,
+    duration_minutes: int | None = None,
+    planned_end_at: str | None = None,
+) -> str | None:
+    has_minutes = duration_minutes is not None
+    has_stamp = bool((planned_end_at or "").strip())
+    if has_minutes and has_stamp:
+        raise ValueError("pass duration_minutes or planned_end_at, not both")
+    if has_minutes:
+        minutes = int(duration_minutes)
+        if minutes <= 0:
+            raise ValueError("duration_minutes must be greater than zero")
+        return iso(parse_at(started_at) + timedelta(minutes=minutes))
+    if has_stamp:
+        ended = iso(parse_at(planned_end_at))
+        if parse_at(ended) <= parse_at(started_at):
+            raise ValueError("planned_end_at must be after the session start")
+        return ended
+    return None
+
+
+def _insert_active_session(
+    conn,
+    capture: dict[str, Any],
+    started_at: str,
+    planned_end_at: str | None = None,
+) -> int:
     """One INSERT for both start and switch, so the capture-column list can
     never drift between them (schema adds via ALTER ... DEFAULT would silently
     diverge a forgotten copy)."""
@@ -1200,18 +1227,47 @@ def _insert_active_session(conn, capture: dict[str, Any], started_at: str) -> in
         INSERT INTO active_sessions(
             client_name, task_text, billable, job_type, started_at, raw_client_name,
             raw_task_text, capture_status, capture_note, clarified_at,
-            last_checkin_at, status, created_at, updated_at
+            last_checkin_at, planned_end_at, status, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
         """,
         (
             capture["client_name"], capture["task_text"], capture["billable"],
             capture["job_type"], started_at, capture["raw_client_name"],
             capture["raw_task_text"], capture["capture_status"], capture["capture_note"],
-            capture["clarified_at"], started_at, started_at, started_at,
+            capture["clarified_at"], started_at, planned_end_at, started_at, started_at,
         ),
     )
     return cur.lastrowid
+
+
+def _sync_currently_working(kind: str, db_path: str | Path, session: dict[str, Any] | None = None, *, at: str | None = None) -> None:
+    """Best-effort ticker sync. Never raises into the local timer path."""
+    try:
+        from . import currently_working as live
+
+        if kind == "upsert":
+            live.upsert_active(db_path, session or {})
+            live.schedule_auto_end(db_path, (session or {}).get("planned_end_at"))
+        else:
+            live.cancel_auto_end()
+            live.close_live(db_path, status=kind, updated_at=at)
+    except Exception:
+        pass
+
+
+def maybe_end_overdue_planned(db_path: str | Path, at: str | None = None) -> dict[str, Any] | None:
+    """If planned_end_at has passed, close at that stamp (draft locally). Heartbeat + timer."""
+    ensure_initialized(db_path)
+    checked = iso(parse_at(at)) if at else now_iso()
+    with connect(db_path) as conn:
+        active = get_active_session(conn)
+        planned = (active or {}).get("planned_end_at") if active else None
+        if not active or not planned:
+            return None
+        if parse_at(checked) < parse_at(planned):
+            return None
+    return end_session(db_path, planned)
 
 
 def start_session(
@@ -1223,9 +1279,13 @@ def start_session(
     job_type: str | None = None,
     *,
     confirm_client: bool = False,
+    duration_minutes: int | None = None,
+    planned_end_at: str | None = None,
 ) -> dict[str, Any]:
     ensure_initialized(db_path)
+    maybe_end_overdue_planned(db_path, at)
     started = iso(parse_at(at)) if at else now_iso()
+    planned = resolve_planned_end(started, duration_minutes, planned_end_at)
     with connect(db_path) as conn:
         pending = client_confirm_gate(
             conn, client, confirm_client=confirm_client, db_path=db_path,
@@ -1240,7 +1300,7 @@ def start_session(
             )
         capture = resolve_capture_with_metadata(conn, client, task, billable, job_type=job_type)
         try:
-            session_id = _insert_active_session(conn, capture, started)
+            session_id = _insert_active_session(conn, capture, started, planned)
         except sqlite3.IntegrityError as exc:
             raise ValueError("active session already exists; use switch or end first") from exc
         session = row_to_dict(conn.execute("SELECT * FROM active_sessions WHERE session_id = ?", (session_id,)).fetchone())
@@ -1248,6 +1308,7 @@ def start_session(
             session["suggested_job_type"] = capture["suggested_job_type"]
         log_event(conn, "start", f"started {capture['client_name']}: {capture['task_text']}", "active_session", session["session_id"], after=session, at=started)
         conn.commit()
+    _sync_currently_working("upsert", db_path, session)
     return session
 
 
@@ -1315,6 +1376,7 @@ def end_session(db_path: str | Path, at: str | None = None) -> dict[str, Any]:
     with connect(db_path) as conn:
         entry = close_active_session(conn, ended)
         conn.commit()
+    _sync_currently_working("closed", db_path, at=ended)
     return _flag_missing_notes(entry)
 
 
@@ -1328,6 +1390,8 @@ def switch_session(
     job_type: str | None = None,
     *,
     confirm_client: bool = False,
+    duration_minutes: int | None = None,
+    planned_end_at: str | None = None,
 ) -> dict[str, Any]:
     ensure_initialized(db_path)
     switched_dt = parse_at(at)
@@ -1337,6 +1401,7 @@ def switch_session(
             raise ValueError("minutes_ago must be greater than zero")
         switched_dt = switched_dt - timedelta(minutes=offset)
     switched_at = iso(switched_dt)
+    planned = resolve_planned_end(switched_at, duration_minutes, planned_end_at)
     with connect(db_path) as conn:
         pending = client_confirm_gate(
             conn, client, confirm_client=confirm_client, db_path=db_path,
@@ -1351,12 +1416,13 @@ def switch_session(
             )
         closed = close_active_session(conn, switched_at)
         capture = resolve_capture_with_metadata(conn, client, task, billable, job_type=job_type)
-        session_id = _insert_active_session(conn, capture, switched_at)
+        session_id = _insert_active_session(conn, capture, switched_at, planned)
         new_session = row_to_dict(conn.execute("SELECT * FROM active_sessions WHERE session_id = ?", (session_id,)).fetchone())
         if capture.get("suggested_job_type"):
             new_session["suggested_job_type"] = capture["suggested_job_type"]
         log_event(conn, "switch", f"switched to {capture['client_name']}: {capture['task_text']}", "active_session", new_session["session_id"], after={"closed_entry": closed, "new_active_session": new_session}, at=switched_at)
         conn.commit()
+    _sync_currently_working("upsert", db_path, new_session)
     return {"closed_entry": _flag_missing_notes(closed), "new_active_session": new_session}
 
 
@@ -1443,6 +1509,7 @@ def cancel_session(db_path: str | Path, at: str | None = None) -> dict[str, Any]
         after = row_to_dict(conn.execute("SELECT * FROM active_sessions WHERE session_id = ?", (active["session_id"],)).fetchone())
         log_event(conn, "cancel", f"canceled active session for {active['client_name']} (no entry created)", "active_session", active["session_id"], before=active, after=after, at=canceled_at)
         conn.commit()
+    _sync_currently_working("canceled", db_path, at=canceled_at)
     return after
 
 
@@ -1502,13 +1569,14 @@ def _active_timer_warning(active: dict[str, Any] | None, reviewed_at: str, stale
 
 def checkin_status(db_path: str | Path, at: str | None = None) -> dict[str, Any]:
     ensure_initialized(db_path)
+    auto_closed = maybe_end_overdue_planned(db_path, at)
     checked_at = iso(parse_at(at)) if at else now_iso()
     with connect(db_path) as conn:
         active = get_active_session(conn)
         checkin_interval = _int_setting(conn, "checkin_interval_minutes", 45)
         stale_session_minutes = _int_setting(conn, "stale_session_minutes", 480)
     if not active:
-        return {
+        idle = {
             "active": False,
             "session": None,
             "open_minutes": None,
@@ -1521,6 +1589,12 @@ def checkin_status(db_path: str | Path, at: str | None = None) -> dict[str, Any]
             "stale_session_minutes": stale_session_minutes,
             "suggested_actions": [],
         }
+        if auto_closed:
+            idle["should_prompt"] = True
+            idle["prompt_reason"] = "planned_end_reached"
+            idle["auto_ended"] = True
+            idle["closed_entry"] = auto_closed
+        return idle
     try:
         open_minutes = minutes_between(active["started_at"], checked_at)
     except ValueError:
@@ -1557,6 +1631,7 @@ def checkin_status(db_path: str | Path, at: str | None = None) -> dict[str, Any]
             "task_text": active["task_text"],
             "started_at": active["started_at"],
             "last_checkin_at": active["last_checkin_at"],
+            "planned_end_at": active.get("planned_end_at"),
         },
         "open_minutes": open_minutes,
         "minutes_since_checkin": minutes_since_checkin,
@@ -1594,6 +1669,9 @@ def snooze_checkin(db_path: str | Path, minutes: int, at: str | None = None) -> 
 
 def checkin(db_path: str | Path, at: str | None = None) -> dict[str, Any]:
     ensure_initialized(db_path)
+    auto_closed = maybe_end_overdue_planned(db_path, at)
+    if auto_closed:
+        return {"auto_ended": True, "closed_entry": auto_closed, "status": "closed"}
     checked_at = iso(parse_at(at)) if at else now_iso()
     with connect(db_path) as conn:
         active = get_active_session(conn)

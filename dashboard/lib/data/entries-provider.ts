@@ -1,11 +1,13 @@
 import { validateEntryWrite } from "../validate-entry";
-import { createMockSeed, MOCK_STAFF } from "../mock-data";
+import { createMockLiveSessions, createMockSeed, MOCK_EMPLOYEES, MOCK_STAFF } from "../mock-data";
 import { MOCK_CLIENTS, MOCK_JOB_CODES } from "../mock-reference";
+import type { CurrentlyWorking } from "../types/currently-working";
+import type { Employee } from "../types/employee";
 import type { ClientOption, JobCodeOption } from "../types/reference-data";
 import type { EntryWritePayload, TimeEntry } from "../types/time-entry";
 
 export type FetchEntriesParams = {
-  staffName: string;
+  staffName?: string;
   dateFrom: string;
   dateTo: string;
 };
@@ -16,6 +18,8 @@ export interface EntriesProvider {
   updateEntry(id: number, payload: EntryWritePayload): Promise<TimeEntry>;
   fetchClients(): Promise<ClientOption[]>;
   fetchJobCodes(): Promise<JobCodeOption[]>;
+  fetchEmployees(): Promise<Employee[]>;
+  fetchCurrentlyWorking(): Promise<CurrentlyWorking[]>;
 }
 
 let mockStore: TimeEntry[] | null = null;
@@ -35,7 +39,7 @@ export const mockProvider: EntriesProvider = {
   async fetchEntries({ staffName, dateFrom, dateTo }) {
     return getMockStore().filter(
       (e) =>
-        e.staff_name === staffName &&
+        (!staffName || e.staff_name === staffName) &&
         e.entry_date >= dateFrom &&
         e.entry_date <= dateTo,
     );
@@ -45,6 +49,12 @@ export const mockProvider: EntriesProvider = {
   },
   async fetchJobCodes() {
     return MOCK_JOB_CODES;
+  },
+  async fetchEmployees() {
+    return MOCK_EMPLOYEES.filter((e) => e.active);
+  },
+  async fetchCurrentlyWorking() {
+    return createMockLiveSessions();
   },
   async createEntry(payload) {
     const result = validateEntryWrite(payload, { clients: MOCK_CLIENTS, jobCodes: MOCK_JOB_CODES }, MOCK_STAFF.staff_name);
@@ -86,8 +96,8 @@ const liveProvider: EntriesProvider = {
     const q = new URLSearchParams({
       from: params.dateFrom,
       to: params.dateTo,
-      staff: params.staffName,
     });
+    if (params.staffName) q.set("staff", params.staffName);
     const res = await fetch(`/api/entries?${q}`);
     if (!res.ok) throw new Error(await res.text());
     return res.json();
@@ -117,6 +127,16 @@ const liveProvider: EntriesProvider = {
   },
   async fetchJobCodes() {
     const res = await fetch("/api/job-codes");
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+  async fetchEmployees() {
+    const res = await fetch("/api/employees");
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+  async fetchCurrentlyWorking() {
+    const res = await fetch("/api/currently-working");
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   },

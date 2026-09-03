@@ -238,6 +238,8 @@ class SchemaMigrationTests(unittest.TestCase):
         for table in ("time_entries", "active_sessions"):
             columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
             self.assertIn("job_type", columns)
+            if table == "active_sessions":
+                self.assertIn("planned_end_at", columns)
         client_columns = {row["name"] for row in conn.execute("PRAGMA table_info(clients)")}
         self.assertIn("default_job_type", client_columns)
         self.assertIn("billable_locked", client_columns)

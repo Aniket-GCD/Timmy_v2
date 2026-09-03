@@ -46,9 +46,20 @@ export async function supabaseFetch<T>(
 const ENTRIES_TABLE = process.env.SUPABASE_ENTRIES_TABLE ?? "time_entries_timmy_v2";
 const CLIENTS_TABLE = process.env.SUPABASE_CLIENTS_TABLE ?? "clients";
 const JOB_CODES_TABLE = process.env.SUPABASE_JOB_CODES_TABLE ?? "job_codes";
+const EMPLOYEES_TABLE = process.env.SUPABASE_EMPLOYEES_TABLE ?? "employees";
+const CURRENTLY_WORKING_TABLE =
+  process.env.SUPABASE_CURRENTLY_WORKING_TABLE ?? "currently_working";
 
 export function entriesTable() {
   return ENTRIES_TABLE;
+}
+
+export function employeesTable() {
+  return EMPLOYEES_TABLE;
+}
+
+export function currentlyWorkingTable() {
+  return CURRENTLY_WORKING_TABLE;
 }
 
 export async function fetchClientsFromSupabase(): Promise<ClientOption[]> {

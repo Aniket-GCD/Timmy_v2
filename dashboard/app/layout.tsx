@@ -15,8 +15,8 @@ const ptSerif = PT_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "Timmy — Personal hours",
-  description: "Review your submitted Timmy hours (mock preview).",
+  title: "GCD · Firm hours",
+  description: "Founder admin view of submitted Timmy hours across the firm.",
 };
 
 export default function RootLayout({

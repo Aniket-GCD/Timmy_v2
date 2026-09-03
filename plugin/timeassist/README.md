@@ -40,6 +40,7 @@ Then follow:
 - The roster is not bundled; Timmy reads clients live from Supabase (`list_clients`). There is no local CSV client import in the pilot product.
 - The assistant should review drafts before approval and export only approved entries.
 - There is no direct QuickBooks writeback in this pilot.
+- Optional Windows clock widget (always-on-top, this machine’s `staff_name`): see `../../timeassist/TRAY.md`. Run `python scripts/timeassist.py --db <sqlite> tray`.
 
 ## Develop / test locally
 

@@ -1,10 +1,20 @@
 import { addDaysISO, todayISO } from "./dates";
+import type { CurrentlyWorking } from "./types/currently-working";
+import type { Employee } from "./types/employee";
 import type { TimeEntry } from "./types/time-entry";
 
 export const MOCK_STAFF = {
   staff_name: "Aniket",
   office: "GCD",
 } as const;
+
+export const MOCK_EMPLOYEES: Employee[] = [
+  { id: "e-aniket", first_name: "Aniket", last_name: "", staff_name: "Aniket", office: "GCD", active: true },
+  { id: "e-andrea", first_name: "Andrea", last_name: "Rottman", staff_name: "Andrea Rottman", office: "GCD", active: true },
+  { id: "e-hannah", first_name: "Hannah", last_name: "Curtis", staff_name: "Hannah Curtis", office: "GCD", active: true },
+  { id: "e-ken", first_name: "Ken", last_name: "Green", staff_name: "Ken Green", office: "GCD", active: true },
+  { id: "e-weston", first_name: "Weston", last_name: "Brockbank", staff_name: "Weston Brockbank", office: "GCD", active: true },
+];
 
 function seedEntries(anchorISO: string): TimeEntry[] {
   const t = (offset: number) => addDaysISO(anchorISO, offset);
@@ -54,5 +64,63 @@ function seedEntries(anchorISO: string): TimeEntry[] {
 }
 
 export function createMockSeed(): TimeEntry[] {
-  return seedEntries(todayISO());
+  const base = seedEntries(todayISO());
+  const t = (offset: number) => addDaysISO(todayISO(), offset);
+  let id = 500;
+  const extra = (
+    staff_name: string,
+    partial: Omit<TimeEntry, "id" | "staff_name" | "office" | "source_file">,
+  ): TimeEntry => ({
+    id: id++,
+    staff_name,
+    office: "GCD",
+    source_file: "timmy-dashboard-mock",
+    ...partial,
+  });
+  return [
+    ...base,
+    extra("Hannah Curtis", { client: "Harris Family Trust", job_code: "Tax Return", notes: "Organizer review", entry_date: t(0), start_time: "08:00:00", end_time: "10:00:00", hours: 2, billable: true }),
+    extra("Hannah Curtis", { client: "0969 Ocean View Road", job_code: "Bookkeeping", notes: "Reconcile", entry_date: t(0), start_time: "10:15:00", end_time: "12:00:00", hours: 1.75, billable: true }),
+    extra("Hannah Curtis", { client: "Greenfield Holdings LLC", job_code: "Advisory", notes: "Cash memo", entry_date: t(0), start_time: null, end_time: null, hours: 1.0, billable: true }),
+    extra("Ken Green", { client: "Cedar Ridge Properties", job_code: "Audit", notes: "PBC walkthrough", entry_date: t(0), start_time: "09:30:00", end_time: "11:30:00", hours: 2, billable: true }),
+    extra("Ken Green", { client: "Internal — Firm Admin", job_code: "Admin", notes: "Partner huddle", entry_date: t(0), start_time: "13:00:00", end_time: "14:00:00", hours: 1, billable: false }),
+    extra("Andrea Rottman", { client: "Maple Street Dental", job_code: "Payroll", notes: "Payroll review", entry_date: t(0), start_time: null, end_time: null, hours: 1.5, billable: true }),
+    extra("Hannah Curtis", { client: "Summit Retail Group", job_code: "Tax Return", notes: "1040ES", entry_date: t(-1), start_time: "09:00:00", end_time: "11:00:00", hours: 2, billable: true }),
+    extra("Weston Brockbank", { client: "Northgate Construction", job_code: "Bookkeeping", notes: "Job costing", entry_date: t(-1), start_time: "14:00:00", end_time: "16:30:00", hours: 2.5, billable: true }),
+  ];
+}
+
+export function createMockLiveSessions(): CurrentlyWorking[] {
+  const now = Date.now();
+  const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
+  return [
+    {
+      id: "live-hannah",
+      staff_name: "Hannah Curtis",
+      office: "GCD",
+      client: "Harris Family Trust",
+      job_code: "Tax Return",
+      notes: "K-1 follow-up",
+      task: "K-1 follow-up",
+      started_at: iso(47 * 60 * 1000),
+      planned_end_at: new Date(now + 73 * 60 * 1000).toISOString(),
+      status: "active",
+      local_session_id: "sess-hannah",
+      updated_at: iso(0),
+    },
+    {
+      id: "live-ken",
+      staff_name: "Ken Green",
+      office: "GCD",
+      client: "Cedar Ridge Properties",
+      job_code: "Audit",
+      notes: "Fieldwork",
+      task: "Fieldwork",
+      started_at: iso(12 * 60 * 1000),
+      planned_end_at: null,
+      status: "active",
+      local_session_id: "sess-ken",
+      updated_at: iso(0),
+    },
+  ];
 }

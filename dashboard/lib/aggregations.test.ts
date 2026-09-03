@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeMetrics, aggregateByClient } from "./aggregations";
+import { computeMetrics, aggregateByClient, groupByStaff } from "./aggregations";
 import type { TimeEntry } from "./types/time-entry";
 
 const sample: TimeEntry[] = [
@@ -23,5 +23,14 @@ describe("aggregations", () => {
       hours: 12 - i,
     }));
     expect(aggregateByClient(many, 8)).toHaveLength(8);
+  });
+
+  it("groups day detail by staff_name", () => {
+    const mixed = [
+      sample[0],
+      { ...sample[1], staff_name: "Hannah Curtis" },
+    ];
+    const groups = groupByStaff(mixed);
+    expect(groups.map((g) => g.staff_name)).toEqual(["A", "Hannah Curtis"]);
   });
 });

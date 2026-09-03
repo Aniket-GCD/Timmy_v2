@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS active_sessions (
     clarified_at TEXT,
     last_checkin_at TEXT,
     snoozed_until TEXT,
+    planned_end_at TEXT,
     status TEXT NOT NULL DEFAULT 'active',
     job_type TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
@@ -104,6 +105,7 @@ CAPTURE_COLUMN_DEFINITIONS = {
 }
 
 ENTRY_JOB_COLUMN_DEFINITIONS = {"job_type": "TEXT NOT NULL DEFAULT ''"}
+SESSION_PLANNED_END_COLUMN_DEFINITIONS = {"planned_end_at": "TEXT"}
 ENTRY_SUBMITTED_COLUMN_DEFINITIONS = {"submitted_at": "TEXT"}
 ENTRY_SUPABASE_ID_COLUMN_DEFINITIONS = {"supabase_id": "TEXT"}
 CLIENT_COLUMN_DEFINITIONS = {
@@ -192,6 +194,7 @@ def initialize(db_path: str | Path, now: str) -> None:
         _ensure_capture_columns(conn, "active_sessions")
         _ensure_capture_columns(conn, "time_entries")
         _ensure_columns(conn, "active_sessions", ENTRY_JOB_COLUMN_DEFINITIONS)
+        _ensure_columns(conn, "active_sessions", SESSION_PLANNED_END_COLUMN_DEFINITIONS)
         _ensure_columns(conn, "time_entries", ENTRY_JOB_COLUMN_DEFINITIONS)
         _ensure_columns(conn, "time_entries", ENTRY_SUBMITTED_COLUMN_DEFINITIONS)
         _ensure_columns(conn, "time_entries", ENTRY_SUPABASE_ID_COLUMN_DEFINITIONS)

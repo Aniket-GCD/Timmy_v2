@@ -95,6 +95,8 @@ def slim_session(session: dict[str, Any] | None) -> dict[str, Any] | None:
         "job_code": job,
         "started_at": session.get("started_at"),
     }
+    if session.get("planned_end_at"):
+        slim["planned_end_at"] = session["planned_end_at"]
     if session.get("suggested_job_type"):
         slim["suggested_job_type"] = session["suggested_job_type"]
     if session.get("raw_client_name"):
@@ -205,6 +207,16 @@ def _view_export(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def _view_checkin_status(result: dict[str, Any]) -> dict[str, Any]:
+    if result.get("auto_ended"):
+        shaped: dict[str, Any] = {
+            "active": False,
+            "should_prompt": True,
+            "auto_ended": True,
+            "prompt_reason": "planned_end_reached",
+        }
+        if result.get("closed_entry"):
+            shaped["closed_entry"] = slim_entry(result["closed_entry"])
+        return shaped
     if not result.get("active"):
         return {"active": False, "should_prompt": False}
     shaped: dict[str, Any] = {
@@ -248,6 +260,12 @@ def _view_entry(result: dict[str, Any]) -> dict[str, Any]:
 def _view_session(result: dict[str, Any]) -> dict[str, Any]:
     if result.get("needs_client_confirm"):
         return _view_client_confirm(result)
+    if result.get("auto_ended") and result.get("closed_entry"):
+        return {
+            "auto_ended": True,
+            "status": "closed",
+            "closed_entry": slim_entry(result["closed_entry"]),
+        }
     return slim_session(result) or {}
 
 

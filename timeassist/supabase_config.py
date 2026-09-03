@@ -11,6 +11,7 @@ Env overrides (win over file) for individual tables:
   TIMEASSIST_SUPABASE_TABLE_TIME_ENTRIES
   TIMEASSIST_SUPABASE_TABLE_CLIENTS
   TIMEASSIST_SUPABASE_TABLE_JOB_CODES
+  TIMEASSIST_SUPABASE_TABLE_CURRENTLY_WORKING
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ DEFAULT_SUPABASE_CONFIG: dict[str, Any] = {
         "time_entries": "time_entries_timmy_v2",
         "clients": "clients",
         "job_codes": "job_codes",
+        "currently_working": "currently_working",
     },
     "unassigned_client_name": "Unassigned",
 }
@@ -38,6 +40,7 @@ _ENV_TABLE_KEYS = {
     "time_entries": "TIMEASSIST_SUPABASE_TABLE_TIME_ENTRIES",
     "clients": "TIMEASSIST_SUPABASE_TABLE_CLIENTS",
     "job_codes": "TIMEASSIST_SUPABASE_TABLE_JOB_CODES",
+    "currently_working": "TIMEASSIST_SUPABASE_TABLE_CURRENTLY_WORKING",
 }
 
 
@@ -66,7 +69,7 @@ def _merge_file_payload(base: dict[str, Any], payload: dict[str, Any]) -> dict[s
     }
     tables = payload.get("tables")
     if isinstance(tables, dict):
-        for key in ("time_entries", "clients", "job_codes"):
+        for key in ("time_entries", "clients", "job_codes", "currently_working"):
             if key in tables and tables[key] is not None:
                 out["tables"][key] = tables[key]
     if "unassigned_client_name" in payload and payload["unassigned_client_name"] is not None:
@@ -151,7 +154,7 @@ def load_supabase_config(
 
     cfg["tables"] = {
         key: validate_table_name(tables[key], label=key)
-        for key in ("time_entries", "clients", "job_codes")
+        for key in ("time_entries", "clients", "job_codes", "currently_working")
     }
     unassigned = (cfg.get("unassigned_client_name") or "").strip() or "Unassigned"
     if not unassigned:
@@ -179,6 +182,13 @@ def job_codes_table(
     environ: dict[str, str] | None = None,
 ) -> str:
     return load_supabase_config(db_path=db_path, environ=environ)["tables"]["job_codes"]
+
+
+def currently_working_table(
+    db_path: str | Path | None = None,
+    environ: dict[str, str] | None = None,
+) -> str:
+    return load_supabase_config(db_path=db_path, environ=environ)["tables"]["currently_working"]
 
 
 def unassigned_client_name(

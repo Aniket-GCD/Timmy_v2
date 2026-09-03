@@ -75,6 +75,8 @@ class SlimSessionTests(unittest.TestCase):
         self.assertEqual(slim["needs_info"], "client 'Client B' is not in the roster")
         self.assertNotIn("status", slim)  # 'active' is implied
         self.assertNotIn("snoozed_until", slim)  # None -> omitted
+        slim = mcp_views.slim_session(dict(FULL_SESSION, planned_end_at="2026-05-28T12:00:00"))
+        self.assertEqual(slim["planned_end_at"], "2026-05-28T12:00:00")
 
     def test_session_job_type_present_when_non_empty(self) -> None:
         slim = mcp_views.slim_session(dict(FULL_SESSION, job_type="Payroll"))

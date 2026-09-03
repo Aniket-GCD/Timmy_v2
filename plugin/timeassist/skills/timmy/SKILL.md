@@ -20,8 +20,8 @@ yourself, and never record anything in prose  -  every change goes through a too
 | Intent | Tool | Required args |
 |---|---|---|
 | Initialize local state | `init_state` |  -  |
-| Begin tracking | `start` | `client`, `task` |
-| Move to a new task | `switch` | `client`, `task` (`minutes_ago` for "switched N minutes ago") |
+| Begin tracking | `start` | `client`, `task` (optional `duration_minutes` or `planned_end_at`) |
+| Move to a new task | `switch` | `client`, `task` (`minutes_ago` for "switched N minutes ago"; optional planned duration on the new session) |
 | Clarify active timer labels | `clarify_active` | any of `client`, `task`, `billable` |
 | Stop tracking | `end` |  -  |
 | Log forgotten time | `add_missing` | `client`, `task`, and either `date`+`duration_minutes` **or** `start`+`end` |
@@ -108,6 +108,10 @@ more before approval. Never block or refuse approval over missing notes.
    `clarify_active` while the timer is open, or `edit` after it closed.
    If `suggested_job_type` is present and Job Code is blank, ask once to confirm
    or pick from `list_job_codes` — then `edit`/`clarify_active` with explicit `job_type`.
+   When the operator says they are starting (or switching) for N hours/minutes,
+   pass `duration_minutes` or `planned_end_at` on `start`/`switch`. The engine
+   auto-stops to a **local draft** at that time — **never** submit to
+   `time_entries_timmy_v2` until they approve. Do not invent a planned end.
 3. **After-the-fact** ("I worked 1 hour 45 on ..."): do **not** call `start`. Ask
    for **date + duration** (and Job Code) — start/end clock times are optional.
    Call `add_missing` with `date` + `duration_minutes` (e.g. 105 for 1:45). If the
@@ -220,7 +224,10 @@ same-day session, keep the tone light; this is self-report, not monitoring.
 ## Reminders (Honest Nudge Loop)
 
 When a scheduled reminder fires, call `checkin_status`. If `active=false` or
-`should_prompt=false`, say nothing. Otherwise ask one short correction prompt:
+`should_prompt=false`, say nothing **unless** `auto_ended=true` / `prompt_reason`
+is `planned_end_reached`: then tell them the timer stopped at the planned end as
+a **draft** (not submitted) and show the closed block. Otherwise ask one short
+correction prompt:
 "TimeAssist has Client A  -  monthly cleanup open for 47 minutes. Still the right
 timer, or did work shift?" Replies map to tools: "still" -> `checkin`;
 "switched to X" -> `switch` (add `minutes_ago` if they say when); "done" /

@@ -1,0 +1,180 @@
+.shell {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.wrap {
+  max-height: min(70vh, 40rem);
+  overflow: auto;
+}
+
+.grid {
+  display: grid;
+  min-width: max(100%, 52rem);
+}
+
+.corner {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  background: #f7f6f5;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.dayHead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem;
+  padding: 0.55rem 0.65rem;
+  background: #f7f6f5;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  font-family: var(--font-display);
+  color: var(--mysterious-mixture);
+  font-size: 0.95rem;
+}
+
+.dayNum {
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+}
+
+.axis {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--white);
+  border-right: 1px solid var(--border);
+}
+
+.tick {
+  position: absolute;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  padding: 0 0.4rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-align: right;
+}
+
+.dayCol {
+  position: relative;
+  border-right: 1px solid var(--border);
+  background: var(--off-white);
+}
+
+.hourLine {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: #e6e3e0;
+}
+
+.block,
+.blockAdmin {
+  position: absolute;
+  overflow: hidden;
+  border-radius: 6px;
+  padding: 0.2rem 0.35rem;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  box-shadow: var(--shadow);
+}
+
+.block {
+  background: var(--chip-bg);
+  border: 1px solid var(--hippie-green);
+  color: var(--dark-grey);
+}
+
+.blockAdmin {
+  background: var(--tartlet);
+  border: 1px solid #f2c9c8;
+  color: var(--dark-grey);
+}
+
+.blockStaff {
+  display: block;
+  font-family: var(--font-display);
+  color: var(--mysterious-mixture);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.blockClient {
+  display: block;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.unscheduled {
+  border-top: 1px solid var(--border);
+  padding: 0.75rem 0.85rem 0.9rem;
+  background: #f7f6f5;
+  overflow-x: auto;
+}
+
+.unscheduledHint {
+  margin: 0 0 0.55rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.unscheduledLabel {
+  font-family: var(--font-display);
+  color: var(--mysterious-mixture);
+  font-size: 0.95rem;
+  margin-bottom: 0.45rem;
+}
+
+.unscheduledGrid {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.unscheduledDay {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-height: 1.5rem;
+}
+
+.chip,
+.chipAdmin {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  padding: 0.3rem 0.4rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+}
+
+.chip {
+  background: var(--chip-bg);
+  border: 1px solid var(--hippie-green);
+}
+
+.chipAdmin {
+  background: var(--tartlet);
+  border: 1px solid #f2c9c8;
+}
+
+.none {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
