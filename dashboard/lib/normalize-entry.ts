@@ -1,4 +1,10 @@
-import type { TimeEntry } from "./types/time-entry";
+import type { EntryStatus, TimeEntry } from "./types/time-entry";
+
+function asEntryStatus(value: unknown): EntryStatus {
+  const s = String(value ?? "submitted").toLowerCase();
+  if (s === "draft" || s === "locked" || s === "saving" || s === "error") return s;
+  return "submitted";
+}
 
 export function normalizeSupabaseRow(row: Record<string, unknown>): TimeEntry {
   return {
@@ -15,6 +21,7 @@ export function normalizeSupabaseRow(row: Record<string, unknown>): TimeEntry {
     hours: Number(row.hours ?? 0),
     billable: Boolean(row.billable),
     source_file: row.source_file ? String(row.source_file) : undefined,
+    status: row.status != null ? asEntryStatus(row.status) : "submitted",
   };
 }
 

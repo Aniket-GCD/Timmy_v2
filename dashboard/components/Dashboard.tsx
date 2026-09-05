@@ -5,7 +5,6 @@ import { ClientChart } from "@/components/ClientChart";
 import { DayEntriesTable } from "@/components/DayEntriesTable";
 import { JobChart } from "@/components/JobChart";
 import { MetricCards } from "@/components/MetricCards";
-import { OnTheClock } from "@/components/OnTheClock";
 import { RangeToggle } from "@/components/RangeToggle";
 import rangeStyles from "@/components/RangeToggle.module.css";
 import { WeekCalendar } from "@/components/WeekCalendar";
@@ -16,101 +15,164 @@ import {
   computeMetrics,
   dailyTotals,
 } from "@/lib/aggregations";
+import { applyChartFilters } from "@/lib/chart-filters";
 import { getEntriesProvider } from "@/lib/data/entries-provider";
 import {
   defaultFocusDay,
-  entriesForDay,
   filterEntriesByRange,
   formatDisplayDate,
   resolveRange,
   todayISO,
   type RangeKey,
 } from "@/lib/dates";
+import { formatHoursHM } from "@/lib/hours-format";
 import type { CurrentlyWorking } from "@/lib/types/currently-working";
-import type { Employee } from "@/lib/types/employee";
-import type { TimeEntry } from "@/lib/types/time-entry";
+import type { DashboardUser, Employee } from "@/lib/types/employee";
+import type { ClientOption, JobCodeOption } from "@/lib/types/reference-data";
+import type { EntryWritePayload, TimeEntry } from "@/lib/types/time-entry";
 
 const POLL_MS = 30_000;
 
 type DetailView = "detail" | "calendar";
 
+function elapsedLabel(startedAt: string): string {
+  const start = new Date(startedAt).getTime();
+  if (Number.isNaN(start)) return "";
+  const hours = Math.max(0, (Date.now() - start) / 3_600_000);
+  return formatHoursHM(hours);
+}
+
 export function Dashboard() {
   const provider = useMemo(() => getEntriesProvider(), []);
+  const [me, setMe] = useState<DashboardUser | null>(null);
   const [range, setRange] = useState<RangeKey>("today");
   const [selectedDay, setSelectedDay] = useState(todayISO());
+  const [dayFilter, setDayFilter] = useState<string | null>(null);
+  const [clientFilter, setClientFilter] = useState<string | null>(null);
+  const [jobFilter, setJobFilter] = useState<string | null>(null);
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [clients, setClients] = useState<ClientOption[]>([]);
+  const [jobCodes, setJobCodes] = useState<JobCodeOption[]>([]);
   const [live, setLive] = useState<CurrentlyWorking[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [detailView, setDetailView] = useState<DetailView>("detail");
   const [staffFilter, setStaffFilter] = useState("");
+  const [tick, setTick] = useState(0);
 
   const resolved = useMemo(() => resolveRange(range), [range]);
 
-  const loadPollable = useCallback(async (showLoading: boolean) => {
-    if (showLoading) setLoading(true);
-    try {
-      const [rows, liveRows] = await Promise.all([
-        provider.fetchEntries({
-          dateFrom: resolved.dateFrom,
-          dateTo: resolved.dateTo,
-        }),
-        provider.fetchCurrentlyWorking().catch(() => [] as CurrentlyWorking[]),
-      ]);
-      setEntries(rows);
-      setLive(liveRows);
-      setUpdatedAt(new Date());
-    } catch {
-      /* keep last snapshot */
-    } finally {
-      if (showLoading) setLoading(false);
-    }
-  }, [provider, resolved.dateFrom, resolved.dateTo]);
+  const liveStaffName = useMemo(() => {
+    if (!me) return "";
+    if (me.is_admin && staffFilter) return staffFilter;
+    return me.staff_name;
+  }, [me, staffFilter]);
 
-  useEffect(() => {
-    void (async () => {
-      setLoading(true);
+  const headerName = useMemo(() => {
+    if (!me) return "";
+    if (me.is_admin && staffFilter) return staffFilter;
+    return me.staff_name;
+  }, [me, staffFilter]);
+
+  const loadPollable = useCallback(
+    async (showLoading: boolean) => {
+      if (showLoading) setLoading(true);
       try {
-        const [rows, liveRows, roster] = await Promise.all([
+        const staffParam = me && !me.is_admin ? me.staff_name : staffFilter || undefined;
+        const [rows, liveRows] = await Promise.all([
           provider.fetchEntries({
             dateFrom: resolved.dateFrom,
             dateTo: resolved.dateTo,
+            staffName: staffParam,
           }),
-          provider.fetchCurrentlyWorking().catch(() => [] as CurrentlyWorking[]),
+          provider.fetchCurrentlyWorking(liveStaffName || undefined).catch(() => [] as CurrentlyWorking[]),
+        ]);
+        setEntries(rows);
+        setLive(liveRows);
+        setUpdatedAt(new Date());
+      } catch {
+        /* keep last snapshot */
+      } finally {
+        if (showLoading) setLoading(false);
+      }
+    },
+    [provider, resolved.dateFrom, resolved.dateTo, me, staffFilter, liveStaffName],
+  );
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/me");
+        if (res.ok) {
+          const user = (await res.json()) as DashboardUser;
+          setMe(user);
+          if (!user.is_admin) setStaffFilter(user.staff_name);
+        }
+      } catch {
+        /* mock still works via API */
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!me) return;
+    void (async () => {
+      setLoading(true);
+      try {
+        const staffParam = !me.is_admin ? me.staff_name : staffFilter || undefined;
+        const [rows, liveRows, roster, clientRows, jobRows] = await Promise.all([
+          provider.fetchEntries({
+            dateFrom: resolved.dateFrom,
+            dateTo: resolved.dateTo,
+            staffName: staffParam,
+          }),
+          provider.fetchCurrentlyWorking(liveStaffName || me.staff_name).catch(() => [] as CurrentlyWorking[]),
           provider.fetchEmployees().catch(() => [] as Employee[]),
+          provider.fetchClients().catch(() => [] as ClientOption[]),
+          provider.fetchJobCodes().catch(() => [] as JobCodeOption[]),
         ]);
         setEntries(rows);
         setLive(liveRows);
         setEmployees(roster);
+        setClients(clientRows);
+        setJobCodes(jobRows);
         setUpdatedAt(new Date());
       } finally {
         setLoading(false);
       }
     })();
-  }, [provider, resolved.dateFrom, resolved.dateTo]);
+  }, [provider, resolved.dateFrom, resolved.dateTo, me, staffFilter, liveStaffName]);
 
   useEffect(() => {
-    const tick = () => {
+    const id = window.setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const tickPoll = () => {
       if (document.visibilityState !== "visible") return;
       void loadPollable(false);
     };
-    const id = window.setInterval(tick, POLL_MS);
+    const id = window.setInterval(tickPoll, POLL_MS);
     const onVis = () => {
-      if (document.visibilityState === "visible") tick();
+      if (document.visibilityState === "visible") tickPoll();
     };
-    window.addEventListener("focus", tick);
+    window.addEventListener("focus", tickPoll);
     document.addEventListener("visibilitychange", onVis);
     return () => {
       window.clearInterval(id);
-      window.removeEventListener("focus", tick);
+      window.removeEventListener("focus", tickPoll);
       document.removeEventListener("visibilitychange", onVis);
     };
   }, [loadPollable]);
 
   useEffect(() => {
     setSelectedDay(defaultFocusDay(range, entries, todayISO()));
-  }, [range, entries]);
+    setDayFilter(null);
+    setClientFilter(null);
+    setJobFilter(null);
+  }, [range]);
 
   const staffOptions = useMemo(() => {
     const names = new Set<string>();
@@ -119,10 +181,12 @@ export function Dashboard() {
     return [...names].sort((a, b) => a.localeCompare(b));
   }, [employees, entries]);
 
-  const scopedEntries = useMemo(
-    () => (staffFilter ? entries.filter((e) => e.staff_name === staffFilter) : entries),
-    [entries, staffFilter],
-  );
+  const scopedEntries = useMemo(() => {
+    if (!me) return entries;
+    if (!me.is_admin) return entries.filter((e) => e.staff_name === me.staff_name);
+    if (staffFilter) return entries.filter((e) => e.staff_name === staffFilter);
+    return entries;
+  }, [entries, me, staffFilter]);
 
   const rangeEntries = useMemo(
     () => filterEntriesByRange(scopedEntries, resolved),
@@ -145,74 +209,114 @@ export function Dashboard() {
   const byClient = useMemo(() => aggregateByClient(rangeEntries), [rangeEntries]);
   const byJob = useMemo(() => aggregateByJob(rangeEntries), [rangeEntries]);
 
-  const dayEntries = useMemo(
-    () => entriesForDay(selectedDay, scopedEntries),
-    [selectedDay, scopedEntries],
-  );
-  const calendarEntries = useMemo(
+  const tableEntries = useMemo(
     () =>
-      staffFilter
-        ? scopedEntries.filter((e) => resolved.chartDays.includes(e.entry_date))
-        : [],
-    [scopedEntries, resolved.chartDays, staffFilter],
+      applyChartFilters(rangeEntries, {
+        day: dayFilter,
+        client: clientFilter,
+        job: jobFilter,
+      }),
+    [rangeEntries, dayFilter, clientFilter, jobFilter],
   );
 
+  const calendarEntries = useMemo(() => {
+    const staff = staffFilter || me?.staff_name || "";
+    if (!staff) return [];
+    return scopedEntries.filter(
+      (e) => e.staff_name === staff && resolved.chartDays.includes(e.entry_date),
+    );
+  }, [scopedEntries, resolved.chartDays, staffFilter, me]);
+
   const pickStaffForCalendar = () => {
-    if (staffFilter) return;
+    if (staffFilter || !me?.is_admin) return;
     const withHours = staffOptions.find((name) =>
       entries.some((e) => e.staff_name === name && resolved.chartDays.includes(e.entry_date)),
     );
-    setStaffFilter(withHours ?? staffOptions[0] ?? "");
+    setStaffFilter(withHours ?? staffOptions[0] ?? me.staff_name);
   };
 
-  const scopeLabel = staffFilter || "All staff";
-  const contextLabel =
-    range === "week" || range === "thisPayPeriod" || range === "lastPayPeriod"
-      ? `${resolved.label} · ${formatDisplayDate(selectedDay)} · ${scopeLabel}`
-      : `${formatDisplayDate(selectedDay)} · ${scopeLabel}`;
+  const multiDay = resolved.chartDays.length > 1 && !dayFilter;
 
   const updatedLabel = updatedAt
-    ? `Updated ${updatedAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
+    ? `Updated ${updatedAt.toLocaleDateString("en-US", {
+        month: "numeric",
+        day: "numeric",
+        year: "numeric",
+      })} ${updatedAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
     : "";
+
+  const liveSession = live[0];
+  void tick;
+
+  async function handleSave(id: number, payload: EntryWritePayload) {
+    const row = entries.find((e) => e.id === id);
+    const body =
+      me?.is_admin
+        ? {
+            ...payload,
+            staff_name: staffFilter || row?.staff_name || me.staff_name,
+          }
+        : payload;
+    await provider.updateEntry(id, body);
+    await loadPollable(false);
+  }
+
+  if (!me && loading) {
+    return (
+      <div className="page">
+        <p className="muted">Loading…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="page">
       <header className="topbar">
         <div className="brand">
-          <div className="brand-mark">GCD · Firm hours</div>
-          <div className="brand-sub">Founder admin · view-only</div>
+          <img src="/timmy-lockup-green.svg" alt="Timmy" className="brand-logo" height={44} />
         </div>
         <div className="staff-meta">
-          <div className="muted">{contextLabel}</div>
-          {updatedLabel && <div className="muted">{updatedLabel}</div>}
+          <strong>{headerName || "…"}</strong>
+          {me?.is_admin && staffFilter && staffFilter !== me.staff_name ? (
+            <div className="muted" style={{ fontSize: "0.85rem" }}>
+              Signed in as {me.staff_name}
+            </div>
+          ) : null}
+          {updatedLabel ? <div className="muted">{updatedLabel}</div> : null}
+          {liveSession ? (
+            <div>
+              Currently working on: {liveSession.client}{" "}
+              {liveSession.started_at ? elapsedLabel(liveSession.started_at) : ""}
+            </div>
+          ) : null}
         </div>
       </header>
 
       <div className="section-head">
         <RangeToggle value={range} onChange={setRange} />
-        <label className="staff-filter">
-          <span className="muted">Employee</span>
-          <select
-            value={staffFilter}
-            onChange={(e) => setStaffFilter(e.target.value)}
-            aria-label="Filter by employee"
-          >
-            <option value="">All staff</option>
-            {staffOptions.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {me?.is_admin ? (
+          <label className="staff-filter">
+            <span className="muted">Employee</span>
+            <select
+              value={staffFilter}
+              onChange={(e) => setStaffFilter(e.target.value)}
+              aria-label="Filter by employee"
+            >
+              <option value="">All staff</option>
+              {staffOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
       </div>
 
       {loading ? (
         <p className="muted">Loading…</p>
       ) : (
         <>
-          <OnTheClock sessions={live} employees={employees} />
-
           <section className="section" aria-label="Overview metrics">
             <MetricCards metrics={metrics} />
           </section>
@@ -224,18 +328,46 @@ export function Dashboard() {
             <div className="charts-grid">
               <WeekChart
                 data={weekBars}
-                selectedDate={selectedDay}
-                onSelectDate={setSelectedDay}
+                selectedDate={dayFilter}
+                onSelectDate={(d) => {
+                  setDayFilter(d);
+                  setSelectedDay(d);
+                }}
               />
-              <ClientChart title="Hours by client" data={byClient} />
-              <JobChart data={byJob} />
+              <ClientChart
+                title="Hours by client"
+                data={byClient}
+                selectedName={clientFilter}
+                onSelectName={setClientFilter}
+              />
+              <JobChart data={byJob} selectedName={jobFilter} onSelectName={setJobFilter} />
             </div>
           </section>
 
-          <section className="section" aria-label="Day detail or calendar">
+          {(dayFilter || clientFilter || jobFilter) && (
+            <div className="filter-chips" aria-label="Active chart filters">
+              {dayFilter ? (
+                <button type="button" className="chip" onClick={() => setDayFilter(null)}>
+                  Day: {formatDisplayDate(dayFilter)} ×
+                </button>
+              ) : null}
+              {clientFilter ? (
+                <button type="button" className="chip" onClick={() => setClientFilter(null)}>
+                  Client: {clientFilter} ×
+                </button>
+              ) : null}
+              {jobFilter ? (
+                <button type="button" className="chip" onClick={() => setJobFilter(null)}>
+                  Job: {jobFilter} ×
+                </button>
+              ) : null}
+            </div>
+          )}
+
+          <section className="section" aria-label="Time entry detail or calendar">
             <div className="section-head">
               <h2 className="section-title" style={{ marginBottom: 0 }}>
-                {detailView === "calendar" ? "Calendar" : "Day detail"}
+                Time Entry Detail
               </h2>
               <div className={rangeStyles.wrap} role="tablist" aria-label="Detail view">
                 <button
@@ -245,7 +377,7 @@ export function Dashboard() {
                   className={detailView === "detail" ? rangeStyles.active : rangeStyles.btn}
                   onClick={() => setDetailView("detail")}
                 >
-                  Day Detail
+                  Table View
                 </button>
                 <button
                   type="button"
@@ -257,13 +389,21 @@ export function Dashboard() {
                     setDetailView("calendar");
                   }}
                 >
-                  Calendar
+                  Calendar View
                 </button>
               </div>
             </div>
             {detailView === "detail" ? (
-              <DayEntriesTable dateISO={selectedDay} entries={dayEntries} />
-            ) : staffFilter ? (
+              <DayEntriesTable
+                entries={tableEntries}
+                multiDay={multiDay || new Set(tableEntries.map((e) => e.entry_date)).size > 1}
+                viewerStaffName={me?.staff_name ?? ""}
+                viewerIsAdmin={Boolean(me?.is_admin)}
+                clients={clients}
+                jobCodes={jobCodes}
+                onSave={handleSave}
+              />
+            ) : staffFilter || (me && !me.is_admin) ? (
               <WeekCalendar days={resolved.chartDays} entries={calendarEntries} />
             ) : (
               <p className="muted">Select an employee to view their calendar.</p>

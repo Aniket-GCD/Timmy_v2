@@ -21,11 +21,14 @@ type Props = {
 const HOUR_PX = 48;
 const SCROLL_TO_HOUR = 8;
 
+function dayHeadLabel(iso: string): string {
+  return `${Number(iso.slice(5, 7))}/${Number(iso.slice(8))}`;
+}
+
 export function WeekCalendar({ days, entries }: Props) {
   const { scheduled, unscheduled } = useMemo(() => splitScheduled(entries), [entries]);
   const axis = useMemo(() => calendarAxisMinutes(), []);
   const ticks = useMemo(() => hourTicks(axis.start, axis.end), [axis.start, axis.end]);
-  const span = axis.end - axis.start;
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const byDay = useMemo(() => {
@@ -48,7 +51,9 @@ export function WeekCalendar({ days, entries }: Props) {
     return map;
   }, [days, unscheduled]);
 
-  const bodyHeight = (span / 60) * HOUR_PX;
+  const bodyHeight = ((axis.end - axis.start) / 60) * HOUR_PX;
+  const span = axis.end - axis.start;
+  const cols = `4.5rem repeat(${days.length}, minmax(9.5rem, 1fr))`;
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -56,17 +61,15 @@ export function WeekCalendar({ days, entries }: Props) {
     el.scrollTop = SCROLL_TO_HOUR * HOUR_PX;
   }, [days.join(",")]);
 
-  const cols = `4.5rem repeat(${days.length}, minmax(9.5rem, 1fr))`;
-
   return (
     <div className={styles.shell}>
       <div className={styles.wrap} ref={scrollRef}>
-        <div className={styles.grid} style={{ gridTemplateColumns: cols }}>
+        <div className={styles.grid} style={{ gridTemplateColumns: cols, minWidth: `max(100%, ${4.5 + days.length * 9.5}rem)` }}>
           <div className={styles.corner} />
           {days.map((d) => (
             <div key={d} className={styles.dayHead}>
               <span>{weekdayShort(d)}</span>
-              <span className={styles.dayNum}>{d.slice(8)}</span>
+              <span className={styles.dayNum}>{dayHeadLabel(d)}</span>
             </div>
           ))}
 
@@ -109,7 +112,7 @@ export function WeekCalendar({ days, entries }: Props) {
                         left: `calc(${left}% + 2px)`,
                         width: `calc(${width}% - 4px)`,
                       }}
-                      title={`${b.entry.client} · ${b.entry.job_code}`}
+                      title={`${b.entry.client} · ${b.entry.job_code} · ${formatHoursHM(b.entry.hours)}`}
                     >
                       <span className={styles.blockStaff}>{b.entry.client}</span>
                       <span className={styles.blockClient}>{b.entry.job_code}</span>
@@ -119,34 +122,31 @@ export function WeekCalendar({ days, entries }: Props) {
               </div>
             );
           })}
+
+          {unscheduled.length > 0 ? (
+            <>
+              <div className={styles.unscheduledLabelSticky}>
+                <div className={styles.unscheduledLabel}>Duration only</div>
+                <p className={styles.unscheduledHint}>No start/end — not on the clock grid</p>
+              </div>
+              {days.map((d) => {
+                const rows = unscheduledByDay.get(d) ?? [];
+                return (
+                  <div key={`u-${d}`} className={styles.unscheduledDay}>
+                    {rows.map((e) => (
+                      <div key={e.id} className={isAdminEntry(e) ? styles.chipAdmin : styles.chip}>
+                        <strong>{e.client}</strong>
+                        <span>{e.job_code}</span>
+                        <span>{formatHoursHM(e.hours)}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </>
+          ) : null}
         </div>
       </div>
-
-      {unscheduled.length > 0 ? (
-        <div className={styles.unscheduled}>
-          <div className={styles.unscheduledLabel}>Duration only — no start/end time</div>
-          <p className={styles.unscheduledHint}>
-            These hours are on that day but cannot sit on the clock because start and end were left blank.
-          </p>
-          <div className={styles.unscheduledGrid} style={{ gridTemplateColumns: cols }}>
-            <div />
-            {days.map((d) => {
-              const rows = unscheduledByDay.get(d) ?? [];
-              return (
-                <div key={d} className={styles.unscheduledDay}>
-                  {rows.map((e) => (
-                    <div key={e.id} className={isAdminEntry(e) ? styles.chipAdmin : styles.chip}>
-                      <strong>{e.client}</strong>
-                      <span>{e.job_code}</span>
-                      <span>{formatHoursHM(e.hours)}</span>
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

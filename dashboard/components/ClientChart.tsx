@@ -12,9 +12,14 @@ import {
 import { formatHoursHM } from "@/lib/hours-format";
 import type { NamedHours } from "@/lib/aggregations";
 
-type Props = { title: string; data: NamedHours[] };
+type Props = {
+  title: string;
+  data: NamedHours[];
+  selectedName?: string | null;
+  onSelectName?: (name: string) => void;
+};
 
-export function ClientChart({ title, data }: Props) {
+export function ClientChart({ title, data, selectedName, onSelectName }: Props) {
   const chartData = data.map((d) => ({
     ...d,
     short: d.name.length > 22 ? `${d.name.slice(0, 20)}…` : d.name,
@@ -40,7 +45,17 @@ export function ClientChart({ title, data }: Props) {
                   return row?.name ?? "";
                 }}
               />
-              <Bar dataKey="hours" fill="#5f8b55" radius={[0, 4, 4, 0]} minPointSize={4} />
+              <Bar
+                dataKey="hours"
+                fill={selectedName ? "#0e5727" : "#5f8b55"}
+                radius={[0, 4, 4, 0]}
+                minPointSize={4}
+                style={{ cursor: onSelectName ? "pointer" : undefined }}
+                onClick={(d) => {
+                  const row = d as unknown as NamedHours;
+                  if (row?.name && onSelectName) onSelectName(row.name);
+                }}
+              />
             </BarChart>
           </ResponsiveContainer>
         </div>

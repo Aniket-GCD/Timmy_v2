@@ -1,21 +1,21 @@
 import { NextResponse } from "next/server";
+import { mapEmployeeRow, requireDashboardUser } from "@/lib/auth/session";
 import { employeesTable, supabaseFetch } from "@/lib/supabase-server";
 import type { Employee } from "@/lib/types/employee";
 
 export async function GET() {
   try {
+    const auth = await requireDashboardUser();
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
     const table = employeesTable();
     const rows = await supabaseFetch<Array<Record<string, unknown>>>(
-      `${table}?select=id,first_name,last_name,staff_name,office,active&active=eq.true&order=staff_name`,
+      `${table}?select=id,first_name,last_name,staff_name,office,active,email,is_admin&active=eq.true&order=staff_name`,
     );
-    const employees: Employee[] = rows.map((r) => ({
-      id: String(r.id ?? ""),
-      first_name: String(r.first_name ?? ""),
-      last_name: String(r.last_name ?? ""),
-      staff_name: String(r.staff_name ?? ""),
-      office: String(r.office ?? "GCD"),
-      active: r.active !== false,
-    }));
+    let employees: Employee[] = rows.map(mapEmployeeRow);
+    if (!auth.user.is_admin) {
+      employees = employees.filter((e) => e.staff_name === auth.user.staff_name);
+    }
     return NextResponse.json(employees);
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

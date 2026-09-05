@@ -5,4 +5,14 @@ export type Employee = {
   staff_name: string;
   office: string;
   active: boolean;
+  email: string | null;
+  is_admin: boolean;
+};
+
+export type DashboardUser = {
+  email: string;
+  staff_name: string;
+  office: string;
+  is_admin: boolean;
+  employee_id: string;
 };

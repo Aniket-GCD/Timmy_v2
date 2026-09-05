@@ -15,6 +15,8 @@ export type TimeEntry = {
   hours: number;
   billable: boolean;
   source_file?: string;
+  /** UI status; submitted entries from Timmy default to submitted. */
+  status?: EntryStatus;
 };
 
 export type EntryWritePayload = {

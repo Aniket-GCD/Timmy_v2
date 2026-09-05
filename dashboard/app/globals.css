@@ -61,22 +61,28 @@ h3 {
   border-bottom: 1px solid var(--border);
 }
 
-.brand {
+.brand-logo {
+  display: block;
+  height: 44px;
+  width: auto;
+}
+
+.filter-chips {
   display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
 }
 
-.brand-mark {
-  font-family: var(--font-display);
-  font-size: 1.85rem;
+.chip {
+  border: 1px solid var(--border);
+  background: var(--chip-bg);
   color: var(--mysterious-mixture);
-  letter-spacing: 0.02em;
-}
-
-.brand-sub {
-  color: var(--muted);
-  font-size: 0.95rem;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  font-family: inherit;
 }
 
 .staff-meta {

@@ -14,12 +14,12 @@ export type FetchEntriesParams = {
 
 export interface EntriesProvider {
   fetchEntries(params: FetchEntriesParams): Promise<TimeEntry[]>;
-  createEntry(payload: EntryWritePayload): Promise<TimeEntry>;
-  updateEntry(id: number, payload: EntryWritePayload): Promise<TimeEntry>;
+  createEntry(payload: EntryWritePayload & { staff_name?: string }): Promise<TimeEntry>;
+  updateEntry(id: number, payload: EntryWritePayload & { staff_name?: string }): Promise<TimeEntry>;
   fetchClients(): Promise<ClientOption[]>;
   fetchJobCodes(): Promise<JobCodeOption[]>;
   fetchEmployees(): Promise<Employee[]>;
-  fetchCurrentlyWorking(): Promise<CurrentlyWorking[]>;
+  fetchCurrentlyWorking(staffName?: string): Promise<CurrentlyWorking[]>;
 }
 
 let mockStore: TimeEntry[] | null = null;
@@ -53,8 +53,10 @@ export const mockProvider: EntriesProvider = {
   async fetchEmployees() {
     return MOCK_EMPLOYEES.filter((e) => e.active);
   },
-  async fetchCurrentlyWorking() {
-    return createMockLiveSessions();
+  async fetchCurrentlyWorking(staffName?: string) {
+    const all = createMockLiveSessions();
+    if (!staffName) return all;
+    return all.filter((s) => s.staff_name === staffName);
   },
   async createEntry(payload) {
     const result = validateEntryWrite(payload, { clients: MOCK_CLIENTS, jobCodes: MOCK_JOB_CODES }, MOCK_STAFF.staff_name);
@@ -72,13 +74,18 @@ export const mockProvider: EntriesProvider = {
     return entry;
   },
   async updateEntry(id, payload) {
-    const result = validateEntryWrite(payload, { clients: MOCK_CLIENTS, jobCodes: MOCK_JOB_CODES }, MOCK_STAFF.staff_name);
+    const result = validateEntryWrite(payload, { clients: MOCK_CLIENTS, jobCodes: MOCK_JOB_CODES }, payload.staff_name ?? MOCK_STAFF.staff_name);
     if (!result.ok) throw new Error(result.error);
     const store = getMockStore();
     const idx = store.findIndex((e) => e.id === id);
     if (idx < 0) throw new Error("Entry not found");
     const job = MOCK_JOB_CODES.find((j) => j.job_code === result.payload.job_code)!;
-    store[idx] = { ...store[idx], ...result.payload, account: job.account };
+    store[idx] = {
+      ...store[idx],
+      ...result.payload,
+      account: job.account,
+      staff_name: payload.staff_name ?? store[idx].staff_name,
+    };
     return store[idx];
   },
 };
@@ -135,8 +142,9 @@ const liveProvider: EntriesProvider = {
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   },
-  async fetchCurrentlyWorking() {
-    const res = await fetch("/api/currently-working");
+  async fetchCurrentlyWorking(staffName?: string) {
+    const q = staffName ? `?staff=${encodeURIComponent(staffName)}` : "";
+    const res = await fetch(`/api/currently-working${q}`);
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   },

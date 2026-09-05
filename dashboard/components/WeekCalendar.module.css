@@ -122,29 +122,27 @@
   text-overflow: ellipsis;
 }
 
-.unscheduled {
-  border-top: 1px solid var(--border);
-  padding: 0.75rem 0.85rem 0.9rem;
+.unscheduledLabelSticky {
+  position: sticky;
+  left: 0;
+  z-index: 1;
   background: #f7f6f5;
-  overflow-x: auto;
+  border-top: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  padding: 0.55rem 0.4rem;
 }
 
 .unscheduledHint {
-  margin: 0 0 0.55rem;
-  font-size: 0.8rem;
+  margin: 0.2rem 0 0;
+  font-size: 0.72rem;
   color: var(--muted);
 }
 
 .unscheduledLabel {
   font-family: var(--font-display);
   color: var(--mysterious-mixture);
-  font-size: 0.95rem;
-  margin-bottom: 0.45rem;
-}
-
-.unscheduledGrid {
-  display: grid;
-  gap: 0.4rem;
+  font-size: 0.85rem;
+  margin: 0;
 }
 
 .unscheduledDay {
@@ -152,6 +150,10 @@
   flex-direction: column;
   gap: 0.3rem;
   min-height: 1.5rem;
+  border-top: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  padding: 0.45rem 0.4rem;
+  background: #f7f6f5;
 }
 
 .chip,

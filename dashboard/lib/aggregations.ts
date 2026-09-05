@@ -48,7 +48,7 @@ export function dailyTotals(chartDays: string[], entries: TimeEntry[]): DailyTot
     }
     return {
       date,
-      label: weekdayShort(date),
+      label: `${weekdayShort(date)} ${Number(date.slice(5, 7))}/${Number(date.slice(8))}`,
       admin: round2(admin),
       nonAdmin: round2(nonAdmin),
       total: round2(admin + nonAdmin),

@@ -1,38 +1,60 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { groupByStaff } from "@/lib/aggregations";
+import { useEffect, useMemo, useState } from "react";
+import { Combobox } from "@/components/Combobox";
+import { groupByClient } from "@/lib/aggregations";
 import { formatDisplayDate } from "@/lib/dates";
 import { formatHoursHM } from "@/lib/hours-format";
-import type { TimeEntry } from "@/lib/types/time-entry";
+import { isEditable } from "@/lib/pay-period";
+import type { ClientOption, JobCodeOption } from "@/lib/types/reference-data";
+import type { EntryWritePayload, TimeEntry } from "@/lib/types/time-entry";
 import { StatusChip } from "./StatusChip";
 import styles from "./DayEntriesTable.module.css";
 
 type Props = {
-  dateISO: string;
   entries: TimeEntry[];
+  multiDay: boolean;
+  viewerStaffName: string;
+  viewerIsAdmin?: boolean;
+  clients: ClientOption[];
+  jobCodes: JobCodeOption[];
+  onSave: (id: number, payload: EntryWritePayload) => Promise<void>;
 };
 
 function displayTime(value: string | null): string {
   return value ? value.slice(0, 5) : "—";
 }
 
-export function DayEntriesTable({ dateISO, entries }: Props) {
+export function DayEntriesTable({
+  entries,
+  multiDay,
+  viewerStaffName,
+  viewerIsAdmin = false,
+  clients,
+  jobCodes,
+  onSave,
+}: Props) {
   const [showDetail, setShowDetail] = useState(true);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const groups = useMemo(() => groupByStaff(entries), [entries]);
+  const groups = useMemo(() => groupByClient(entries), [entries]);
   const dailyTotal = useMemo(
     () => formatHoursHM(entries.reduce((s, e) => s + e.hours, 0)),
     [entries],
   );
-  const colCount = showDetail ? 8 : 6;
+
+  const showDate = multiDay;
+  const colCount =
+    (showDate ? 1 : 0) +
+    3 +
+    (showDetail ? 3 : 1) +
+    1;
 
   const toggleDetail = () => {
     setShowDetail((v) => {
       const next = !v;
       if (!next) {
         const allCollapsed: Record<string, boolean> = {};
-        for (const g of groups) allCollapsed[g.staff_name] = true;
+        for (const g of groups) allCollapsed[g.client] = true;
         setCollapsed(allCollapsed);
       } else {
         setCollapsed({});
@@ -45,7 +67,9 @@ export function DayEntriesTable({ dateISO, entries }: Props) {
     <div className={styles.wrap}>
       <div className={styles.toolbar}>
         <div>
-          <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }}>{formatDisplayDate(dateISO)}</p>
+          <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }}>
+            {entries.length} entries
+          </p>
         </div>
         <div className={styles.actions}>
           {entries.length > 0 && (
@@ -57,16 +81,16 @@ export function DayEntriesTable({ dateISO, entries }: Props) {
       </div>
 
       {entries.length === 0 ? (
-        <div className="empty">No submitted hours for this day.</div>
+        <div className="empty">No submitted hours for this selection.</div>
       ) : (
         <div className={styles.tableScroll}>
           <table className={styles.table}>
             <thead>
               <tr>
-                <th>Staff</th>
                 <th className={styles.clientCol}>Client</th>
                 <th>Job Code</th>
                 <th>Notes</th>
+                {showDate && <th>Date</th>}
                 {showDetail && (
                   <>
                     <th className={styles.num}>Start</th>
@@ -80,16 +104,22 @@ export function DayEntriesTable({ dateISO, entries }: Props) {
             </thead>
             <tbody>
               {groups.map((group) => {
-                const isCollapsed = Boolean(collapsed[group.staff_name]);
+                const isCollapsed = Boolean(collapsed[group.client]);
                 return (
-                  <StaffGroupBlock
-                    key={group.staff_name}
+                  <ClientGroupBlock
+                    key={group.client}
                     group={group}
                     collapsed={isCollapsed}
                     showDetail={showDetail}
+                    showDate={showDate}
                     colCount={colCount}
+                    viewerStaffName={viewerStaffName}
+                    viewerIsAdmin={viewerIsAdmin}
+                    clients={clients}
+                    jobCodes={jobCodes}
+                    onSave={onSave}
                     onToggle={() =>
-                      setCollapsed((p) => ({ ...p, [group.staff_name]: !p[group.staff_name] }))
+                      setCollapsed((p) => ({ ...p, [group.client]: !p[group.client] }))
                     }
                   />
                 );
@@ -97,8 +127,12 @@ export function DayEntriesTable({ dateISO, entries }: Props) {
             </tbody>
             <tfoot>
               <tr className={styles.footer}>
-                <td colSpan={showDetail ? 6 : 4}><strong>Daily total</strong></td>
-                <td className={styles.num}><strong>{dailyTotal}</strong></td>
+                <td colSpan={colCount - 2}>
+                  <strong>Total</strong>
+                </td>
+                <td className={styles.num}>
+                  <strong>{dailyTotal}</strong>
+                </td>
                 <td />
               </tr>
             </tfoot>
@@ -109,17 +143,29 @@ export function DayEntriesTable({ dateISO, entries }: Props) {
   );
 }
 
-function StaffGroupBlock({
+function ClientGroupBlock({
   group,
   collapsed,
   showDetail,
+  showDate,
   colCount,
+  viewerStaffName,
+  viewerIsAdmin,
+  clients,
+  jobCodes,
+  onSave,
   onToggle,
 }: {
-  group: ReturnType<typeof groupByStaff>[0];
+  group: ReturnType<typeof groupByClient>[0];
   collapsed: boolean;
   showDetail: boolean;
+  showDate: boolean;
   colCount: number;
+  viewerStaffName: string;
+  viewerIsAdmin: boolean;
+  clients: ClientOption[];
+  jobCodes: JobCodeOption[];
+  onSave: (id: number, payload: EntryWritePayload) => Promise<void>;
   onToggle: () => void;
 }) {
   return (
@@ -128,7 +174,7 @@ function StaffGroupBlock({
         <td colSpan={colCount}>
           <button type="button" className={styles.groupBtn} onClick={onToggle}>
             <span className={styles.chevron}>{collapsed ? "▸" : "▾"}</span>
-            <span className={styles.groupName}>{group.staff_name}</span>
+            <span className={styles.groupName}>{group.client}</span>
             <span className={styles.groupMeta}>
               {group.entries.length} entries · {formatHoursHM(group.subtotal)}
             </span>
@@ -137,29 +183,249 @@ function StaffGroupBlock({
       </tr>
       {!collapsed &&
         group.entries.map((entry) => (
-          <tr key={entry.id} className={styles.row}>
-            <td className={styles.indent}>{entry.staff_name}</td>
-            <td>{entry.client}</td>
-            <td>{entry.job_code}</td>
-            <td>{entry.notes}</td>
-            {showDetail && (
-              <>
-                <td className={styles.num}>{displayTime(entry.start_time)}</td>
-                <td className={styles.num}>{displayTime(entry.end_time)}</td>
-                <td className={styles.num}>{formatHoursHM(entry.hours)}</td>
-              </>
-            )}
-            {!showDetail && <td className={styles.num}>{formatHoursHM(entry.hours)}</td>}
-            <td><StatusChip status="submitted" /></td>
-          </tr>
+          <EntryRow
+            key={entry.id}
+            entry={entry}
+            showDetail={showDetail}
+            showDate={showDate}
+            viewerStaffName={viewerStaffName}
+            viewerIsAdmin={viewerIsAdmin}
+            clients={clients}
+            jobCodes={jobCodes}
+            onSave={onSave}
+          />
         ))}
-      {!collapsed && (
+      {!collapsed && showDetail && (
         <tr className={styles.subtotal}>
-          <td colSpan={showDetail ? 6 : 4} className={styles.indent}>Subtotal — {group.staff_name}</td>
+          <td colSpan={(showDate ? 1 : 0) + 3} className={styles.indent}>
+            Subtotal — {group.client}
+          </td>
+          <td className={styles.num}>{formatHoursHM(group.subtotal)}</td>
+          <td colSpan={2} />
+        </tr>
+      )}
+      {!collapsed && !showDetail && (
+        <tr className={styles.subtotal}>
+          <td colSpan={3} className={styles.indent}>
+            Subtotal — {group.client}
+          </td>
+          {showDate && <td />}
           <td className={styles.num}>{formatHoursHM(group.subtotal)}</td>
           <td />
         </tr>
       )}
     </>
+  );
+}
+
+function EntryRow({
+  entry,
+  showDetail,
+  showDate,
+  viewerStaffName,
+  viewerIsAdmin,
+  clients,
+  jobCodes,
+  onSave,
+}: {
+  entry: TimeEntry;
+  showDetail: boolean;
+  showDate: boolean;
+  viewerStaffName: string;
+  viewerIsAdmin: boolean;
+  clients: ClientOption[];
+  jobCodes: JobCodeOption[];
+  onSave: (id: number, payload: EntryWritePayload) => Promise<void>;
+}) {
+  const editable =
+    viewerIsAdmin || isEditable(entry.entry_date, viewerStaffName);
+  const entryStatus = entry.status ?? "submitted";
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<EntryWritePayload>({
+    client: entry.client,
+    job_code: entry.job_code,
+    notes: entry.notes,
+    entry_date: entry.entry_date,
+    start_time: entry.start_time,
+    end_time: entry.end_time,
+    hours: entry.hours,
+    billable: entry.billable,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setDraft({
+      client: entry.client,
+      job_code: entry.job_code,
+      notes: entry.notes,
+      entry_date: entry.entry_date,
+      start_time: entry.start_time,
+      end_time: entry.end_time,
+      hours: entry.hours,
+      billable: entry.billable,
+    });
+    setEditing(false);
+    setError("");
+  }, [entry]);
+
+  async function save() {
+    setSaving(true);
+    setError("");
+    try {
+      await onSave(entry.id, draft);
+      setEditing(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const chipStatus = saving
+    ? "saving"
+    : error
+      ? "error"
+      : !editable
+        ? "locked"
+        : entryStatus;
+
+  if (!editing) {
+    return (
+      <tr className={styles.row}>
+        <td className={styles.indent}>
+          {entry.client}
+          {editable ? (
+            <button
+              type="button"
+              className={styles.toggle}
+              style={{ marginLeft: 8, padding: "0.15rem 0.5rem", fontSize: "0.75rem" }}
+              onClick={() => setEditing(true)}
+            >
+              Edit
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={styles.toggle}
+              style={{ marginLeft: 8, padding: "0.15rem 0.5rem", fontSize: "0.75rem", opacity: 0.5 }}
+              disabled
+              title="Outside the pay-period edit window"
+            >
+              Edit
+            </button>
+          )}
+        </td>
+        <td>{entry.job_code}</td>
+        <td>{entry.notes}</td>
+        {showDate && <td>{formatDisplayDate(entry.entry_date)}</td>}
+        {showDetail && (
+          <>
+            <td className={styles.num}>{displayTime(entry.start_time)}</td>
+            <td className={styles.num}>{displayTime(entry.end_time)}</td>
+            <td className={styles.num}>{formatHoursHM(entry.hours)}</td>
+          </>
+        )}
+        {!showDetail && <td className={styles.num}>{formatHoursHM(entry.hours)}</td>}
+        <td>
+          <StatusChip status={chipStatus} />
+        </td>
+      </tr>
+    );
+  }
+
+  return (
+    <tr className={styles.row}>
+      <td className={styles.indent}>
+        <Combobox
+          value={draft.client}
+          options={clients.map((c) => c.name)}
+          onChange={(client) => setDraft((d) => ({ ...d, client }))}
+        />
+        {error ? <div className={styles.error}>{error}</div> : null}
+      </td>
+      <td>
+        <Combobox
+          value={draft.job_code}
+          options={jobCodes.map((j) => j.job_code)}
+          onChange={(job_code) => setDraft((d) => ({ ...d, job_code }))}
+        />
+      </td>
+      <td>
+        <input
+          className={styles.cellInput}
+          value={draft.notes}
+          onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))}
+        />
+      </td>
+      {showDate && (
+        <td>
+          <input
+            className={styles.cellInput}
+            type="date"
+            value={draft.entry_date}
+            onChange={(e) => setDraft((d) => ({ ...d, entry_date: e.target.value }))}
+          />
+        </td>
+      )}
+      {showDetail && (
+        <>
+          <td>
+            <input
+              className={styles.cellInput}
+              value={draft.start_time?.slice(0, 5) ?? ""}
+              placeholder="HH:MM"
+              onChange={(e) =>
+                setDraft((d) => ({
+                  ...d,
+                  start_time: e.target.value ? `${e.target.value}:00`.slice(0, 8) : null,
+                }))
+              }
+            />
+          </td>
+          <td>
+            <input
+              className={styles.cellInput}
+              value={draft.end_time?.slice(0, 5) ?? ""}
+              placeholder="HH:MM"
+              onChange={(e) =>
+                setDraft((d) => ({
+                  ...d,
+                  end_time: e.target.value ? `${e.target.value}:00`.slice(0, 8) : null,
+                }))
+              }
+            />
+          </td>
+          <td>
+            <input
+              className={styles.cellInput}
+              type="number"
+              step="0.25"
+              value={draft.hours}
+              onChange={(e) => setDraft((d) => ({ ...d, hours: Number(e.target.value) }))}
+            />
+          </td>
+        </>
+      )}
+      {!showDetail && (
+        <td>
+          <input
+            className={styles.cellInput}
+            type="number"
+            step="0.25"
+            value={draft.hours}
+            onChange={(e) => setDraft((d) => ({ ...d, hours: Number(e.target.value) }))}
+          />
+        </td>
+      )}
+      <td>
+        <button type="button" className={styles.saveBtn} disabled={saving} onClick={() => void save()}>
+          {saving ? "…" : "Save"}
+        </button>{" "}
+        <button type="button" className={styles.cancelBtn} onClick={() => setEditing(false)}>
+          Cancel
+        </button>
+      </td>
+    </tr>
   );
 }

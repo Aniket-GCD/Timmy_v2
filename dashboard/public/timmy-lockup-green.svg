@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320.89 537.60" width="1321" height="538">
+
+<g font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="400" fill="#163c26" letter-spacing="-9.52">
+<text x="58.80" y="370.80">t</text>
+<text x="309.09" y="370.80">mmy</text>
+</g>
+<rect x="230.92" y="170.80" width="61.72" height="200.00" fill="#163c26"/>
+<g transform="translate(191.38,9.93) scale(3.5197)">
+<path d="M20 2 A17 17 0 1 1 8 32 L3 35 L6 27 A17 17 0 0 1 20 2 Z" fill="none" stroke="#163c26" stroke-width="3.2" stroke-linejoin="round"/><line x1="20" y1="17" x2="20" y2="10" stroke="#163c26" stroke-width="2.3" stroke-linecap="round"/><line x1="20" y1="17" x2="26" y2="20" stroke="#163c26" stroke-width="2" stroke-linecap="round" opacity="0.85"/>
+</g>
+</svg>

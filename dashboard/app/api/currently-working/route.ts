@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireDashboardUser, resolveStaffScope } from "@/lib/auth/session";
 import { currentlyWorkingTable, supabaseFetch } from "@/lib/supabase-server";
 import type { CurrentlyWorking, LiveSessionStatus } from "@/lib/types/currently-working";
 
@@ -7,11 +8,21 @@ function asStatus(value: unknown): LiveSessionStatus {
   return "active";
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const auth = await requireDashboardUser();
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+    const staffParam = req.nextUrl.searchParams.get("staff")?.trim() ?? "";
+    const scope = resolveStaffScope(auth.user, staffParam);
+    if (scope.error) return NextResponse.json({ error: scope.error }, { status: 403 });
+
+    // Header shows one person: explicit staff, else signed-in user (even for admin All staff).
+    const liveStaff = scope.staffFilter ?? auth.user.staff_name;
+
     const table = currentlyWorkingTable();
     const rows = await supabaseFetch<Array<Record<string, unknown>>>(
-      `${table}?status=eq.active&order=started_at`,
+      `${table}?status=eq.active&staff_name=eq.${encodeURIComponent(liveStaff)}&order=started_at&limit=1`,
     );
     const sessions: CurrentlyWorking[] = rows.map((r) => ({
       id: String(r.id ?? ""),

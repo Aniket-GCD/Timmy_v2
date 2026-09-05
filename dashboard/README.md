@@ -1,6 +1,6 @@
-# GCD firm hours dashboard (founder admin)
+# Timmy firm hours dashboard
 
-View-only Next.js dashboard for firm totals. Employees keep using Timmy in Claude. This app does **not** POST/PATCH entries from the UI.
+Next.js dashboard for GCD hours. Employees use Timmy in Claude; this app shows submitted hours (and live “on the clock” in the header). With Supabase mode, staff sign in via **magic link** (Outlook).
 
 ## Run locally
 
@@ -20,45 +20,58 @@ npm test
 
 | Env | Behavior |
 |-----|----------|
-| `NEXT_PUBLIC_DASHBOARD_DATA_SOURCE=mock` (default) | In-memory multi-staff seed + mock live sessions |
-| `supabase` | Live **reads** from Supabase (`time_entries_timmy_v2`, `employees`, `currently_working`) |
+| `NEXT_PUBLIC_DASHBOARD_DATA_SOURCE=mock` (default) | In-memory seed; **no login** (dev bypass — mock admin user) |
+| `supabase` | Live data + **magic-link login** required |
 
-Polling: submitted entries + currently-working every **30s** while the tab is visible; also refetch on focus / `visibilitychange`. Clients and job codes are not polled.
+Polling: entries + currently-working every **30s** while the tab is visible.
+
+## Auth (magic link)
+
+1. User opens the dashboard → `/login`
+2. Enters work Outlook email → Supabase emails a one-time link
+3. Click link → session cookie → app loads `employees` by `lower(email)`
+4. **`is_admin`** → firm view + Employee dropdown; otherwise only that person’s hours
+
+Staff never need Supabase console access. You maintain `employees.email` / `is_admin` in SQL.
+
+### Supabase Auth setup (you)
+
+1. Authentication → Providers → **Email** enabled (magic link)
+2. URL configuration → Redirect URLs include:
+   - `http://localhost:4321/auth/callback`
+   - `https://YOUR-VERCEL-HOST/auth/callback`
+3. Site URL = your production dashboard URL
 
 ## Env var names
 
 | Variable | Role |
 |----------|------|
 | `NEXT_PUBLIC_DASHBOARD_DATA_SOURCE` | `mock` (default) or `supabase` |
-| `SUPABASE_URL` | Project URL |
-| `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_KEY` | Server read key (service role is enough for founder-only API routes) |
+| `NEXT_PUBLIC_SUPABASE_URL` | Same project URL (browser Auth) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon/publishable key (Auth cookies only) |
+| `SUPABASE_URL` | Project URL (server PostgREST) |
+| `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_KEY` | Server data access **after** session check |
 | `SUPABASE_ENTRIES_TABLE` | Default `time_entries_timmy_v2` |
-| `SUPABASE_CLIENTS_TABLE` | Default `clients` (unused in view-only UI) |
-| `SUPABASE_JOB_CODES_TABLE` | Default `job_codes` (unused in view-only UI) |
+| `SUPABASE_CLIENTS_TABLE` | Default `clients` |
+| `SUPABASE_JOB_CODES_TABLE` | Default `job_codes` |
 | `SUPABASE_EMPLOYEES_TABLE` | Default `employees` |
 | `SUPABASE_CURRENTLY_WORKING_TABLE` | Default `currently_working` |
-| `DASHBOARD_OFFICE` | Optional; unused as page identity (header is **GCD · Firm hours**) |
-| `DASHBOARD_STAFF_NAME` | **Do not** use as the page identity. Write API routes still exist but the UI never calls them. |
 
 ## Features
 
-- Header: **GCD · Firm hours**, range context, last-updated time
-- Ranges: Today, Yesterday, This week (Sun–Sat), This/Last pay period (US Central)
-- KPIs: Total, Billable, Admin (`job_code === "Admin"`) + %, Clients — hours as h:mm
-- Charts: Admin vs non-admin by day, top 8 clients, job codes
-- **Employee** dropdown (default All staff): scopes KPIs, charts, Day Detail. Calendar still needs one person (picking Calendar with All staff auto-selects someone with hours).
-- On the clock: active `currently_working` rows (firm-wide; not billed hours)
-- Day detail: read-only, grouped by staff when All staff; Show/Hide detail
-- Calendar: same `chartDays` as Hours by Day; timed blocks + duration-only strip
-- Default data is **mock** until `NEXT_PUBLIC_DASHBOARD_DATA_SOURCE=supabase`
+- Header: Timmy logo; name / Updated / Currently working (one person)
+- Admin-only Employee dropdown; others locked to self
+- Ranges: Today, Yesterday, This week, This/Last pay period (US Central)
+- Charts filter Time Entry Detail (day / client / job)
+- Table View / Calendar View; edits write back to Supabase when in edit window
 
-`staff_name` must match `"First Last"` from `GCD Employees 9.1.2026.csv` (example: `Hannah Curtis`).
+`staff_name` must match `"First Last"` on `employees` (example: `Hannah Curtis`).
 
 ---
 
 ## Supabase SQL (you run this — the agent does not)
 
-Paste in the Supabase SQL editor. Adjust table names only if they collide, then set the env vars above.
+### Base tables
 
 ```sql
 create table if not exists employees (
@@ -91,9 +104,26 @@ create unique index if not exists currently_working_one_active
   where status = 'active';
 ```
 
-### Seed 48 employees (`staff_name` = first + space + last)
+### Auth columns on employees
 
-Add extra submitters (e.g. Aniket) in a separate insert if they are not on the CSV.
+```sql
+alter table employees add column if not exists email text;
+alter table employees add column if not exists is_admin boolean not null default false;
+create unique index if not exists employees_email_lower_uidx
+  on employees (lower(email)) where email is not null;
+```
+
+Then set emails and admins, e.g.:
+
+```sql
+update employees set email = 'hannah@example.com', is_admin = true
+where staff_name = 'Hannah Curtis';
+
+update employees set email = 'alex@example.com', is_admin = false
+where staff_name = 'Alex Daley';
+```
+
+### Seed 48 employees (`staff_name` = first + space + last)
 
 ```sql
 insert into employees (first_name, last_name, staff_name, office) values
@@ -148,31 +178,9 @@ insert into employees (first_name, last_name, staff_name, office) values
 on conflict (staff_name) do nothing;
 ```
 
-Optional extra (only if they already submit and are not on the CSV):
-
-```sql
-insert into employees (first_name, last_name, staff_name, office)
-values ('Aniket','','Aniket','GCD')
-on conflict (staff_name) do nothing;
-```
-
-Grant Timmy’s existing submit key **insert/update** on `currently_working`. Dashboard routes only **select**. Confirm one Timmy `staff_name` matches `employees.staff_name` exactly.
-
-Timmy also needs **read-only** access to `employees` for install identity:
-
 ```sql
 GRANT SELECT ON public.employees TO anon;
 GRANT SELECT ON public.employees TO authenticated;
 ```
 
-If RLS is enabled on `currently_working`, also allow the publishable (`anon`) key to write:
-
-```sql
-CREATE POLICY currently_working_insert_anon ON public.currently_working
-  FOR INSERT TO anon WITH CHECK (true);
-
-CREATE POLICY currently_working_update_anon ON public.currently_working
-  FOR UPDATE TO anon USING (true) WITH CHECK (true);
-```
-
-(Pilot alternative: `ALTER TABLE public.currently_working DISABLE ROW LEVEL SECURITY;`)
+Grant Timmy’s submit key insert/update on `currently_working`. Dashboard uses the **service role on the server** after verifying the magic-link session.
