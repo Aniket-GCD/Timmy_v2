@@ -1,49 +1,50 @@
-first_name,last_name
-Alex,Daley
-Alexus,Bonaparte
-Andrea,Rottman
-Ashley,Klugman
-BB,Moncrief
-Becky,Means
-Bonnie,West
-Brian,Guevara
-Briana,Ziino
-Case,Dunavant
-Connor,Arnold
-Dakota,Stephens
-Eli,Massengale
-Fredia,Clark
-Hannah,Curtis
-Heather,Henderson
-Isaac,Parkinson
-Jamie,Harper
-Jeanenne,Green
-Jillian,Green
-Julia,Moorhead
-Keishah,Tanner
-Ken,Green
-Keri,Kaitu
-Kim,Mechling
-Lauren,Murray
-Lisa,Keil
-Marion,Greco
-Mary,Marshall
-Mckenna,Schroeder
-Megan,Brigadier
-Melissa,Traughber
-Micah,Nishimura
-Nathan,Moorhead
-Patrick,McKinley
-Paula,Hasle
-Leisa,Rintala
-Robin,Waguespack
-Rose,Stone
-Sabra,Sandoval
-Shanya,Schweitzer
-Solomon,Labrum
-Stephanie,Lopez
-Steve,Hutchings
-Steve,Pasillas
-Tiffany,Green
-Tina,Ellett
-Weston,Brockbank
+first_name,last_name,staff_name,emails,is_admin
+Alex,Daley,Alex Daley,alex@gcd.cpa,TRUE
+Alexus,Bonaparte,Alexus Bonaparte,alexus@gcd.cpa,FALSE
+Andrea,Rottman,Andrea Rottman,andrea@gcd.cpa,FALSE
+Ashley,Klugman,Ashley Klugman,ashley@gcd.cpa,FALSE
+BB,Moncrief,BB Moncrief,bb@gcd.cpa,FALSE
+Becky,Means,Becky Means,becky@gcd.cpa,FALSE
+Bonnie,West,Bonnie West,bonnie@gcd.cpa,FALSE
+Brian,Guevara,Brian Guevara,brian@gcd.cpa,FALSE
+Briana,Ziino,Briana Ziino,briana@gcd.cpa,FALSE
+Case,Dunavant,Case Dunavant,case@gcd.cpa,FALSE
+Connor,Arnold,Connor Arnold,connor@gcd.cpa,FALSE
+Dakota,Stephens,Dakota Stephens,dakota@gcd.cpa,FALSE
+Eli,Massengale,Eli Massengale,eli@gcd.cpa,FALSE
+Fredia,Clark,Fredia Clark,fredia@gcd.cpa,FALSE
+Hannah,Curtis,Hannah Curtis,hannah@gcd.cpa,TRUE
+Heather,Henderson,Heather Henderson,heather@gcd.cpa,FALSE
+Isaac,Parkinson,Isaac Parkinson,isaac@gcd.cpa,FALSE
+Jamie,Harper,Jamie Harper,jamie@gcd.cpa,FALSE
+Jeanenne,Green,Jeanenne Green,jeanenne@gcd.cpa,FALSE
+Jillian,Green,Jillian Green,jillian@gcd.cpa,FALSE
+Julia,Moorhead,Julia Moorhead,julia@gcd.cpa,TRUE
+Keishah,Tanner,Keishah Tanner,keishah@gcd.cpa,FALSE
+Ken,Green,Ken Green,ken@gcd.cpa,FALSE
+Keri,Kaitu,Keri Kaitu,keri@gcd.cpa,FALSE
+Kim,Mechling,Kim Mechling,kim@gcd.cpa,FALSE
+Lauren,Murray,Lauren Murray,lauren@gcd.cpa,FALSE
+Lisa,Keil,Lisa Keil,lisa@gcd.cpa,FALSE
+Marion,Greco,Marion Greco,marion@gcd.cpa,FALSE
+Mary,Marshall,Mary Marshall,mary@gcd.cpa,FALSE
+Mckenna,Schroeder,Mckenna Schroeder,mckenna@gcd.cpa,FALSE
+Megan,Brigadier,Megan Brigadier,megan@gcd.cpa,FALSE
+Melissa,Traughber,Melissa Traughber,melissa@gcd.cpa,FALSE
+Micah,Nishimura,Micah Nishimura,micah@gcd.cpa,FALSE
+Nathan,Moorhead,Nathan Moorhead,nathan@gcd.cpa,TRUE
+Patrick,McKinley,Patrick McKinley,patrick@gcd.cpa,FALSE
+Paula,Hasle,Paula Hasle,paula@gcd.cpa,FALSE
+Leisa,Rintala,Leisa Rintala,leisa@gcd.cpa,FALSE
+Robin,Waguespack,Robin Waguespack,robin@gcd.cpa,FALSE
+Rose,Stone,Rose Stone,rose@gcd.cpa,FALSE
+Sabra,Sandoval,Sabra Sandoval,sabra@gcd.cpa,FALSE
+Shanya,Schweitzer,Shanya Schweitzer,shanya@gcd.cpa,TRUE
+Solomon,Labrum,Solomon Labrum,solomon@gcd.cpa,FALSE
+Stephanie,Lopez,Stephanie Lopez,stephanie@gcd.cpa,FALSE
+Steve,Hutchings,Steve Hutchings,steve@gcd.cpa,FALSE
+Steve,Pasillas,Steve Pasillas,stevep@gcd.cpa,FALSE
+Tiffany,Green,Tiffany Green,tiffany@gcd.cpa,FALSE
+Tina,Ellett,Tina Ellett,tina@gcd.cpa,FALSE
+Weston,Brockbank,Weston Brockbank,weston@gcd.cpa,FALSE
+Aniket,De,Aniket De,aniket@gcd.cpa,TRUE
