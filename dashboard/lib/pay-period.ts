@@ -144,13 +144,39 @@ export function chicagoNowComparable(now: Date = new Date()): number {
   return chicagoWallToComparable(p.year, p.month, p.day, p.hour, p.minute, p.second);
 }
 
-export function isEditable(entryDateISO: string, staffName: string, now: Date = new Date()): boolean {
-  if (isSuperuser(staffName)) return true;
+/** Chicago pay-period edit window only — no staff / superuser / is_admin. */
+export function isWithinEditWindow(entryDateISO: string, now: Date = new Date()): boolean {
   const win = editWindowForChicagoWall(entryDateISO);
   const cur = chicagoNowComparable(now);
   return cur >= win.startMs && cur <= win.endMs;
 }
 
+/** Timmy parity: named superusers OR within edit window. */
+export function isEditable(entryDateISO: string, staffName: string, now: Date = new Date()): boolean {
+  if (isSuperuser(staffName)) return true;
+  return isWithinEditWindow(entryDateISO, now);
+}
+
 export function isSuperuser(staffName: string): boolean {
   return SUPERUSER_NAMES.has((staffName || "").trim().toLowerCase());
+}
+
+export type DashboardMutateArgs = {
+  entryDate: string;
+  actorIsAdmin: boolean;
+  actorStaffName: string;
+  entryStaffName: string;
+  now?: Date;
+};
+
+/**
+ * Dashboard mutation gate: admins may always mutate any row;
+ * employees only their own rows inside the edit window.
+ */
+export function canDashboardMutateEntry(args: DashboardMutateArgs): boolean {
+  if (args.actorIsAdmin) return true;
+  if ((args.entryStaffName || "").trim() !== (args.actorStaffName || "").trim()) {
+    return false;
+  }
+  return isWithinEditWindow(args.entryDate, args.now);
 }

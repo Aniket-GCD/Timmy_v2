@@ -6,6 +6,7 @@ Next.js dashboard for GCD hours. Employees use Timmy in Claude; this app shows s
 
 ```bash
 cd dashboard
+cp .env.example .env.local   # then fill keys (or copy from plugin Timmy MCP)
 npm install
 npm run dev
 ```
@@ -16,14 +17,46 @@ Open http://localhost:4321
 npm test
 ```
 
+**Restart `npm run dev` after any `NEXT_PUBLIC_*` change.** Env lives in `dashboard/.env.local` (gitignored), not the kit root `.env`.
+
 ## Modes
 
 | Env | Behavior |
 |-----|----------|
 | `NEXT_PUBLIC_DASHBOARD_DATA_SOURCE=mock` (default) | In-memory seed; **no login** (dev bypass — mock admin user) |
-| `supabase` | Live data + **magic-link login** required |
+| `supabase` | Live data + **magic-link login** required; create/edit → `POST`/`PATCH` `/api/entries` → `time_entries_timmy_v2` |
 
 Polling: entries + currently-working every **30s** while the tab is visible.
+
+### Go-live (flip off mock)
+
+1. Set in `dashboard/.env.local` (and the same keys in **Vercel → Project → Settings → Environment Variables**, then redeploy):
+
+```env
+NEXT_PUBLIC_DASHBOARD_DATA_SOURCE=supabase
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_URL=...
+SUPABASE_SERVICE_ROLE_KEY=...   # or SUPABASE_KEY with table grants (same as Timmy)
+```
+
+2. Confirm Network tab shows `/api/entries` with `200` on save (not silent in-memory mock refreshes).
+3. Confirm Supabase Table Editor → `time_entries_timmy_v2` updates within seconds (`source_file` = `timmy-dashboard` on dashboard writes).
+
+### Live write smoke checklist
+
+With Table Editor open on `time_entries_timmy_v2`:
+
+1. Magic-link login as admin (`is_admin=true`).
+2. **Edit** an existing row (table or calendar) → row updates in Supabase.
+3. **Create** from calendar blank click → new row with correct staff/times/client/job/account.
+4. Non-admin → only self; out-of-window Edit disabled; create on locked date ignored.
+5. Admin out-of-window edit → confirm dialog → save succeeds.
+6. Non-admin spoof via API (wrong `staff_name`) → 403.
+
+### Hydration warning (Grammarly)
+
+Console hydration mismatches that add `data-gr-ext-installed` / `data-new-gr-c-s-check-loaded` on `<body>` come from the **Grammarly** browser extension, not app code. Safe to ignore. The root layout sets `suppressHydrationWarning` on `<body>` to quiet that noise.
 
 ## Auth (magic link)
 
@@ -63,7 +96,27 @@ Staff never need Supabase console access. You maintain `employees.email` / `is_a
 - Admin-only Employee dropdown; others locked to self
 - Ranges: Today, Yesterday, This week, This/Last pay period (US Central)
 - Charts filter Time Entry Detail (day / client / job)
-- Table View / Calendar View; edits write back to Supabase when in edit window
+- Table View / Calendar View
+- **Edits** write to `time_entries_timmy_v2` (client, job_code, notes/task, entry_date, start/end, hours, billable, account from job roster, `source_file=timmy-dashboard`)
+
+### Who can edit
+
+| Actor | Own entries | Others’ entries | Outside pay-period edit window |
+|-------|-------------|-----------------|--------------------------------|
+| Employee | Yes, in window only | No | Blocked |
+| Admin (`is_admin`) | Yes | Yes | Allowed after confirm dialog |
+
+Pay-period edit windows (America/Chicago), same as Timmy:
+
+- Entry days **9–23** → editable from that month’s 9th 00:00 through the 24th 23:59
+- Entry days **24–month-end** and **1–8** → editable from that period’s 24th 00:00 through the following 9th 23:59
+
+### Calendar create/edit
+
+- Select one employee (admins) before Calendar View
+- Click empty day grid → create modal (15‑minute snap, default 1 hour)
+- Click a block or duration-only chip → edit modal
+- No drag-resize / delete in this pass
 
 `staff_name` must match `"First Last"` on `employees` (example: `Hannah Curtis`).
 

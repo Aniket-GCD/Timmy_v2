@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireDashboardUser, resolveStaffScope } from "@/lib/auth/session";
 import { normalizeSupabaseRow } from "@/lib/normalize-entry";
-import { isEditable } from "@/lib/pay-period";
+import { isWithinEditWindow } from "@/lib/pay-period";
 import {
   entriesTable,
   fetchClientsFromSupabase,
@@ -47,13 +47,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    if (!auth.user.is_admin && !isEditable(body.entry_date, auth.user.staff_name)) {
+    if (!auth.user.is_admin && !isWithinEditWindow(body.entry_date)) {
       return NextResponse.json({ error: "Entry is outside the edit window" }, { status: 403 });
     }
 
     const clients = await fetchClientsFromSupabase();
     const jobCodes = await fetchJobCodesFromSupabase();
-    const result = validateEntryWrite(body, { clients, jobCodes }, targetStaff);
+    const result = validateEntryWrite(body, { clients, jobCodes }, targetStaff, {
+      skipPayPeriodWindow: auth.user.is_admin,
+    });
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
 
     const table = entriesTable();

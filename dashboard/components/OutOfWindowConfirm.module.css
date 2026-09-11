@@ -1,0 +1,61 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(30, 30, 30, 0.45);
+  padding: 1rem;
+}
+
+.dialog {
+  width: min(26rem, 100%);
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.25rem 1.35rem;
+}
+
+.title {
+  margin: 0 0 0.5rem;
+  font-family: var(--font-display);
+  color: var(--mysterious-mixture);
+  font-size: 1.2rem;
+  font-weight: 400;
+}
+
+.body {
+  margin: 0 0 1.1rem;
+  color: var(--dark-grey);
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.cancel,
+.confirm {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.cancel {
+  background: var(--off-white);
+  color: var(--dark-grey);
+}
+
+.confirm {
+  background: var(--mysterious-mixture);
+  color: var(--white);
+  border-color: var(--mysterious-mixture);
+}

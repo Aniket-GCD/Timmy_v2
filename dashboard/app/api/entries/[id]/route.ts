@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireDashboardUser } from "@/lib/auth/session";
 import { normalizeSupabaseRow, toSupabasePayload } from "@/lib/normalize-entry";
-import { isEditable } from "@/lib/pay-period";
+import { isWithinEditWindow } from "@/lib/pay-period";
 import {
   entriesTable,
   fetchClientsFromSupabase,
@@ -34,9 +34,11 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Dashboard admins (employees.is_admin) bypass the pay-period window; others use Timmy parity.
-    if (!auth.user.is_admin && !isEditable(current.entry_date, auth.user.staff_name)) {
-      return NextResponse.json({ error: "Entry is outside the edit window" }, { status: 403 });
+    const newDate = (body.entry_date || current.entry_date).slice(0, 10);
+    if (!auth.user.is_admin) {
+      if (!isWithinEditWindow(current.entry_date) || !isWithinEditWindow(newDate)) {
+        return NextResponse.json({ error: "Entry is outside the edit window" }, { status: 403 });
+      }
     }
 
     const targetStaff =
@@ -46,7 +48,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
     const clients = await fetchClientsFromSupabase();
     const jobCodes = await fetchJobCodesFromSupabase();
-    const result = validateEntryWrite(body, { clients, jobCodes }, targetStaff);
+    const result = validateEntryWrite(body, { clients, jobCodes }, targetStaff, {
+      skipPayPeriodWindow: auth.user.is_admin,
+    });
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
 
     const entry = {

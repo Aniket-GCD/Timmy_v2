@@ -74,6 +74,23 @@
   background: var(--off-white);
 }
 
+.dayColEditable {
+  cursor: crosshair;
+}
+
+.dayColLocked {
+  cursor: not-allowed;
+}
+
+.blockClickable {
+  cursor: pointer;
+}
+
+.blockLocked {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
 .hourLine {
   position: absolute;
   left: 0;

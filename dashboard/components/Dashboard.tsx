@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ClientChart } from "@/components/ClientChart";
 import { DayEntriesTable } from "@/components/DayEntriesTable";
+import { EntryEditorModal, type EntryEditorDefaults } from "@/components/EntryEditorModal";
 import { JobChart } from "@/components/JobChart";
 import { MetricCards } from "@/components/MetricCards";
+import { OutOfWindowConfirm } from "@/components/OutOfWindowConfirm";
 import { RangeToggle } from "@/components/RangeToggle";
 import rangeStyles from "@/components/RangeToggle.module.css";
 import { WeekCalendar } from "@/components/WeekCalendar";
@@ -26,6 +28,7 @@ import {
   type RangeKey,
 } from "@/lib/dates";
 import { formatHoursHM } from "@/lib/hours-format";
+import { isWithinEditWindow } from "@/lib/pay-period";
 import type { CurrentlyWorking } from "@/lib/types/currently-working";
 import type { DashboardUser, Employee } from "@/lib/types/employee";
 import type { ClientOption, JobCodeOption } from "@/lib/types/reference-data";
@@ -34,6 +37,16 @@ import type { EntryWritePayload, TimeEntry } from "@/lib/types/time-entry";
 const POLL_MS = 30_000;
 
 type DetailView = "detail" | "calendar";
+
+type EditorState =
+  | { open: false }
+  | {
+      open: true;
+      mode: "create" | "edit";
+      entry?: TimeEntry | null;
+      defaults?: EntryEditorDefaults | null;
+      staffName: string;
+    };
 
 function elapsedLabel(startedAt: string): string {
   const start = new Date(startedAt).getTime();
@@ -60,6 +73,9 @@ export function Dashboard() {
   const [detailView, setDetailView] = useState<DetailView>("detail");
   const [staffFilter, setStaffFilter] = useState("");
   const [tick, setTick] = useState(0);
+  const [editor, setEditor] = useState<EditorState>({ open: false });
+  const [pendingCreate, setPendingCreate] = useState<EntryEditorDefaults | null>(null);
+  const [createWarnOpen, setCreateWarnOpen] = useState(false);
 
   const resolved = useMemo(() => resolveRange(range), [range]);
 
@@ -261,6 +277,64 @@ export function Dashboard() {
     await loadPollable(false);
   }
 
+  const calendarStaff = staffFilter || (me && !me.is_admin ? me.staff_name : "") || "";
+
+  function openCreateEditor(defaults: EntryEditorDefaults) {
+    if (!calendarStaff || !me) return;
+    setEditor({
+      open: true,
+      mode: "create",
+      defaults,
+      staffName: calendarStaff,
+    });
+  }
+
+  function requestCalendarCreate(req: {
+    entry_date: string;
+    start_time: string;
+    end_time: string;
+  }) {
+    if (!calendarStaff || !me) return;
+    const defaults: EntryEditorDefaults = {
+      entry_date: req.entry_date,
+      start_time: req.start_time,
+      end_time: req.end_time,
+      hours: 1,
+    };
+    if (me.is_admin && !isWithinEditWindow(req.entry_date)) {
+      setPendingCreate(defaults);
+      setCreateWarnOpen(true);
+      return;
+    }
+    openCreateEditor(defaults);
+  }
+
+  function requestCalendarEdit(entry: TimeEntry) {
+    if (!me) return;
+    setEditor({
+      open: true,
+      mode: "edit",
+      entry,
+      staffName: entry.staff_name,
+    });
+  }
+
+  async function handleEditorSave(payload: EntryWritePayload) {
+    if (!editor.open || !me) return;
+    if (editor.mode === "create") {
+      await provider.createEntry({
+        ...payload,
+        staff_name: me.is_admin ? editor.staffName : me.staff_name,
+      });
+    } else if (editor.entry) {
+      await provider.updateEntry(editor.entry.id, {
+        ...payload,
+        staff_name: me.is_admin ? editor.staffName : me.staff_name,
+      });
+    }
+    await loadPollable(false);
+  }
+
   if (!me && loading) {
     return (
       <div className="page">
@@ -404,13 +478,48 @@ export function Dashboard() {
                 onSave={handleSave}
               />
             ) : staffFilter || (me && !me.is_admin) ? (
-              <WeekCalendar days={resolved.chartDays} entries={calendarEntries} />
+              <WeekCalendar
+                days={resolved.chartDays}
+                entries={calendarEntries}
+                targetStaffName={calendarStaff}
+                viewerStaffName={me?.staff_name ?? ""}
+                viewerIsAdmin={Boolean(me?.is_admin)}
+                onCreateRequest={requestCalendarCreate}
+                onEditRequest={requestCalendarEdit}
+              />
             ) : (
               <p className="muted">Select an employee to view their calendar.</p>
             )}
           </section>
         </>
       )}
+
+      <EntryEditorModal
+        open={editor.open}
+        mode={editor.open ? editor.mode : "create"}
+        entry={editor.open ? editor.entry : null}
+        defaults={editor.open ? editor.defaults : null}
+        staffName={editor.open ? editor.staffName : ""}
+        viewerIsAdmin={Boolean(me?.is_admin)}
+        clients={clients}
+        jobCodes={jobCodes}
+        onClose={() => setEditor({ open: false })}
+        onSave={handleEditorSave}
+      />
+
+      <OutOfWindowConfirm
+        open={createWarnOpen}
+        mode="create"
+        onCancel={() => {
+          setCreateWarnOpen(false);
+          setPendingCreate(null);
+        }}
+        onConfirm={() => {
+          setCreateWarnOpen(false);
+          if (pendingCreate) openCreateEditor(pendingCreate);
+          setPendingCreate(null);
+        }}
+      />
     </div>
   );
 }

@@ -26,7 +26,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${marcellus.variable} ${ptSerif.variable}`}>{children}</body>
+      <body className={`${marcellus.variable} ${ptSerif.variable}`} suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   );
 }

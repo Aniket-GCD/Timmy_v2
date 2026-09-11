@@ -59,12 +59,17 @@ export const mockProvider: EntriesProvider = {
     return all.filter((s) => s.staff_name === staffName);
   },
   async createEntry(payload) {
-    const result = validateEntryWrite(payload, { clients: MOCK_CLIENTS, jobCodes: MOCK_JOB_CODES }, MOCK_STAFF.staff_name);
+    const result = validateEntryWrite(
+      payload,
+      { clients: MOCK_CLIENTS, jobCodes: MOCK_JOB_CODES },
+      MOCK_STAFF.staff_name,
+      { skipPayPeriodWindow: true },
+    );
     if (!result.ok) throw new Error(result.error);
     const job = MOCK_JOB_CODES.find((j) => j.job_code === result.payload.job_code)!;
     const entry: TimeEntry = {
       id: mockNextId++,
-      staff_name: MOCK_STAFF.staff_name,
+      staff_name: payload.staff_name ?? MOCK_STAFF.staff_name,
       office: MOCK_STAFF.office,
       account: job.account,
       source_file: "timmy-dashboard-mock",
@@ -74,7 +79,12 @@ export const mockProvider: EntriesProvider = {
     return entry;
   },
   async updateEntry(id, payload) {
-    const result = validateEntryWrite(payload, { clients: MOCK_CLIENTS, jobCodes: MOCK_JOB_CODES }, payload.staff_name ?? MOCK_STAFF.staff_name);
+    const result = validateEntryWrite(
+      payload,
+      { clients: MOCK_CLIENTS, jobCodes: MOCK_JOB_CODES },
+      payload.staff_name ?? MOCK_STAFF.staff_name,
+      { skipPayPeriodWindow: true },
+    );
     if (!result.ok) throw new Error(result.error);
     const store = getMockStore();
     const idx = store.findIndex((e) => e.id === id);

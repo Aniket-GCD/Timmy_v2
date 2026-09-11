@@ -5,9 +5,10 @@ import { Combobox } from "@/components/Combobox";
 import { groupByClient } from "@/lib/aggregations";
 import { formatDisplayDate } from "@/lib/dates";
 import { formatHoursHM } from "@/lib/hours-format";
-import { isEditable } from "@/lib/pay-period";
+import { canDashboardMutateEntry, isWithinEditWindow } from "@/lib/pay-period";
 import type { ClientOption, JobCodeOption } from "@/lib/types/reference-data";
 import type { EntryWritePayload, TimeEntry } from "@/lib/types/time-entry";
+import { OutOfWindowConfirm } from "./OutOfWindowConfirm";
 import { StatusChip } from "./StatusChip";
 import styles from "./DayEntriesTable.module.css";
 
@@ -237,10 +238,15 @@ function EntryRow({
   jobCodes: JobCodeOption[];
   onSave: (id: number, payload: EntryWritePayload) => Promise<void>;
 }) {
-  const editable =
-    viewerIsAdmin || isEditable(entry.entry_date, viewerStaffName);
+  const editable = canDashboardMutateEntry({
+    entryDate: entry.entry_date,
+    actorIsAdmin: viewerIsAdmin,
+    actorStaffName: viewerStaffName,
+    entryStaffName: entry.staff_name,
+  });
   const entryStatus = entry.status ?? "submitted";
   const [editing, setEditing] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [draft, setDraft] = useState<EntryWritePayload>({
     client: entry.client,
     job_code: entry.job_code,
@@ -266,6 +272,7 @@ function EntryRow({
       billable: entry.billable,
     });
     setEditing(false);
+    setConfirmOpen(false);
     setError("");
   }, [entry]);
 
@@ -282,55 +289,82 @@ function EntryRow({
     }
   }
 
+  function requestEdit() {
+    if (viewerIsAdmin && !isWithinEditWindow(entry.entry_date)) {
+      setConfirmOpen(true);
+      return;
+    }
+    setEditing(true);
+  }
+
+  function requestSave() {
+    if (viewerIsAdmin && !isWithinEditWindow(draft.entry_date)) {
+      setConfirmOpen(true);
+      return;
+    }
+    void save();
+  }
+
   const chipStatus = saving
     ? "saving"
     : error
       ? "error"
-      : !editable
+      : !isWithinEditWindow(entry.entry_date) && !viewerIsAdmin
         ? "locked"
         : entryStatus;
 
   if (!editing) {
     return (
-      <tr className={styles.row}>
-        <td className={styles.indent}>
-          {entry.client}
-          {editable ? (
-            <button
-              type="button"
-              className={styles.toggle}
-              style={{ marginLeft: 8, padding: "0.15rem 0.5rem", fontSize: "0.75rem" }}
-              onClick={() => setEditing(true)}
-            >
-              Edit
-            </button>
-          ) : (
-            <button
-              type="button"
-              className={styles.toggle}
-              style={{ marginLeft: 8, padding: "0.15rem 0.5rem", fontSize: "0.75rem", opacity: 0.5 }}
-              disabled
-              title="Outside the pay-period edit window"
-            >
-              Edit
-            </button>
+      <>
+        <tr className={styles.row}>
+          <td className={styles.indent}>
+            {entry.client}
+            {editable ? (
+              <button
+                type="button"
+                className={styles.toggle}
+                style={{ marginLeft: 8, padding: "0.15rem 0.5rem", fontSize: "0.75rem" }}
+                onClick={requestEdit}
+              >
+                Edit
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={styles.toggle}
+                style={{ marginLeft: 8, padding: "0.15rem 0.5rem", fontSize: "0.75rem", opacity: 0.5 }}
+                disabled
+                title="Outside the pay-period edit window"
+              >
+                Edit
+              </button>
+            )}
+          </td>
+          <td>{entry.job_code}</td>
+          <td>{entry.notes}</td>
+          {showDate && <td>{formatDisplayDate(entry.entry_date)}</td>}
+          {showDetail && (
+            <>
+              <td className={styles.num}>{displayTime(entry.start_time)}</td>
+              <td className={styles.num}>{displayTime(entry.end_time)}</td>
+              <td className={styles.num}>{formatHoursHM(entry.hours)}</td>
+            </>
           )}
-        </td>
-        <td>{entry.job_code}</td>
-        <td>{entry.notes}</td>
-        {showDate && <td>{formatDisplayDate(entry.entry_date)}</td>}
-        {showDetail && (
-          <>
-            <td className={styles.num}>{displayTime(entry.start_time)}</td>
-            <td className={styles.num}>{displayTime(entry.end_time)}</td>
-            <td className={styles.num}>{formatHoursHM(entry.hours)}</td>
-          </>
-        )}
-        {!showDetail && <td className={styles.num}>{formatHoursHM(entry.hours)}</td>}
-        <td>
-          <StatusChip status={chipStatus} />
-        </td>
-      </tr>
+          {!showDetail && <td className={styles.num}>{formatHoursHM(entry.hours)}</td>}
+          <td>
+            <StatusChip status={chipStatus} />
+          </td>
+        </tr>
+        <OutOfWindowConfirm
+          open={confirmOpen}
+          mode="edit"
+          onCancel={() => setConfirmOpen(false)}
+          onConfirm={() => {
+            setConfirmOpen(false);
+            setEditing(true);
+          }}
+        />
+      </>
     );
   }
 
@@ -419,12 +453,21 @@ function EntryRow({
         </td>
       )}
       <td>
-        <button type="button" className={styles.saveBtn} disabled={saving} onClick={() => void save()}>
+        <button type="button" className={styles.saveBtn} disabled={saving} onClick={requestSave}>
           {saving ? "…" : "Save"}
         </button>{" "}
         <button type="button" className={styles.cancelBtn} onClick={() => setEditing(false)}>
           Cancel
         </button>
+        <OutOfWindowConfirm
+          open={confirmOpen}
+          mode="edit"
+          onCancel={() => setConfirmOpen(false)}
+          onConfirm={() => {
+            setConfirmOpen(false);
+            void save();
+          }}
+        />
       </td>
     </tr>
   );
