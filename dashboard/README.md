@@ -35,13 +35,16 @@ Polling: entries + currently-working every **30s** while the tab is visible.
 ```env
 NEXT_PUBLIC_DASHBOARD_DATA_SOURCE=supabase
 NEXT_PUBLIC_SUPABASE_URL=...
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...          # Auth only (anon / publishable)
 SUPABASE_URL=...
-SUPABASE_SERVICE_ROLE_KEY=...   # or SUPABASE_KEY with table grants (same as Timmy)
+SUPABASE_SERVICE_ROLE_KEY=...            # REQUIRED for create/edit (service_role or sb_secret_)
 ```
+
+Do **not** use the publishable/`sb_publishable_` key as the server write key. That often makes PostgREST `PATCH` update 0 rows (RLS); the UI reloads old data and Supabase looks unchanged.
 
 2. Confirm Network tab shows `/api/entries` with `200` on save (not silent in-memory mock refreshes).
 3. Confirm Supabase Table Editor → `time_entries_timmy_v2` updates within seconds (`source_file` = `timmy-dashboard` on dashboard writes).
+4. If Save shows `…` then reverts with no change: check the server terminal for the `SUPABASE_SERVICE_ROLE_KEY` warning and set the service role key, then restart.
 
 ### Live write smoke checklist
 
@@ -81,9 +84,10 @@ Staff never need Supabase console access. You maintain `employees.email` / `is_a
 |----------|------|
 | `NEXT_PUBLIC_DASHBOARD_DATA_SOURCE` | `mock` (default) or `supabase` |
 | `NEXT_PUBLIC_SUPABASE_URL` | Same project URL (browser Auth) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon/publishable key (Auth cookies only) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon/publishable key (**Auth cookies only** — not for writes) |
 | `SUPABASE_URL` | Project URL (server PostgREST) |
-| `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_KEY` | Server data access **after** session check |
+| `SUPABASE_SERVICE_ROLE_KEY` | Prefer legacy **service_role JWT** (`eyJ…`) for full access. New `sb_secret_…` keys need table GRANTs or reads will 403/500; dashboard falls back to publishable for reads/writes when `sb_secret_` is set |
+| `SUPABASE_KEY` | Fallback only if it is a secret/service key with table grants (avoid publishable) |
 | `SUPABASE_ENTRIES_TABLE` | Default `time_entries_timmy_v2` |
 | `SUPABASE_CLIENTS_TABLE` | Default `clients` |
 | `SUPABASE_JOB_CODES_TABLE` | Default `job_codes` |

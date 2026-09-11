@@ -1,4 +1,5 @@
-import { validateEntryWrite } from "../validate-entry";
+import { humanizeApiError } from "../humanize-api-error";
+import { validateEntryWrite, ENTRY_ERRORS } from "../validate-entry";
 import { createMockLiveSessions, createMockSeed, MOCK_EMPLOYEES, MOCK_STAFF } from "../mock-data";
 import { MOCK_CLIENTS, MOCK_JOB_CODES } from "../mock-reference";
 import type { CurrentlyWorking } from "../types/currently-working";
@@ -88,7 +89,7 @@ export const mockProvider: EntriesProvider = {
     if (!result.ok) throw new Error(result.error);
     const store = getMockStore();
     const idx = store.findIndex((e) => e.id === id);
-    if (idx < 0) throw new Error("Entry not found");
+    if (idx < 0) throw new Error(ENTRY_ERRORS.notFound);
     const job = MOCK_JOB_CODES.find((j) => j.job_code === result.payload.job_code)!;
     store[idx] = {
       ...store[idx],
@@ -116,7 +117,7 @@ const liveProvider: EntriesProvider = {
     });
     if (params.staffName) q.set("staff", params.staffName);
     const res = await fetch(`/api/entries?${q}`);
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) throw new Error(humanizeApiError(await res.text()));
     return res.json();
   },
   async createEntry(payload) {
@@ -125,7 +126,7 @@ const liveProvider: EntriesProvider = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) throw new Error(humanizeApiError(await res.text()));
     return res.json();
   },
   async updateEntry(id, payload) {
@@ -134,28 +135,28 @@ const liveProvider: EntriesProvider = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) throw new Error(humanizeApiError(await res.text()));
     return res.json();
   },
   async fetchClients() {
     const res = await fetch("/api/clients");
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) throw new Error(humanizeApiError(await res.text()));
     return res.json();
   },
   async fetchJobCodes() {
     const res = await fetch("/api/job-codes");
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) throw new Error(humanizeApiError(await res.text()));
     return res.json();
   },
   async fetchEmployees() {
     const res = await fetch("/api/employees");
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) throw new Error(humanizeApiError(await res.text()));
     return res.json();
   },
   async fetchCurrentlyWorking(staffName?: string) {
     const q = staffName ? `?staff=${encodeURIComponent(staffName)}` : "";
     const res = await fetch(`/api/currently-working${q}`);
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) throw new Error(humanizeApiError(await res.text()));
     return res.json();
   },
 };

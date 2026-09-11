@@ -2,10 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { Combobox } from "@/components/Combobox";
-import { durationHoursFromTimes, parseTimeInput } from "@/lib/hours-format";
+import {
+  displayHm,
+  durationHoursFromTimes,
+  formatHoursHM,
+  parseHoursInput,
+  parseTimeInput,
+} from "@/lib/hours-format";
 import { isWithinEditWindow } from "@/lib/pay-period";
+import { reconcileTimeFields, type TimeFieldTouched } from "@/lib/time-field-sync";
 import type { ClientOption, JobCodeOption } from "@/lib/types/reference-data";
 import type { EntryWritePayload, TimeEntry } from "@/lib/types/time-entry";
+import { ENTRY_ERRORS } from "@/lib/validate-entry";
 import { OutOfWindowConfirm } from "./OutOfWindowConfirm";
 import styles from "./EntryEditorModal.module.css";
 
@@ -55,17 +63,6 @@ function fromEntry(entry: TimeEntry): EntryWritePayload {
   };
 }
 
-function displayHm(value: string | null): string {
-  return value ? value.slice(0, 5) : "";
-}
-
-function toTimeOrNull(hm: string): string | null {
-  const t = hm.trim();
-  if (!t) return null;
-  const parsed = parseTimeInput(t);
-  return parsed ?? `${t}:00`.slice(0, 8);
-}
-
 export function EntryEditorModal({
   open,
   mode,
@@ -81,6 +78,7 @@ export function EntryEditorModal({
   const [draft, setDraft] = useState<EntryWritePayload>(emptyDraft(defaults));
   const [startHm, setStartHm] = useState("");
   const [endHm, setEndHm] = useState("");
+  const [hoursHm, setHoursHm] = useState("1:00");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -91,6 +89,7 @@ export function EntryEditorModal({
     setDraft(next);
     setStartHm(displayHm(next.start_time));
     setEndHm(displayHm(next.end_time));
+    setHoursHm(formatHoursHM(next.hours));
     setError("");
     setSaving(false);
     setConfirmOpen(false);
@@ -98,32 +97,71 @@ export function EntryEditorModal({
 
   if (!open) return null;
 
-  function syncTimes(nextStart: string, nextEnd: string) {
-    setStartHm(nextStart);
-    setEndHm(nextEnd);
-    const start = toTimeOrNull(nextStart);
-    const end = toTimeOrNull(nextEnd);
-    setDraft((d) => {
-      const hours =
-        start && end ? durationHoursFromTimes(start, end) ?? d.hours : d.hours;
-      return { ...d, start_time: start, end_time: end, hours };
-    });
+  function applyTimeFields(
+    next: { startHm: string; endHm: string; hoursHm: string },
+    touched: TimeFieldTouched,
+  ) {
+    const r = reconcileTimeFields({ ...next, touched });
+    setStartHm(r.startHm);
+    setEndHm(r.endHm);
+    setHoursHm(r.hoursHm);
+    const start = r.startHm.trim() ? parseTimeInput(r.startHm) : null;
+    const end = r.endHm.trim() ? parseTimeInput(r.endHm) : null;
+    setDraft((d) => ({
+      ...d,
+      start_time: start,
+      end_time: end,
+      hours: r.hours != null && r.hours > 0 ? r.hours : d.hours,
+    }));
   }
 
   async function doSave() {
     setSaving(true);
     setError("");
     try {
+      const startTrim = startHm.trim();
+      const endTrim = endHm.trim();
+      if (Boolean(startTrim) !== Boolean(endTrim)) {
+        setError(ENTRY_ERRORS.bothOrNeither);
+        setSaving(false);
+        return;
+      }
+      let start: string | null = null;
+      let end: string | null = null;
+      if (startTrim && endTrim) {
+        start = parseTimeInput(startTrim);
+        end = parseTimeInput(endTrim);
+        if (!start || !end) {
+          setError(ENTRY_ERRORS.badTime);
+          setSaving(false);
+          return;
+        }
+      }
+      let hours = draft.hours;
+      const fromTimes = durationHoursFromTimes(start, end);
+      if (fromTimes != null) {
+        if (fromTimes <= 0) {
+          setError(ENTRY_ERRORS.endBeforeStart);
+          setSaving(false);
+          return;
+        }
+        hours = fromTimes;
+      } else {
+        const parsedHours = parseHoursInput(hoursHm);
+        if (parsedHours == null || parsedHours <= 0) {
+          setError(ENTRY_ERRORS.badDuration);
+          setSaving(false);
+          return;
+        }
+        hours = parsedHours;
+      }
       const payload: EntryWritePayload = {
         ...draft,
-        start_time: toTimeOrNull(startHm),
-        end_time: toTimeOrNull(endHm),
+        start_time: start,
+        end_time: end,
+        hours: Math.round(hours * 100) / 100,
         billable: draft.job_code === "Admin" ? false : draft.billable,
       };
-      if (payload.start_time && payload.end_time) {
-        const fromTimes = durationHoursFromTimes(payload.start_time, payload.end_time);
-        if (fromTimes != null) payload.hours = fromTimes;
-      }
       await onSave(payload);
       onClose();
     } catch (e) {
@@ -173,7 +211,12 @@ export function EntryEditorModal({
                 className={styles.input}
                 placeholder="HH:MM"
                 value={startHm}
-                onChange={(e) => syncTimes(e.target.value, endHm)}
+                onChange={(e) =>
+                  applyTimeFields(
+                    { startHm: e.target.value, endHm, hoursHm },
+                    "start",
+                  )
+                }
               />
             </label>
             <label className={styles.field}>
@@ -182,17 +225,26 @@ export function EntryEditorModal({
                 className={styles.input}
                 placeholder="HH:MM"
                 value={endHm}
-                onChange={(e) => syncTimes(startHm, e.target.value)}
+                onChange={(e) =>
+                  applyTimeFields(
+                    { startHm, endHm: e.target.value, hoursHm },
+                    "end",
+                  )
+                }
               />
             </label>
             <label className={styles.field}>
-              <span>Hours</span>
+              <span>Duration</span>
               <input
-                type="number"
-                step="0.25"
                 className={styles.input}
-                value={draft.hours}
-                onChange={(e) => setDraft((d) => ({ ...d, hours: Number(e.target.value) }))}
+                placeholder="H:MM"
+                value={hoursHm}
+                onChange={(e) =>
+                  applyTimeFields(
+                    { startHm, endHm, hoursHm: e.target.value },
+                    "duration",
+                  )
+                }
               />
             </label>
           </div>

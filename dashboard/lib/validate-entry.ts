@@ -12,6 +12,21 @@ export type ValidateEntryOptions = {
   skipPayPeriodWindow?: boolean;
 };
 
+export const ENTRY_ERRORS = {
+  client: "Pick a client from the list.",
+  job: "Pick a job code from the list.",
+  lockedDate:
+    "This date is locked for editing. Contact an admin if it needs to change.",
+  bothOrNeither:
+    "Enter both a start time and an end time, or clear both and enter the duration instead.",
+  badTime: "Enter start and end as hours and minutes, like 9:00 and 9:05.",
+  badDuration: "Enter how long the work took, like 0:05 or 1:30.",
+  endBeforeStart: "End time needs to be after start time.",
+  ownOnly: "You can only edit your own time entries.",
+  notFound: "We could not find that time entry.",
+  saveFailed: "We couldn’t save that change. Check the times and try again.",
+} as const;
+
 export function validateEntryWrite(
   draft: EntryWritePayload,
   refs: { clients: ClientOption[]; jobCodes: JobCodeOption[] },
@@ -21,29 +36,44 @@ export function validateEntryWrite(
   void staffName;
   const clientNames = new Set(refs.clients.map((c) => c.name));
   if (!clientNames.has(draft.client)) {
-    return { ok: false, error: "Select a valid client from the firm roster." };
+    return { ok: false, error: ENTRY_ERRORS.client };
   }
   const job = refs.jobCodes.find((j) => j.job_code === draft.job_code);
   if (!job) {
-    return { ok: false, error: "Select a valid job code." };
+    return { ok: false, error: ENTRY_ERRORS.job };
   }
   if (!options.skipPayPeriodWindow && !isWithinEditWindow(draft.entry_date)) {
-    return { ok: false, error: "This entry date is outside the pay-period edit window." };
+    return { ok: false, error: ENTRY_ERRORS.lockedDate };
   }
 
-  const hasStart = Boolean(draft.start_time?.trim());
-  const hasEnd = Boolean(draft.end_time?.trim());
+  const startRaw = draft.start_time?.trim() ?? "";
+  const endRaw = draft.end_time?.trim() ?? "";
+  const hasStart = Boolean(startRaw);
+  const hasEnd = Boolean(endRaw);
   if (hasStart !== hasEnd) {
-    return { ok: false, error: "Provide both start and end times, or leave both blank for duration-only." };
+    return { ok: false, error: ENTRY_ERRORS.bothOrNeither };
   }
 
-  const start = hasStart ? parseTimeInput(draft.start_time!) ?? draft.start_time : null;
-  const end = hasEnd ? parseTimeInput(draft.end_time!) ?? draft.end_time : null;
+  let start: string | null = null;
+  let end: string | null = null;
+  if (hasStart && hasEnd) {
+    start = parseTimeInput(startRaw);
+    end = parseTimeInput(endRaw);
+    if (!start || !end) {
+      return { ok: false, error: ENTRY_ERRORS.badTime };
+    }
+  }
+
   let hours = draft.hours;
   const fromTimes = durationHoursFromTimes(start, end);
-  if (fromTimes != null) hours = fromTimes;
-  if (hours <= 0) {
-    return { ok: false, error: "Hours must be greater than zero." };
+  if (fromTimes != null) {
+    if (fromTimes <= 0) {
+      return { ok: false, error: ENTRY_ERRORS.endBeforeStart };
+    }
+    hours = fromTimes;
+  }
+  if (!Number.isFinite(hours) || hours <= 0) {
+    return { ok: false, error: ENTRY_ERRORS.badDuration };
   }
 
   const billable = draft.job_code === "Admin" ? false : draft.billable;

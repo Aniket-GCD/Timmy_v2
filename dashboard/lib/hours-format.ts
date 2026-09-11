@@ -54,3 +54,33 @@ export function durationHoursFromTimes(start: string | null, end: string | null)
   if (mins < 0) mins += 24 * 60;
   return mins / 60;
 }
+
+/** Minutes since midnight from HH:MM:SS (or HH:MM). */
+export function timeToMinutes(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + (m || 0);
+}
+
+/** HH:MM:SS from minutes since midnight, wrapped into 0..24h. */
+export function minutesToTime(totalMinutes: number): string {
+  const day = 24 * 60;
+  let mins = ((Math.round(totalMinutes) % day) + day) % day;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00`;
+}
+
+/** Add decimal hours to a clock time → HH:MM:SS. */
+export function addHoursToTime(start: string, hours: number): string {
+  return minutesToTime(timeToMinutes(start) + hours * 60);
+}
+
+/** Subtract decimal hours from a clock time → HH:MM:SS. */
+export function subtractHoursFromTime(end: string, hours: number): string {
+  return minutesToTime(timeToMinutes(end) - hours * 60);
+}
+
+/** Display HH:MM from HH:MM:SS. */
+export function displayHm(value: string | null | undefined): string {
+  return value ? value.slice(0, 5) : "";
+}

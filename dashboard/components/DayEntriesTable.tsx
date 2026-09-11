@@ -1,13 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Combobox } from "@/components/Combobox";
 import { groupByClient } from "@/lib/aggregations";
 import { formatDisplayDate } from "@/lib/dates";
-import { formatHoursHM } from "@/lib/hours-format";
+import {
+  displayHm,
+  durationHoursFromTimes,
+  formatHoursHM,
+  parseHoursInput,
+  parseTimeInput,
+} from "@/lib/hours-format";
 import { canDashboardMutateEntry, isWithinEditWindow } from "@/lib/pay-period";
+import { reconcileTimeFields, type TimeFieldTouched } from "@/lib/time-field-sync";
 import type { ClientOption, JobCodeOption } from "@/lib/types/reference-data";
 import type { EntryWritePayload, TimeEntry } from "@/lib/types/time-entry";
+import { ENTRY_ERRORS } from "@/lib/validate-entry";
 import { OutOfWindowConfirm } from "./OutOfWindowConfirm";
 import { StatusChip } from "./StatusChip";
 import styles from "./DayEntriesTable.module.css";
@@ -24,6 +32,19 @@ type Props = {
 
 function displayTime(value: string | null): string {
   return value ? value.slice(0, 5) : "—";
+}
+
+function draftFromEntry(entry: TimeEntry): EntryWritePayload {
+  return {
+    client: entry.client,
+    job_code: entry.job_code,
+    notes: entry.notes,
+    entry_date: entry.entry_date,
+    start_time: entry.start_time,
+    end_time: entry.end_time,
+    hours: entry.hours,
+    billable: entry.billable,
+  };
 }
 
 export function DayEntriesTable({
@@ -246,41 +267,97 @@ function EntryRow({
   });
   const entryStatus = entry.status ?? "submitted";
   const [editing, setEditing] = useState(false);
+  const editingRef = useRef(false);
+  editingRef.current = editing;
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [draft, setDraft] = useState<EntryWritePayload>({
-    client: entry.client,
-    job_code: entry.job_code,
-    notes: entry.notes,
-    entry_date: entry.entry_date,
-    start_time: entry.start_time,
-    end_time: entry.end_time,
-    hours: entry.hours,
-    billable: entry.billable,
-  });
+  const [draft, setDraft] = useState<EntryWritePayload>(() => draftFromEntry(entry));
+  const [startHm, setStartHm] = useState(() => displayHm(entry.start_time));
+  const [endHm, setEndHm] = useState(() => displayHm(entry.end_time));
+  const [hoursHm, setHoursHm] = useState(() => formatHoursHM(entry.hours));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  function applyEntryFields(next: TimeEntry) {
+    setDraft(draftFromEntry(next));
+    setStartHm(displayHm(next.start_time));
+    setEndHm(displayHm(next.end_time));
+    setHoursHm(formatHoursHM(next.hours));
+  }
+
   useEffect(() => {
-    setDraft({
-      client: entry.client,
-      job_code: entry.job_code,
-      notes: entry.notes,
-      entry_date: entry.entry_date,
-      start_time: entry.start_time,
-      end_time: entry.end_time,
-      hours: entry.hours,
-      billable: entry.billable,
-    });
-    setEditing(false);
+    // Poll refresh must not cancel an in-progress edit of the same row.
+    if (editingRef.current) return;
+    applyEntryFields(entry);
     setConfirmOpen(false);
     setError("");
   }, [entry]);
 
+  function applyTimeFields(
+    next: { startHm: string; endHm: string; hoursHm: string },
+    touched: TimeFieldTouched,
+  ) {
+    const r = reconcileTimeFields({ ...next, touched });
+    setStartHm(r.startHm);
+    setEndHm(r.endHm);
+    setHoursHm(r.hoursHm);
+    const start = r.startHm.trim() ? parseTimeInput(r.startHm) : null;
+    const end = r.endHm.trim() ? parseTimeInput(r.endHm) : null;
+    setDraft((d) => ({
+      ...d,
+      start_time: start,
+      end_time: end,
+      hours: r.hours != null && r.hours > 0 ? r.hours : d.hours,
+    }));
+  }
+
+  function buildPayload(): EntryWritePayload | null {
+    const startTrim = startHm.trim();
+    const endTrim = endHm.trim();
+    if (Boolean(startTrim) !== Boolean(endTrim)) {
+      setError(ENTRY_ERRORS.bothOrNeither);
+      return null;
+    }
+    let start: string | null = null;
+    let end: string | null = null;
+    if (startTrim && endTrim) {
+      start = parseTimeInput(startTrim);
+      end = parseTimeInput(endTrim);
+      if (!start || !end) {
+        setError(ENTRY_ERRORS.badTime);
+        return null;
+      }
+    }
+    let hours = draft.hours;
+    const fromTimes = durationHoursFromTimes(start, end);
+    if (fromTimes != null) {
+      if (fromTimes <= 0) {
+        setError(ENTRY_ERRORS.endBeforeStart);
+        return null;
+      }
+      hours = fromTimes;
+    } else {
+      const parsedHours = parseHoursInput(hoursHm);
+      if (parsedHours == null || parsedHours <= 0) {
+        setError(ENTRY_ERRORS.badDuration);
+        return null;
+      }
+      hours = parsedHours;
+    }
+    return {
+      ...draft,
+      start_time: start,
+      end_time: end,
+      hours: Math.round(hours * 100) / 100,
+    };
+  }
+
   async function save() {
+    const payload = buildPayload();
+    if (!payload) return;
     setSaving(true);
     setError("");
     try {
-      await onSave(entry.id, draft);
+      await onSave(entry.id, payload);
       setEditing(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -290,6 +367,8 @@ function EntryRow({
   }
 
   function requestEdit() {
+    applyEntryFields(entry);
+    setError("");
     if (viewerIsAdmin && !isWithinEditWindow(entry.entry_date)) {
       setConfirmOpen(true);
       return;
@@ -298,7 +377,8 @@ function EntryRow({
   }
 
   function requestSave() {
-    if (viewerIsAdmin && !isWithinEditWindow(draft.entry_date)) {
+    const dateForWindow = draft.entry_date;
+    if (viewerIsAdmin && !isWithinEditWindow(dateForWindow)) {
       setConfirmOpen(true);
       return;
     }
@@ -407,36 +487,40 @@ function EntryRow({
           <td>
             <input
               className={styles.cellInput}
-              value={draft.start_time?.slice(0, 5) ?? ""}
+              value={startHm}
               placeholder="HH:MM"
               onChange={(e) =>
-                setDraft((d) => ({
-                  ...d,
-                  start_time: e.target.value ? `${e.target.value}:00`.slice(0, 8) : null,
-                }))
+                applyTimeFields(
+                  { startHm: e.target.value, endHm, hoursHm },
+                  "start",
+                )
               }
             />
           </td>
           <td>
             <input
               className={styles.cellInput}
-              value={draft.end_time?.slice(0, 5) ?? ""}
+              value={endHm}
               placeholder="HH:MM"
               onChange={(e) =>
-                setDraft((d) => ({
-                  ...d,
-                  end_time: e.target.value ? `${e.target.value}:00`.slice(0, 8) : null,
-                }))
+                applyTimeFields(
+                  { startHm, endHm: e.target.value, hoursHm },
+                  "end",
+                )
               }
             />
           </td>
           <td>
             <input
               className={styles.cellInput}
-              type="number"
-              step="0.25"
-              value={draft.hours}
-              onChange={(e) => setDraft((d) => ({ ...d, hours: Number(e.target.value) }))}
+              value={hoursHm}
+              placeholder="H:MM"
+              onChange={(e) =>
+                applyTimeFields(
+                  { startHm, endHm, hoursHm: e.target.value },
+                  "duration",
+                )
+              }
             />
           </td>
         </>
@@ -445,10 +529,14 @@ function EntryRow({
         <td>
           <input
             className={styles.cellInput}
-            type="number"
-            step="0.25"
-            value={draft.hours}
-            onChange={(e) => setDraft((d) => ({ ...d, hours: Number(e.target.value) }))}
+            value={hoursHm}
+            placeholder="H:MM"
+            onChange={(e) =>
+              applyTimeFields(
+                { startHm, endHm, hoursHm: e.target.value },
+                "duration",
+              )
+            }
           />
         </td>
       )}
@@ -456,7 +544,15 @@ function EntryRow({
         <button type="button" className={styles.saveBtn} disabled={saving} onClick={requestSave}>
           {saving ? "…" : "Save"}
         </button>{" "}
-        <button type="button" className={styles.cancelBtn} onClick={() => setEditing(false)}>
+        <button
+          type="button"
+          className={styles.cancelBtn}
+          onClick={() => {
+            applyEntryFields(entry);
+            setEditing(false);
+            setError("");
+          }}
+        >
           Cancel
         </button>
         <OutOfWindowConfirm
@@ -465,7 +561,8 @@ function EntryRow({
           onCancel={() => setConfirmOpen(false)}
           onConfirm={() => {
             setConfirmOpen(false);
-            void save();
+            if (editing) void save();
+            else setEditing(true);
           }}
         />
       </td>

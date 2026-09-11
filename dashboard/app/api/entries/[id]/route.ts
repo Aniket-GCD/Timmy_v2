@@ -6,9 +6,10 @@ import {
   entriesTable,
   fetchClientsFromSupabase,
   fetchJobCodesFromSupabase,
+  requireRepresentationRow,
   supabaseFetch,
 } from "@/lib/supabase-server";
-import { validateEntryWrite } from "@/lib/validate-entry";
+import { ENTRY_ERRORS, validateEntryWrite } from "@/lib/validate-entry";
 import type { EntryWritePayload } from "@/lib/types/time-entry";
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -26,18 +27,18 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       `${table}?id=eq.${id}&select=*`,
     );
     if (!existing.length) {
-      return NextResponse.json({ error: "Entry not found" }, { status: 404 });
+      return NextResponse.json({ error: ENTRY_ERRORS.notFound }, { status: 404 });
     }
     const current = normalizeSupabaseRow(existing[0]);
 
     if (!auth.user.is_admin && current.staff_name !== auth.user.staff_name) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ error: ENTRY_ERRORS.ownOnly }, { status: 403 });
     }
 
     const newDate = (body.entry_date || current.entry_date).slice(0, 10);
     if (!auth.user.is_admin) {
       if (!isWithinEditWindow(current.entry_date) || !isWithinEditWindow(newDate)) {
-        return NextResponse.json({ error: "Entry is outside the edit window" }, { status: 403 });
+        return NextResponse.json({ error: ENTRY_ERRORS.lockedDate }, { status: 403 });
       }
     }
 
@@ -69,7 +70,14 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         prefer: "return=representation",
       },
     );
-    return NextResponse.json(normalizeSupabaseRow(rows[0]));
+    try {
+      return NextResponse.json(normalizeSupabaseRow(requireRepresentationRow(rows)));
+    } catch (e) {
+      if (e instanceof Error && e.message === "EMPTY_WRITE_REPRESENTATION") {
+        return NextResponse.json({ error: ENTRY_ERRORS.saveFailed }, { status: 502 });
+      }
+      throw e;
+    }
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }

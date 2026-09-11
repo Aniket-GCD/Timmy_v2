@@ -62,14 +62,14 @@ export async function requireDashboardUser(): Promise<AuthResult> {
     const supabase = await createClient();
     const { data, error } = await supabase.auth.getUser();
     if (error || !data.user?.email) {
-      return { ok: false, status: 401, error: "Sign in required" };
+      return { ok: false, status: 401, error: "Please sign in to continue." };
     }
     const employee = await lookupEmployeeByEmail(data.user.email);
     if (!employee) {
       return {
         ok: false,
         status: 403,
-        error: "This email is not on the Timmy employee roster",
+        error: "This email is not on the Timmy employee list. Ask an admin to add you.",
       };
     }
     return {
@@ -95,7 +95,7 @@ export function resolveStaffScope(
   const requested = (requestedStaff ?? "").trim();
   if (!user.is_admin) {
     if (requested && requested !== user.staff_name) {
-      return { staffFilter: user.staff_name, error: "Forbidden" };
+      return { staffFilter: user.staff_name, error: "You can only view your own time entries." };
     }
     return { staffFilter: user.staff_name };
   }

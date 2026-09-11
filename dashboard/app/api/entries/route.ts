@@ -6,9 +6,10 @@ import {
   entriesTable,
   fetchClientsFromSupabase,
   fetchJobCodesFromSupabase,
+  requireRepresentationRow,
   supabaseFetch,
 } from "@/lib/supabase-server";
-import { validateEntryWrite } from "@/lib/validate-entry";
+import { ENTRY_ERRORS, validateEntryWrite } from "@/lib/validate-entry";
 import type { EntryWritePayload } from "@/lib/types/time-entry";
 
 export async function GET(req: NextRequest) {
@@ -44,11 +45,11 @@ export async function POST(req: NextRequest) {
       ? body.staff_name.trim()
       : auth.user.staff_name;
     if (!auth.user.is_admin && body.staff_name && body.staff_name.trim() !== auth.user.staff_name) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ error: ENTRY_ERRORS.ownOnly }, { status: 403 });
     }
 
     if (!auth.user.is_admin && !isWithinEditWindow(body.entry_date)) {
-      return NextResponse.json({ error: "Entry is outside the edit window" }, { status: 403 });
+      return NextResponse.json({ error: ENTRY_ERRORS.lockedDate }, { status: 403 });
     }
 
     const clients = await fetchClientsFromSupabase();
@@ -78,7 +79,14 @@ export async function POST(req: NextRequest) {
       }),
       prefer: "return=representation",
     });
-    return NextResponse.json(normalizeSupabaseRow(rows[0]));
+    try {
+      return NextResponse.json(normalizeSupabaseRow(requireRepresentationRow(rows)));
+    } catch (e) {
+      if (e instanceof Error && e.message === "EMPTY_WRITE_REPRESENTATION") {
+        return NextResponse.json({ error: ENTRY_ERRORS.saveFailed }, { status: 502 });
+      }
+      throw e;
+    }
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }

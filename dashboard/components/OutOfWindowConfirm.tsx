@@ -13,8 +13,8 @@ export function OutOfWindowConfirm({ open, mode, onConfirm, onCancel }: Props) {
   if (!open) return null;
   const message =
     mode === "create"
-      ? "You are about to add an entry outside the pay-period edit window. Continue?"
-      : "You are about to edit outside the pay-period edit window. Continue?";
+      ? "This date is outside the normal editing period. Add it anyway?"
+      : "This date is outside the normal editing period. Save anyway?";
 
   return (
     <div className={styles.backdrop} role="presentation" onClick={onCancel}>
@@ -26,7 +26,7 @@ export function OutOfWindowConfirm({ open, mode, onConfirm, onCancel }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <h3 id="out-of-window-title" className={styles.title}>
-          Outside edit window
+          Outside normal editing period
         </h3>
         <p className={styles.body}>{message}</p>
         <div className={styles.actions}>
