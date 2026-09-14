@@ -248,12 +248,26 @@ export function EntryEditorModal({
               />
             </label>
           </div>
+          <p className={styles.hint}>
+            Leave Start and End blank to save duration only.{" "}
+            <button
+              type="button"
+              className={styles.linkish}
+              onClick={() => {
+                setStartHm("");
+                setEndHm("");
+                setDraft((d) => ({ ...d, start_time: null, end_time: null }));
+              }}
+            >
+              Clear times
+            </button>
+          </p>
 
           <label className={styles.field}>
             <span>Client</span>
             <Combobox
               value={draft.client}
-              options={clients.map((c) => c.name)}
+              options={Array.from(new Set(clients.map((c) => c.name)))}
               onChange={(client) => setDraft((d) => ({ ...d, client }))}
               placeholder="Select client"
             />

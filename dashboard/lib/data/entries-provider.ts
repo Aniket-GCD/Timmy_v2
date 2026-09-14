@@ -1,5 +1,6 @@
 import { humanizeApiError } from "../humanize-api-error";
 import { validateEntryWrite, ENTRY_ERRORS } from "../validate-entry";
+import { resolveEntryOffice } from "../resolve-entry-office";
 import { createMockLiveSessions, createMockSeed, MOCK_EMPLOYEES, MOCK_STAFF } from "../mock-data";
 import { MOCK_CLIENTS, MOCK_JOB_CODES } from "../mock-reference";
 import type { CurrentlyWorking } from "../types/currently-working";
@@ -9,6 +10,7 @@ import type { EntryWritePayload, TimeEntry } from "../types/time-entry";
 
 export type FetchEntriesParams = {
   staffName?: string;
+  office?: string;
   dateFrom: string;
   dateTo: string;
 };
@@ -37,10 +39,12 @@ export function resetMockStore(): void {
 }
 
 export const mockProvider: EntriesProvider = {
-  async fetchEntries({ staffName, dateFrom, dateTo }) {
+  async fetchEntries({ staffName, office, dateFrom, dateTo }) {
+    const officeNorm = (office || "").toUpperCase();
     return getMockStore().filter(
       (e) =>
         (!staffName || e.staff_name === staffName) &&
+        (!officeNorm || e.office.toUpperCase() === officeNorm) &&
         e.entry_date >= dateFrom &&
         e.entry_date <= dateTo,
     );
@@ -68,10 +72,11 @@ export const mockProvider: EntriesProvider = {
     );
     if (!result.ok) throw new Error(result.error);
     const job = MOCK_JOB_CODES.find((j) => j.job_code === result.payload.job_code)!;
+    const office = resolveEntryOffice(result.payload.client, MOCK_CLIENTS, MOCK_STAFF.office);
     const entry: TimeEntry = {
       id: mockNextId++,
       staff_name: payload.staff_name ?? MOCK_STAFF.staff_name,
-      office: MOCK_STAFF.office,
+      office,
       account: job.account,
       source_file: "timmy-dashboard-mock",
       ...result.payload,
@@ -91,10 +96,16 @@ export const mockProvider: EntriesProvider = {
     const idx = store.findIndex((e) => e.id === id);
     if (idx < 0) throw new Error(ENTRY_ERRORS.notFound);
     const job = MOCK_JOB_CODES.find((j) => j.job_code === result.payload.job_code)!;
+    const office = resolveEntryOffice(
+      result.payload.client,
+      MOCK_CLIENTS,
+      store[idx].office || MOCK_STAFF.office,
+    );
     store[idx] = {
       ...store[idx],
       ...result.payload,
       account: job.account,
+      office,
       staff_name: payload.staff_name ?? store[idx].staff_name,
     };
     return store[idx];
@@ -116,6 +127,7 @@ const liveProvider: EntriesProvider = {
       to: params.dateTo,
     });
     if (params.staffName) q.set("staff", params.staffName);
+    if (params.office) q.set("office", params.office);
     const res = await fetch(`/api/entries?${q}`);
     if (!res.ok) throw new Error(humanizeApiError(await res.text()));
     return res.json();

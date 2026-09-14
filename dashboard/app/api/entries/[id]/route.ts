@@ -10,6 +10,7 @@ import {
   supabaseFetch,
 } from "@/lib/supabase-server";
 import { ENTRY_ERRORS, validateEntryWrite } from "@/lib/validate-entry";
+import { resolveEntryOffice } from "@/lib/resolve-entry-office";
 import type { EntryWritePayload } from "@/lib/types/time-entry";
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -54,10 +55,15 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     });
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
 
+    const office = resolveEntryOffice(
+      result.payload.client,
+      clients,
+      current.office || auth.user.office,
+    );
     const entry = {
       id: Number(id),
       staff_name: targetStaff,
-      office: current.office || auth.user.office,
+      office,
       ...result.payload,
       account: result.account,
       source_file: "timmy-dashboard",

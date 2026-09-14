@@ -56,6 +56,10 @@ With Table Editor open on `time_entries_timmy_v2`:
 4. Non-admin → only self; out-of-window Edit disabled; create on locked date ignored.
 5. Admin out-of-window edit → confirm dialog → save succeeds.
 6. Non-admin spoof via API (wrong `staff_name`) → 403.
+7. Admin **Office** filter GCD/MH → entries and client picker narrow; create on MH client stores `office=MH`.
+8. Calendar client search finds names beyond the first 12; **Clear times** + duration-only save works.
+9. After MH CSV import, MH clients appear in the picker when Office=MH.
+10. **Remap Unassigned** updates placeholder rows to the real client name.
 
 ### Hydration warning (Grammarly)
 
@@ -66,17 +70,45 @@ Console hydration mismatches that add `data-gr-ext-installed` / `data-new-gr-c-s
 1. User opens the dashboard → `/login`
 2. Enters work Outlook email → Supabase emails a one-time link
 3. Click link → session cookie → app loads `employees` by `lower(email)`
-4. **`is_admin`** → firm view + Employee dropdown; otherwise only that person’s hours
+4. **`is_admin`** → firm view + Employee + Office dropdowns; otherwise only that person’s hours
 
-Staff never need Supabase console access. You maintain `employees.email` / `is_admin` in SQL.
+Staff never need Supabase console access. You maintain `employees.email` / `is_admin` / `office` via CSV sync (below).
 
 ### Supabase Auth setup (you)
 
 1. Authentication → Providers → **Email** enabled (magic link)
 2. URL configuration → Redirect URLs include:
    - `http://localhost:4321/auth/callback`
-   - `https://YOUR-VERCEL-HOST/auth/callback`
-3. Site URL = your production dashboard URL
+   - `https://dashboard-gcd1.vercel.app/auth/callback`
+3. Site URL = your production dashboard URL (`https://dashboard-gcd1.vercel.app`)
+
+### Magic link email branding (not in app code)
+
+Emails say “Supabase” until you change them in the Supabase project:
+
+1. Authentication → Email Templates → Magic Link — edit **Subject** and body (e.g. “Sign in to Timmy Dashboard”).
+2. Project Settings → Authentication → SMTP (or custom SMTP) — set **Sender name** to `Timmy` / `GCD` and a from-address you own (e.g. `noreply@gcd.cpa`).
+
+### Multi-office roster sync (operators)
+
+From the **kit root** (uses `dashboard/.env.local` service role):
+
+```bash
+python scripts/sync_employees_from_csv.py --dry-run
+python scripts/sync_employees_from_csv.py
+
+python scripts/import_mh_clients_csv.py --dry-run
+python scripts/import_mh_clients_csv.py
+```
+
+Then in Supabase Table Editor: confirm `employees` has GCD + MH rows, and `clients` has MH names plus `Unassigned` for both offices.
+
+QBO read-only client refresh (optional, after OAuth secrets are set):
+
+```bash
+python scripts/sync_qbo_clients.py --dry-run
+python scripts/sync_qbo_clients.py
+```
 
 ## Env var names
 
@@ -97,11 +129,26 @@ Staff never need Supabase console access. You maintain `employees.email` / `is_a
 ## Features
 
 - Header: Timmy logo; name / Updated / Currently working (one person)
-- Admin-only Employee dropdown; others locked to self
+- Admin-only **Office** dropdown (All / GCD / MH) and **Employee** dropdown; others locked to self
+- Admin **Remap Unassigned** tool after QBO/CSV adds the real client name
 - Ranges: Today, Yesterday, This week, This/Last pay period (US Central)
 - Charts filter Time Entry Detail (day / client / job)
-- Table View / Calendar View
-- **Edits** write to `time_entries_timmy_v2` (client, job_code, notes/task, entry_date, start/end, hours, billable, account from job roster, `source_file=timmy-dashboard`)
+- Table View / Calendar View (client search returns up to 100 matches; duration-only saves supported)
+- **Edits** write to `time_entries_timmy_v2` (client, job_code, notes/task, entry_date, start/end, hours, billable, account from job roster, `office` from client, `source_file=timmy-dashboard`)
+
+### QBO client sync (kit root, read-only)
+
+```bash
+# In kit .env or environment (never NEXT_PUBLIC_):
+# QBO_CLIENT_ID=...
+# QBO_CLIENT_SECRET=...
+# QBO_COMPANIES=[{"office":"GCD","realm_id":"...","refresh_token":"..."}]
+
+python scripts/sync_qbo_clients.py --dry-run
+python scripts/sync_qbo_clients.py
+```
+
+Vercel dashboard env does not need QBO secrets for v1 (CLI sync). Add them later only if you schedule a server job.
 
 ### Who can edit
 

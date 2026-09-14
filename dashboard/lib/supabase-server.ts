@@ -159,9 +159,15 @@ export function currentlyWorkingTable() {
 
 export async function fetchClientsFromSupabase(): Promise<ClientOption[]> {
   const rows = await supabaseFetch<Array<Record<string, unknown>>>(
-    `${CLIENTS_TABLE}?select=name&order=name`,
+    `${CLIENTS_TABLE}?select=name,office,active&order=name`,
   );
-  return rows.map((r) => ({ name: String(r.name ?? r.display_name ?? "") })).filter((c) => c.name);
+  return rows
+    .filter((r) => r.active !== false)
+    .map((r) => ({
+      name: String(r.name ?? r.display_name ?? ""),
+      office: String(r.office ?? "GCD").toUpperCase() || "GCD",
+    }))
+    .filter((c) => c.name);
 }
 
 export async function fetchJobCodesFromSupabase(): Promise<JobCodeOption[]> {

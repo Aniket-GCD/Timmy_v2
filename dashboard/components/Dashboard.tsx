@@ -9,6 +9,7 @@ import { MetricCards } from "@/components/MetricCards";
 import { OutOfWindowConfirm } from "@/components/OutOfWindowConfirm";
 import { RangeToggle } from "@/components/RangeToggle";
 import rangeStyles from "@/components/RangeToggle.module.css";
+import { RemapUnassignedModal } from "@/components/RemapUnassignedModal";
 import { WeekCalendar } from "@/components/WeekCalendar";
 import { WeekChart } from "@/components/WeekChart";
 import {
@@ -72,10 +73,12 @@ export function Dashboard() {
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [detailView, setDetailView] = useState<DetailView>("detail");
   const [staffFilter, setStaffFilter] = useState("");
+  const [officeFilter, setOfficeFilter] = useState("");
   const [tick, setTick] = useState(0);
   const [editor, setEditor] = useState<EditorState>({ open: false });
   const [pendingCreate, setPendingCreate] = useState<EntryEditorDefaults | null>(null);
   const [createWarnOpen, setCreateWarnOpen] = useState(false);
+  const [remapOpen, setRemapOpen] = useState(false);
 
   const resolved = useMemo(() => resolveRange(range), [range]);
 
@@ -96,11 +99,13 @@ export function Dashboard() {
       if (showLoading) setLoading(true);
       try {
         const staffParam = me && !me.is_admin ? me.staff_name : staffFilter || undefined;
+        const officeParam = me?.is_admin && officeFilter ? officeFilter : undefined;
         const [rows, liveRows] = await Promise.all([
           provider.fetchEntries({
             dateFrom: resolved.dateFrom,
             dateTo: resolved.dateTo,
             staffName: staffParam,
+            office: officeParam,
           }),
           provider.fetchCurrentlyWorking(liveStaffName || undefined).catch(() => [] as CurrentlyWorking[]),
         ]);
@@ -113,7 +118,7 @@ export function Dashboard() {
         if (showLoading) setLoading(false);
       }
     },
-    [provider, resolved.dateFrom, resolved.dateTo, me, staffFilter, liveStaffName],
+    [provider, resolved.dateFrom, resolved.dateTo, me, staffFilter, officeFilter, liveStaffName],
   );
 
   useEffect(() => {
@@ -137,11 +142,13 @@ export function Dashboard() {
       setLoading(true);
       try {
         const staffParam = !me.is_admin ? me.staff_name : staffFilter || undefined;
+        const officeParam = me.is_admin && officeFilter ? officeFilter : undefined;
         const [rows, liveRows, roster, clientRows, jobRows] = await Promise.all([
           provider.fetchEntries({
             dateFrom: resolved.dateFrom,
             dateTo: resolved.dateTo,
             staffName: staffParam,
+            office: officeParam,
           }),
           provider.fetchCurrentlyWorking(liveStaffName || me.staff_name).catch(() => [] as CurrentlyWorking[]),
           provider.fetchEmployees().catch(() => [] as Employee[]),
@@ -158,7 +165,7 @@ export function Dashboard() {
         setLoading(false);
       }
     })();
-  }, [provider, resolved.dateFrom, resolved.dateTo, me, staffFilter, liveStaffName]);
+  }, [provider, resolved.dateFrom, resolved.dateTo, me, staffFilter, officeFilter, liveStaffName]);
 
   useEffect(() => {
     const id = window.setInterval(() => setTick((t) => t + 1), 30_000);
@@ -192,10 +199,21 @@ export function Dashboard() {
 
   const staffOptions = useMemo(() => {
     const names = new Set<string>();
-    for (const e of employees) if (e.active && e.staff_name) names.add(e.staff_name);
+    const officeNorm = officeFilter.toUpperCase();
+    for (const e of employees) {
+      if (!e.active || !e.staff_name) continue;
+      if (officeNorm && e.office.toUpperCase() !== officeNorm) continue;
+      names.add(e.staff_name);
+    }
     for (const e of entries) if (e.staff_name) names.add(e.staff_name);
     return [...names].sort((a, b) => a.localeCompare(b));
-  }, [employees, entries]);
+  }, [employees, entries, officeFilter]);
+
+  const pickerClients = useMemo(() => {
+    const officeNorm = officeFilter.toUpperCase();
+    if (!officeNorm) return clients;
+    return clients.filter((c) => c.office.toUpperCase() === officeNorm);
+  }, [clients, officeFilter]);
 
   const scopedEntries = useMemo(() => {
     if (!me) return entries;
@@ -369,21 +387,38 @@ export function Dashboard() {
       <div className="section-head">
         <RangeToggle value={range} onChange={setRange} />
         {me?.is_admin ? (
-          <label className="staff-filter">
-            <span className="muted">Employee</span>
-            <select
-              value={staffFilter}
-              onChange={(e) => setStaffFilter(e.target.value)}
-              aria-label="Filter by employee"
-            >
-              <option value="">All staff</option>
-              {staffOptions.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <>
+            <label className="staff-filter">
+              <span className="muted">Office</span>
+              <select
+                value={officeFilter}
+                onChange={(e) => setOfficeFilter(e.target.value)}
+                aria-label="Filter by office"
+              >
+                <option value="">All offices</option>
+                <option value="GCD">GCD</option>
+                <option value="MH">MH</option>
+              </select>
+            </label>
+            <label className="staff-filter">
+              <span className="muted">Employee</span>
+              <select
+                value={staffFilter}
+                onChange={(e) => setStaffFilter(e.target.value)}
+                aria-label="Filter by employee"
+              >
+                <option value="">All staff</option>
+                {staffOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="button" className="chip" onClick={() => setRemapOpen(true)}>
+              Remap Unassigned
+            </button>
+          </>
         ) : null}
       </div>
 
@@ -473,7 +508,7 @@ export function Dashboard() {
                 multiDay={multiDay || new Set(tableEntries.map((e) => e.entry_date)).size > 1}
                 viewerStaffName={me?.staff_name ?? ""}
                 viewerIsAdmin={Boolean(me?.is_admin)}
-                clients={clients}
+                clients={pickerClients}
                 jobCodes={jobCodes}
                 onSave={handleSave}
               />
@@ -501,10 +536,21 @@ export function Dashboard() {
         defaults={editor.open ? editor.defaults : null}
         staffName={editor.open ? editor.staffName : ""}
         viewerIsAdmin={Boolean(me?.is_admin)}
-        clients={clients}
+        clients={pickerClients}
         jobCodes={jobCodes}
         onClose={() => setEditor({ open: false })}
         onSave={handleEditorSave}
+      />
+
+      <RemapUnassignedModal
+        open={remapOpen}
+        clients={clients}
+        defaultOffice={officeFilter || "GCD"}
+        onClose={() => setRemapOpen(false)}
+        onDone={() => {
+          setRemapOpen(false);
+          void loadPollable(true);
+        }}
       />
 
       <OutOfWindowConfirm

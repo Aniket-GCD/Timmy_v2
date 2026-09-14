@@ -453,7 +453,7 @@ function EntryRow({
       <td className={styles.indent}>
         <Combobox
           value={draft.client}
-          options={clients.map((c) => c.name)}
+          options={Array.from(new Set(clients.map((c) => c.name)))}
           onChange={(client) => setDraft((d) => ({ ...d, client }))}
         />
         {error ? <div className={styles.error}>{error}</div> : null}

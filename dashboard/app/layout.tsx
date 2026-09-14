@@ -15,8 +15,8 @@ const ptSerif = PT_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "GCD · Firm hours",
-  description: "Founder admin view of submitted Timmy hours across the firm.",
+  title: "Timmy Dashboard",
+  description: "Firm hours dashboard for Timmy time entries across GCD and MH.",
 };
 
 export default function RootLayout({

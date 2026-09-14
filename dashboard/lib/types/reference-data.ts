@@ -1,4 +1,4 @@
-export type ClientOption = { name: string };
+export type ClientOption = { name: string; office: string };
 
 export type JobCodeOption = {
   job_code: string;

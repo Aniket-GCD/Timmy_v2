@@ -10,6 +10,7 @@ import {
   supabaseFetch,
 } from "@/lib/supabase-server";
 import { ENTRY_ERRORS, validateEntryWrite } from "@/lib/validate-entry";
+import { resolveEntryOffice } from "@/lib/resolve-entry-office";
 import type { EntryWritePayload } from "@/lib/types/time-entry";
 
 export async function GET(req: NextRequest) {
@@ -20,6 +21,7 @@ export async function GET(req: NextRequest) {
     const from = req.nextUrl.searchParams.get("from") ?? "";
     const to = req.nextUrl.searchParams.get("to") ?? "";
     const staffParam = req.nextUrl.searchParams.get("staff")?.trim() ?? "";
+    const officeParam = (req.nextUrl.searchParams.get("office")?.trim() ?? "").toUpperCase();
     const scope = resolveStaffScope(auth.user, staffParam);
     if (scope.error) return NextResponse.json({ error: scope.error }, { status: 403 });
 
@@ -27,6 +29,9 @@ export async function GET(req: NextRequest) {
     const filters = [`entry_date=gte.${from}`, `entry_date=lte.${to}`, "order=entry_date,start_time"];
     if (scope.staffFilter) {
       filters.unshift(`staff_name=eq.${encodeURIComponent(scope.staffFilter)}`);
+    }
+    if (officeParam === "GCD" || officeParam === "MH") {
+      filters.unshift(`office=eq.${officeParam}`);
     }
     const rows = await supabaseFetch<Array<Record<string, unknown>>>(`${table}?${filters.join("&")}`);
     return NextResponse.json(rows.map(normalizeSupabaseRow));
@@ -59,12 +64,13 @@ export async function POST(req: NextRequest) {
     });
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
 
+    const office = resolveEntryOffice(result.payload.client, clients, auth.user.office);
     const table = entriesTable();
     const rows = await supabaseFetch<Array<Record<string, unknown>>>(table, {
       method: "POST",
       body: JSON.stringify({
         staff_name: targetStaff,
-        office: auth.user.office,
+        office,
         client: result.payload.client,
         job_code: result.payload.job_code,
         account: result.account,

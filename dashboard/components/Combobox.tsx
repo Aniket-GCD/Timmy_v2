@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import styles from "./Combobox.module.css";
 
 type Props = {
@@ -11,14 +11,21 @@ type Props = {
   placeholder?: string;
 };
 
+const EMPTY_PREVIEW = 25;
+const SEARCH_CAP = 100;
+
 export function Combobox({ value, options, onChange, disabled, placeholder }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState(value);
 
+  useEffect(() => {
+    setQuery(value);
+  }, [value]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return options.slice(0, 12);
-    return options.filter((o) => o.toLowerCase().includes(q)).slice(0, 12);
+    if (!q) return options.slice(0, EMPTY_PREVIEW);
+    return options.filter((o) => o.toLowerCase().includes(q)).slice(0, SEARCH_CAP);
   }, [options, query]);
 
   return (
@@ -57,4 +64,11 @@ export function Combobox({ value, options, onChange, disabled, placeholder }: Pr
       )}
     </div>
   );
+}
+
+/** Pure helper for tests — mirrors Combobox filter rules. */
+export function filterComboboxOptions(options: string[], query: string): string[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return options.slice(0, EMPTY_PREVIEW);
+  return options.filter((o) => o.toLowerCase().includes(q)).slice(0, SEARCH_CAP);
 }

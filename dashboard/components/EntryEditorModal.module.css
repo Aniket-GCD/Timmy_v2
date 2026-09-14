@@ -49,6 +49,22 @@
   gap: 0.5rem;
 }
 
+.hint {
+  margin: -0.35rem 0 0.75rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.linkish {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--mysterious-mixture);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+
 .input {
   width: 100%;
   border: 1px solid var(--border);

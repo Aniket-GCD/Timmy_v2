@@ -1,16 +1,18 @@
 import type { ClientOption, JobCodeOption } from "./types/reference-data";
 
 export const MOCK_CLIENTS: ClientOption[] = [
-  { name: "Internal — Firm Admin" },
-  { name: "0969 Ocean View Road" },
-  { name: "Harris Family Trust" },
-  { name: "Greenfield Holdings LLC" },
-  { name: "Cedar Ridge Properties" },
-  { name: "Maple Street Dental" },
-  { name: "Summit Retail Group" },
-  { name: "Pinecrest HOA" },
-  { name: "Lakeside Medical PLLC" },
-  { name: "Northgate Construction" },
+  { name: "Internal — Firm Admin", office: "GCD" },
+  { name: "0969 Ocean View Road", office: "GCD" },
+  { name: "Harris Family Trust", office: "GCD" },
+  { name: "Greenfield Holdings LLC", office: "GCD" },
+  { name: "Cedar Ridge Properties", office: "GCD" },
+  { name: "Maple Street Dental", office: "MH" },
+  { name: "Summit Retail Group", office: "MH" },
+  { name: "Pinecrest HOA", office: "MH" },
+  { name: "Lakeside Medical PLLC", office: "MH" },
+  { name: "Northgate Construction", office: "MH" },
+  { name: "Unassigned", office: "GCD" },
+  { name: "Unassigned", office: "MH" },
 ];
 
 export const MOCK_JOB_CODES: JobCodeOption[] = [
