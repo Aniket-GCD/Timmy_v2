@@ -58,7 +58,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     const office = resolveEntryOffice(
       result.payload.client,
       clients,
-      current.office || auth.user.office,
+      body.office || current.office || auth.user.office,
     );
     const entry = {
       id: Number(id),

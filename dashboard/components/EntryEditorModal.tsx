@@ -22,6 +22,7 @@ export type EntryEditorDefaults = {
   start_time?: string | null;
   end_time?: string | null;
   hours?: number;
+  office?: string;
 };
 
 type Props = {
@@ -31,11 +32,18 @@ type Props = {
   defaults?: EntryEditorDefaults | null;
   staffName: string;
   viewerIsAdmin: boolean;
+  /** Full firm client list; filtered in-modal by selected office. */
   clients: ClientOption[];
   jobCodes: JobCodeOption[];
+  defaultOffice?: string;
   onClose: () => void;
   onSave: (payload: EntryWritePayload) => Promise<void>;
 };
+
+function normalizeOffice(raw: string | undefined | null, fallback = "GCD"): "GCD" | "MH" {
+  const o = (raw || fallback).trim().toUpperCase();
+  return o === "MH" ? "MH" : "GCD";
+}
 
 function emptyDraft(defaults?: EntryEditorDefaults | null): EntryWritePayload {
   return {
@@ -47,6 +55,7 @@ function emptyDraft(defaults?: EntryEditorDefaults | null): EntryWritePayload {
     end_time: defaults?.end_time ?? null,
     hours: defaults?.hours ?? 1,
     billable: true,
+    office: normalizeOffice(defaults?.office),
   };
 }
 
@@ -60,6 +69,7 @@ function fromEntry(entry: TimeEntry): EntryWritePayload {
     end_time: entry.end_time,
     hours: entry.hours,
     billable: entry.billable,
+    office: normalizeOffice(entry.office),
   };
 }
 
@@ -72,10 +82,12 @@ export function EntryEditorModal({
   viewerIsAdmin,
   clients,
   jobCodes,
+  defaultOffice = "GCD",
   onClose,
   onSave,
 }: Props) {
   const [draft, setDraft] = useState<EntryWritePayload>(emptyDraft(defaults));
+  const [office, setOffice] = useState<"GCD" | "MH">(normalizeOffice(defaults?.office, defaultOffice));
   const [startHm, setStartHm] = useState("");
   const [endHm, setEndHm] = useState("");
   const [hoursHm, setHoursHm] = useState("1:00");
@@ -85,17 +97,25 @@ export function EntryEditorModal({
 
   useEffect(() => {
     if (!open) return;
-    const next = mode === "edit" && entry ? fromEntry(entry) : emptyDraft(defaults);
-    setDraft(next);
+    const next = mode === "edit" && entry ? fromEntry(entry) : emptyDraft({
+      ...defaults,
+      office: defaults?.office || defaultOffice,
+    });
+    const nextOffice = normalizeOffice(next.office, defaultOffice);
+    setDraft({ ...next, office: nextOffice });
+    setOffice(nextOffice);
     setStartHm(displayHm(next.start_time));
     setEndHm(displayHm(next.end_time));
     setHoursHm(formatHoursHM(next.hours));
     setError("");
     setSaving(false);
     setConfirmOpen(false);
-  }, [open, mode, entry, defaults]);
+  }, [open, mode, entry, defaults, defaultOffice]);
 
   if (!open) return null;
+
+  const officeClients = clients.filter((c) => c.office.toUpperCase() === office);
+  const clientNames = Array.from(new Set(officeClients.map((c) => c.name)));
 
   function applyTimeFields(
     next: { startHm: string; endHm: string; hoursHm: string },
@@ -113,6 +133,20 @@ export function EntryEditorModal({
       end_time: end,
       hours: r.hours != null && r.hours > 0 ? r.hours : d.hours,
     }));
+  }
+
+  function onOfficeChange(next: "GCD" | "MH") {
+    setOffice(next);
+    setDraft((d) => {
+      const stillValid = clients.some(
+        (c) => c.name === d.client && c.office.toUpperCase() === next,
+      );
+      return {
+        ...d,
+        office: next,
+        client: stillValid ? d.client : "",
+      };
+    });
   }
 
   async function doSave() {
@@ -155,8 +189,14 @@ export function EntryEditorModal({
         }
         hours = parsedHours;
       }
+      if (!clientNames.includes(draft.client)) {
+        setError(ENTRY_ERRORS.client);
+        setSaving(false);
+        return;
+      }
       const payload: EntryWritePayload = {
         ...draft,
+        office,
         start_time: start,
         end_time: end,
         hours: Math.round(hours * 100) / 100,
@@ -193,6 +233,19 @@ export function EntryEditorModal({
             {mode === "create" ? "Add time entry" : "Edit time entry"}
           </h3>
           <p className={styles.staff}>Staff: {staffName}</p>
+
+          <label className={styles.field}>
+            <span>Office</span>
+            <select
+              className={styles.input}
+              value={office}
+              onChange={(e) => onOfficeChange(e.target.value === "MH" ? "MH" : "GCD")}
+              aria-label="Office for this entry"
+            >
+              <option value="GCD">GCD</option>
+              <option value="MH">MH</option>
+            </select>
+          </label>
 
           <label className={styles.field}>
             <span>Date</span>
@@ -267,7 +320,7 @@ export function EntryEditorModal({
             <span>Client</span>
             <Combobox
               value={draft.client}
-              options={Array.from(new Set(clients.map((c) => c.name)))}
+              options={clientNames}
               onChange={(client) => setDraft((d) => ({ ...d, client }))}
               placeholder="Select client"
             />

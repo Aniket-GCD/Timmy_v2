@@ -302,7 +302,10 @@ export function Dashboard() {
     setEditor({
       open: true,
       mode: "create",
-      defaults,
+      defaults: {
+        ...defaults,
+        office: defaults.office || officeFilter || me.office || "GCD",
+      },
       staffName: calendarStaff,
     });
   }
@@ -318,6 +321,7 @@ export function Dashboard() {
       start_time: req.start_time,
       end_time: req.end_time,
       hours: 1,
+      office: officeFilter || me.office || "GCD",
     };
     if (me.is_admin && !isWithinEditWindow(req.entry_date)) {
       setPendingCreate(defaults);
@@ -536,7 +540,8 @@ export function Dashboard() {
         defaults={editor.open ? editor.defaults : null}
         staffName={editor.open ? editor.staffName : ""}
         viewerIsAdmin={Boolean(me?.is_admin)}
-        clients={pickerClients}
+        clients={clients}
+        defaultOffice={officeFilter || me?.office || "GCD"}
         jobCodes={jobCodes}
         onClose={() => setEditor({ open: false })}
         onSave={handleEditorSave}

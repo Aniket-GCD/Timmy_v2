@@ -64,7 +64,11 @@ export async function POST(req: NextRequest) {
     });
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
 
-    const office = resolveEntryOffice(result.payload.client, clients, auth.user.office);
+    const office = resolveEntryOffice(
+      result.payload.client,
+      clients,
+      body.office || auth.user.office,
+    );
     const table = entriesTable();
     const rows = await supabaseFetch<Array<Record<string, unknown>>>(table, {
       method: "POST",

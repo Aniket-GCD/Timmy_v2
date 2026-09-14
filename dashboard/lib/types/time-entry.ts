@@ -28,6 +28,8 @@ export type EntryWritePayload = {
   end_time: string | null;
   hours: number;
   billable: boolean;
+  /** Optional; server still resolves from client when possible. */
+  office?: string;
 };
 
 export function isAdminEntry(entry: Pick<TimeEntry, "job_code">): boolean {
