@@ -97,10 +97,16 @@ export function EntryEditorModal({
 
   useEffect(() => {
     if (!open) return;
-    const next = mode === "edit" && entry ? fromEntry(entry) : emptyDraft({
-      ...defaults,
-      office: defaults?.office || defaultOffice,
-    });
+    const next =
+      mode === "edit" && entry
+        ? fromEntry(entry)
+        : emptyDraft({
+            entry_date: defaults?.entry_date ?? "",
+            start_time: defaults?.start_time,
+            end_time: defaults?.end_time,
+            hours: defaults?.hours,
+            office: defaults?.office || defaultOffice,
+          });
     const nextOffice = normalizeOffice(next.office, defaultOffice);
     setDraft({ ...next, office: nextOffice });
     setOffice(nextOffice);

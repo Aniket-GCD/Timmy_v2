@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { humanizeApiError } from "./humanize-api-error";
 import { ENTRY_ERRORS, validateEntryWrite } from "./validate-entry";
 
-const clients = [{ name: "0969 Ocean View Road" }];
+const clients = [{ name: "0969 Ocean View Road", office: "GCD" }];
 const jobCodes = [{ job_code: "Bookkeeping", account: "Accounting Services:Hourly" }];
 
 const base = {
