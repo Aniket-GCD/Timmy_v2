@@ -64,7 +64,7 @@ export function timeToMinutes(time: string): number {
 /** HH:MM:SS from minutes since midnight, wrapped into 0..24h. */
 export function minutesToTime(totalMinutes: number): string {
   const day = 24 * 60;
-  let mins = ((Math.round(totalMinutes) % day) + day) % day;
+  const mins = ((Math.round(totalMinutes) % day) + day) % day;
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00`;
