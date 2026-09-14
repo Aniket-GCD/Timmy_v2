@@ -157,17 +157,29 @@ export function currentlyWorkingTable() {
   return CURRENTLY_WORKING_TABLE;
 }
 
+const POSTGREST_PAGE_SIZE = 1000;
+
 export async function fetchClientsFromSupabase(): Promise<ClientOption[]> {
-  const rows = await supabaseFetch<Array<Record<string, unknown>>>(
-    `${CLIENTS_TABLE}?select=name,office,active&order=name`,
-  );
-  return rows
-    .filter((r) => r.active !== false)
-    .map((r) => ({
-      name: String(r.name ?? r.display_name ?? ""),
-      office: String(r.office ?? "GCD").toUpperCase() || "GCD",
-    }))
-    .filter((c) => c.name);
+  const all: ClientOption[] = [];
+  let offset = 0;
+  for (;;) {
+    const rows = await supabaseFetch<Array<Record<string, unknown>>>(
+      `${CLIENTS_TABLE}?select=name,office,active&order=name&limit=${POSTGREST_PAGE_SIZE}&offset=${offset}`,
+    );
+    if (!Array.isArray(rows) || rows.length === 0) break;
+    for (const r of rows) {
+      if (r.active === false) continue;
+      const name = String(r.name ?? r.display_name ?? "").trim();
+      if (!name) continue;
+      all.push({
+        name,
+        office: String(r.office ?? "GCD").toUpperCase() || "GCD",
+      });
+    }
+    if (rows.length < POSTGREST_PAGE_SIZE) break;
+    offset += POSTGREST_PAGE_SIZE;
+  }
+  return all;
 }
 
 export async function fetchJobCodesFromSupabase(): Promise<JobCodeOption[]> {

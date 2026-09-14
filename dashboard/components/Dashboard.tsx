@@ -139,11 +139,29 @@ export function Dashboard() {
   useEffect(() => {
     if (!me) return;
     void (async () => {
+      try {
+        const [roster, clientRows, jobRows] = await Promise.all([
+          provider.fetchEmployees().catch(() => [] as Employee[]),
+          provider.fetchClients().catch(() => [] as ClientOption[]),
+          provider.fetchJobCodes().catch(() => [] as JobCodeOption[]),
+        ]);
+        setEmployees(roster);
+        setClients(clientRows);
+        setJobCodes(jobRows);
+      } catch {
+        /* keep last */
+      }
+    })();
+  }, [provider, me]);
+
+  useEffect(() => {
+    if (!me) return;
+    void (async () => {
       setLoading(true);
       try {
         const staffParam = !me.is_admin ? me.staff_name : staffFilter || undefined;
         const officeParam = me.is_admin && officeFilter ? officeFilter : undefined;
-        const [rows, liveRows, roster, clientRows, jobRows] = await Promise.all([
+        const [rows, liveRows] = await Promise.all([
           provider.fetchEntries({
             dateFrom: resolved.dateFrom,
             dateTo: resolved.dateTo,
@@ -151,15 +169,9 @@ export function Dashboard() {
             office: officeParam,
           }),
           provider.fetchCurrentlyWorking(liveStaffName || me.staff_name).catch(() => [] as CurrentlyWorking[]),
-          provider.fetchEmployees().catch(() => [] as Employee[]),
-          provider.fetchClients().catch(() => [] as ClientOption[]),
-          provider.fetchJobCodes().catch(() => [] as JobCodeOption[]),
         ]);
         setEntries(rows);
         setLive(liveRows);
-        setEmployees(roster);
-        setClients(clientRows);
-        setJobCodes(jobRows);
         setUpdatedAt(new Date());
       } finally {
         setLoading(false);
@@ -208,12 +220,6 @@ export function Dashboard() {
     for (const e of entries) if (e.staff_name) names.add(e.staff_name);
     return [...names].sort((a, b) => a.localeCompare(b));
   }, [employees, entries, officeFilter]);
-
-  const pickerClients = useMemo(() => {
-    const officeNorm = officeFilter.toUpperCase();
-    if (!officeNorm) return clients;
-    return clients.filter((c) => c.office.toUpperCase() === officeNorm);
-  }, [clients, officeFilter]);
 
   const scopedEntries = useMemo(() => {
     if (!me) return entries;
@@ -512,7 +518,7 @@ export function Dashboard() {
                 multiDay={multiDay || new Set(tableEntries.map((e) => e.entry_date)).size > 1}
                 viewerStaffName={me?.staff_name ?? ""}
                 viewerIsAdmin={Boolean(me?.is_admin)}
-                clients={pickerClients}
+                clients={clients}
                 jobCodes={jobCodes}
                 onSave={handleSave}
               />

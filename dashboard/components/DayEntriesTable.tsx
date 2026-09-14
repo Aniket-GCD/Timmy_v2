@@ -11,6 +11,7 @@ import {
   parseHoursInput,
   parseTimeInput,
 } from "@/lib/hours-format";
+import { clientLabels, formatClientLabelParts, parseClientLabel } from "@/lib/client-option-label";
 import { canDashboardMutateEntry, isWithinEditWindow } from "@/lib/pay-period";
 import { reconcileTimeFields, type TimeFieldTouched } from "@/lib/time-field-sync";
 import type { ClientOption, JobCodeOption } from "@/lib/types/reference-data";
@@ -44,6 +45,7 @@ function draftFromEntry(entry: TimeEntry): EntryWritePayload {
     end_time: entry.end_time,
     hours: entry.hours,
     billable: entry.billable,
+    office: entry.office,
   };
 }
 
@@ -448,13 +450,25 @@ function EntryRow({
     );
   }
 
+  const labeledOptions = useMemo(() => clientLabels(clients), [clients]);
+  const clientDisplay = draft.client
+    ? formatClientLabelParts(draft.office || entry.office || "GCD", draft.client)
+    : "";
+
   return (
     <tr className={styles.row}>
       <td className={styles.indent}>
         <Combobox
-          value={draft.client}
-          options={Array.from(new Set(clients.map((c) => c.name)))}
-          onChange={(client) => setDraft((d) => ({ ...d, client }))}
+          value={clientDisplay}
+          options={labeledOptions}
+          onChange={(label) => {
+            const parsed = parseClientLabel(label);
+            setDraft((d) => ({
+              ...d,
+              client: parsed.name,
+              office: parsed.office,
+            }));
+          }}
         />
         {error ? <div className={styles.error}>{error}</div> : null}
       </td>

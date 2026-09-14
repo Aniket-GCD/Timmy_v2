@@ -9,6 +9,7 @@ import {
   parseHoursInput,
   parseTimeInput,
 } from "@/lib/hours-format";
+import { clientLabels, formatClientLabelParts, parseClientLabel } from "@/lib/client-option-label";
 import { isWithinEditWindow } from "@/lib/pay-period";
 import { reconcileTimeFields, type TimeFieldTouched } from "@/lib/time-field-sync";
 import type { ClientOption, JobCodeOption } from "@/lib/types/reference-data";
@@ -120,8 +121,10 @@ export function EntryEditorModal({
 
   if (!open) return null;
 
-  const officeClients = clients.filter((c) => c.office.toUpperCase() === office);
-  const clientNames = Array.from(new Set(officeClients.map((c) => c.name)));
+  const labeledOptions = clientLabels(clients);
+  const clientDisplay = draft.client
+    ? formatClientLabelParts(office, draft.client)
+    : "";
 
   function applyTimeFields(
     next: { startHm: string; endHm: string; hoursHm: string },
@@ -143,16 +146,18 @@ export function EntryEditorModal({
 
   function onOfficeChange(next: "GCD" | "MH") {
     setOffice(next);
-    setDraft((d) => {
-      const stillValid = clients.some(
-        (c) => c.name === d.client && c.office.toUpperCase() === next,
-      );
-      return {
-        ...d,
-        office: next,
-        client: stillValid ? d.client : "",
-      };
-    });
+    setDraft((d) => ({ ...d, office: next }));
+  }
+
+  function onClientLabelChange(label: string) {
+    const parsed = parseClientLabel(label);
+    const nextOffice = parsed.office === "MH" ? "MH" : "GCD";
+    setOffice(nextOffice);
+    setDraft((d) => ({
+      ...d,
+      office: nextOffice,
+      client: parsed.name,
+    }));
   }
 
   async function doSave() {
@@ -195,7 +200,13 @@ export function EntryEditorModal({
         }
         hours = parsedHours;
       }
-      if (!clientNames.includes(draft.client)) {
+      if (
+        !clients.some(
+          (c) =>
+            c.name === draft.client &&
+            c.office.toUpperCase() === office,
+        )
+      ) {
         setError(ENTRY_ERRORS.client);
         setSaving(false);
         return;
@@ -325,10 +336,10 @@ export function EntryEditorModal({
           <label className={styles.field}>
             <span>Client</span>
             <Combobox
-              value={draft.client}
-              options={clientNames}
-              onChange={(client) => setDraft((d) => ({ ...d, client }))}
-              placeholder="Select client"
+              value={clientDisplay}
+              options={labeledOptions}
+              onChange={onClientLabelChange}
+              placeholder="Search office - client"
             />
           </label>
 

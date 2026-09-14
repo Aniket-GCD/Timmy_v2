@@ -11,8 +11,9 @@ type Props = {
   placeholder?: string;
 };
 
-const EMPTY_PREVIEW = 25;
-const SEARCH_CAP = 100;
+/** Empty open shows a short preview; search can return many hits from a large roster. */
+const EMPTY_PREVIEW = 40;
+const SEARCH_CAP = 500;
 
 export function Combobox({ value, options, onChange, disabled, placeholder }: Props) {
   const [open, setOpen] = useState(false);
