@@ -395,6 +395,11 @@ function EntryRow({
         ? "locked"
         : entryStatus;
 
+  const labeledOptions = useMemo(() => clientLabels(clients), [clients]);
+  const clientDisplay = draft.client
+    ? formatClientLabelParts(draft.office || entry.office || "GCD", draft.client)
+    : "";
+
   if (!editing) {
     return (
       <>
@@ -449,11 +454,6 @@ function EntryRow({
       </>
     );
   }
-
-  const labeledOptions = useMemo(() => clientLabels(clients), [clients]);
-  const clientDisplay = draft.client
-    ? formatClientLabelParts(draft.office || entry.office || "GCD", draft.client)
-    : "";
 
   return (
     <tr className={styles.row}>

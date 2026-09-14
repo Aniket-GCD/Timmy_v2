@@ -60,7 +60,7 @@ export function Dashboard() {
   const provider = useMemo(() => getEntriesProvider(), []);
   const [me, setMe] = useState<DashboardUser | null>(null);
   const [range, setRange] = useState<RangeKey>("today");
-  const [selectedDay, setSelectedDay] = useState(todayISO());
+  const [, setSelectedDay] = useState(todayISO());
   const [dayFilter, setDayFilter] = useState<string | null>(null);
   const [clientFilter, setClientFilter] = useState<string | null>(null);
   const [jobFilter, setJobFilter] = useState<string | null>(null);
@@ -203,10 +203,12 @@ export function Dashboard() {
   }, [loadPollable]);
 
   useEffect(() => {
+    // Reset focus when the range key changes only — not on every entries poll.
     setSelectedDay(defaultFocusDay(range, entries, todayISO()));
     setDayFilter(null);
     setClientFilter(null);
     setJobFilter(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- entries intentionally omitted
   }, [range]);
 
   const staffOptions = useMemo(() => {
