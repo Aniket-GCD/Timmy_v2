@@ -14,6 +14,7 @@ import { isWithinEditWindow } from "@/lib/pay-period";
 import { reconcileTimeFields, type TimeFieldTouched } from "@/lib/time-field-sync";
 import type { ClientOption, JobCodeOption } from "@/lib/types/reference-data";
 import type { EntryWritePayload, TimeEntry } from "@/lib/types/time-entry";
+import { isAdminJobCode } from "@/lib/types/time-entry";
 import { ENTRY_ERRORS } from "@/lib/validate-entry";
 import { OutOfWindowConfirm } from "./OutOfWindowConfirm";
 import styles from "./EntryEditorModal.module.css";
@@ -217,7 +218,7 @@ export function EntryEditorModal({
         start_time: start,
         end_time: end,
         hours: Math.round(hours * 100) / 100,
-        billable: draft.job_code === "Admin" ? false : draft.billable,
+        billable: isAdminJobCode(draft.job_code) ? false : draft.billable,
       };
       await onSave(payload);
       onClose();
@@ -352,7 +353,7 @@ export function EntryEditorModal({
                 setDraft((d) => ({
                   ...d,
                   job_code,
-                  billable: job_code === "Admin" ? false : d.billable,
+                  billable: isAdminJobCode(job_code) ? false : d.billable,
                 }))
               }
               placeholder="Select job code"

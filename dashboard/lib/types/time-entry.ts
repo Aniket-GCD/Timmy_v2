@@ -32,6 +32,14 @@ export type EntryWritePayload = {
   office?: string;
 };
 
-export function isAdminEntry(entry: Pick<TimeEntry, "job_code">): boolean {
-  return entry.job_code === "Admin";
+/** Job codes that count as admin time (Timmy uses both "Admin" and "Administrative"). */
+export function isAdminJobCode(jobCode: string): boolean {
+  const j = jobCode.trim().toLowerCase();
+  return j === "admin" || j === "administrative";
+}
+
+/** True when the entry is admin time — by job code or client named Admin. */
+export function isAdminEntry(entry: Pick<TimeEntry, "job_code" | "client">): boolean {
+  if (isAdminJobCode(entry.job_code)) return true;
+  return entry.client.trim().toLowerCase() === "admin";
 }

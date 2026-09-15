@@ -1,7 +1,7 @@
 import { durationHoursFromTimes, parseTimeInput } from "./hours-format";
 import { isWithinEditWindow } from "./pay-period";
 import type { ClientOption, JobCodeOption } from "./types/reference-data";
-import type { EntryWritePayload } from "./types/time-entry";
+import { isAdminJobCode, type EntryWritePayload } from "./types/time-entry";
 
 export type ValidationResult =
   | { ok: true; payload: EntryWritePayload; account: string }
@@ -76,7 +76,7 @@ export function validateEntryWrite(
     return { ok: false, error: ENTRY_ERRORS.badDuration };
   }
 
-  const billable = draft.job_code === "Admin" ? false : draft.billable;
+  const billable = isAdminJobCode(draft.job_code) ? false : draft.billable;
 
   return {
     ok: true,

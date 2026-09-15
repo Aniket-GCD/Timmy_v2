@@ -15,6 +15,40 @@ describe("aggregations", () => {
     expect(m.adminPercent).toBe(33);
   });
 
+  it("counts Administrative job code as admin", () => {
+    const rows: TimeEntry[] = [
+      {
+        id: 1,
+        staff_name: "N",
+        office: "GCD",
+        client: "Admin",
+        job_code: "Administrative",
+        notes: "",
+        entry_date: "2026-09-09",
+        start_time: null,
+        end_time: null,
+        hours: 0.5,
+        billable: true,
+      },
+      {
+        id: 2,
+        staff_name: "N",
+        office: "GCD",
+        client: "TRI STATE",
+        job_code: "Consulting",
+        notes: "",
+        entry_date: "2026-09-10",
+        start_time: null,
+        end_time: null,
+        hours: 0.17,
+        billable: true,
+      },
+    ];
+    const m = computeMetrics(rows);
+    expect(m.adminHours).toBe(0.5);
+    expect(m.adminPercent).toBe(75);
+  });
+
   it("caps client chart at 8", () => {
     const many = Array.from({ length: 12 }, (_, i) => ({
       ...sample[0],
