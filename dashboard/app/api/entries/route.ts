@@ -26,14 +26,7 @@ export async function GET(req: NextRequest) {
     if (scope.error) return NextResponse.json({ error: scope.error }, { status: 403 });
 
     const table = entriesTable();
-    const select =
-      "id,staff_name,office,client,job_code,account,notes,task,entry_date,start_time,end_time,hours,billable,source_file,status";
-    const filters = [
-      `select=${select}`,
-      `entry_date=gte.${from}`,
-      `entry_date=lte.${to}`,
-      "order=entry_date,start_time",
-    ];
+    const filters = [`entry_date=gte.${from}`, `entry_date=lte.${to}`, "order=entry_date,start_time"];
     if (scope.staffFilter) {
       filters.unshift(`staff_name=eq.${encodeURIComponent(scope.staffFilter)}`);
     }

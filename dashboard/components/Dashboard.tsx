@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ClientChart } from "@/components/ClientChart";
 import { DayEntriesTable } from "@/components/DayEntriesTable";
 import { EntryEditorModal, type EntryEditorDefaults } from "@/components/EntryEditorModal";
@@ -28,11 +28,6 @@ import {
   todayISO,
   type RangeKey,
 } from "@/lib/dates";
-import {
-  buildEntriesCacheKey,
-  createEntriesCache,
-  entriesFetchWindow,
-} from "@/lib/entries-cache";
 import { formatHoursHM } from "@/lib/hours-format";
 import { isWithinEditWindow } from "@/lib/pay-period";
 import type { CurrentlyWorking } from "@/lib/types/currently-working";
@@ -84,10 +79,8 @@ export function Dashboard() {
   const [pendingCreate, setPendingCreate] = useState<EntryEditorDefaults | null>(null);
   const [createWarnOpen, setCreateWarnOpen] = useState(false);
   const [remapOpen, setRemapOpen] = useState(false);
-  const entriesCache = useRef(createEntriesCache()).current;
 
   const resolved = useMemo(() => resolveRange(range), [range]);
-  const fetchWindow = useMemo(() => entriesFetchWindow(range), [range]);
 
   const liveStaffName = useMemo(() => {
     if (!me) return "";
@@ -101,43 +94,21 @@ export function Dashboard() {
     return me.staff_name;
   }, [me, staffFilter]);
 
-  const scopeStaff = useMemo(() => {
-    if (!me) return "";
-    return !me.is_admin ? me.staff_name : staffFilter || "";
-  }, [me, staffFilter]);
-
-  const scopeOffice = useMemo(() => {
-    if (!me?.is_admin) return "";
-    return officeFilter || "";
-  }, [me, officeFilter]);
-
-  const activeCacheKey = useMemo(
-    () =>
-      buildEntriesCacheKey({
-        staff: scopeStaff,
-        office: scopeOffice,
-        dateFrom: fetchWindow.dateFrom,
-        dateTo: fetchWindow.dateTo,
-      }),
-    [scopeStaff, scopeOffice, fetchWindow.dateFrom, fetchWindow.dateTo],
-  );
-
   const loadPollable = useCallback(
     async (showLoading: boolean) => {
       if (showLoading) setLoading(true);
       try {
-        const staffParam = scopeStaff || undefined;
-        const officeParam = scopeOffice || undefined;
+        const staffParam = me && !me.is_admin ? me.staff_name : staffFilter || undefined;
+        const officeParam = me?.is_admin && officeFilter ? officeFilter : undefined;
         const [rows, liveRows] = await Promise.all([
           provider.fetchEntries({
-            dateFrom: fetchWindow.dateFrom,
-            dateTo: fetchWindow.dateTo,
+            dateFrom: resolved.dateFrom,
+            dateTo: resolved.dateTo,
             staffName: staffParam,
             office: officeParam,
           }),
           provider.fetchCurrentlyWorking(liveStaffName || undefined).catch(() => [] as CurrentlyWorking[]),
         ]);
-        entriesCache.set(activeCacheKey, rows);
         setEntries(rows);
         setLive(liveRows);
         setUpdatedAt(new Date());
@@ -147,22 +118,8 @@ export function Dashboard() {
         if (showLoading) setLoading(false);
       }
     },
-    [
-      provider,
-      fetchWindow.dateFrom,
-      fetchWindow.dateTo,
-      scopeStaff,
-      scopeOffice,
-      liveStaffName,
-      activeCacheKey,
-      entriesCache,
-    ],
+    [provider, resolved.dateFrom, resolved.dateTo, me, staffFilter, officeFilter, liveStaffName],
   );
-
-  const refreshAfterWrite = useCallback(async () => {
-    entriesCache.clear();
-    await loadPollable(false);
-  }, [entriesCache, loadPollable]);
 
   useEffect(() => {
     void (async () => {
@@ -199,15 +156,28 @@ export function Dashboard() {
 
   useEffect(() => {
     if (!me) return;
-    const cached = entriesCache.get(activeCacheKey);
-    if (cached) {
-      setEntries(cached.entries);
-      setLoading(false);
-      void loadPollable(false);
-      return;
-    }
-    void loadPollable(true);
-  }, [me, activeCacheKey, entriesCache, loadPollable]);
+    void (async () => {
+      setLoading(true);
+      try {
+        const staffParam = !me.is_admin ? me.staff_name : staffFilter || undefined;
+        const officeParam = me.is_admin && officeFilter ? officeFilter : undefined;
+        const [rows, liveRows] = await Promise.all([
+          provider.fetchEntries({
+            dateFrom: resolved.dateFrom,
+            dateTo: resolved.dateTo,
+            staffName: staffParam,
+            office: officeParam,
+          }),
+          provider.fetchCurrentlyWorking(liveStaffName || me.staff_name).catch(() => [] as CurrentlyWorking[]),
+        ]);
+        setEntries(rows);
+        setLive(liveRows);
+        setUpdatedAt(new Date());
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [provider, resolved.dateFrom, resolved.dateTo, me, staffFilter, officeFilter, liveStaffName]);
 
   useEffect(() => {
     const id = window.setInterval(() => setTick((t) => t + 1), 30_000);
@@ -330,7 +300,7 @@ export function Dashboard() {
           }
         : payload;
     await provider.updateEntry(id, body);
-    await refreshAfterWrite();
+    await loadPollable(false);
   }
 
   const calendarStaff = staffFilter || (me && !me.is_admin ? me.staff_name : "") || "";
@@ -392,7 +362,7 @@ export function Dashboard() {
         staff_name: me.is_admin ? editor.staffName : me.staff_name,
       });
     }
-    await refreshAfterWrite();
+    await loadPollable(false);
   }
 
   if (!me && loading) {
@@ -592,7 +562,7 @@ export function Dashboard() {
         onClose={() => setRemapOpen(false)}
         onDone={() => {
           setRemapOpen(false);
-          void refreshAfterWrite();
+          void loadPollable(true);
         }}
       />
 

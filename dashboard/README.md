@@ -26,7 +26,7 @@ npm test
 | `NEXT_PUBLIC_DASHBOARD_DATA_SOURCE=mock` (default) | In-memory seed; **no login** (dev bypass — mock admin user) |
 | `supabase` | Live data + **magic-link login** required; create/edit → `POST`/`PATCH` `/api/entries` → `time_entries_timmy_v2` |
 
-Polling: currently-working + the **active** date window every **30s** while the tab is visible. Today / Yesterday / This week share one Sun–Sat fetch window and an in-memory cache so tab switches reuse rows (soft refresh in the background).
+Polling: entries + currently-working every **30s** while the tab is visible.
 
 ### Go-live (flip off mock)
 
@@ -60,21 +60,6 @@ With Table Editor open on `time_entries_timmy_v2`:
 8. Calendar client search finds names beyond the first 12; **Clear times** + duration-only save works.
 9. After MH CSV import, MH clients appear in the picker when Office=MH.
 10. **Resolve Unassigned** updates placeholder rows to the real client name.
-
-### Recommended Supabase indexes (run once in SQL editor)
-
-Speeds up range/staff/office filters as `time_entries_timmy_v2` grows:
-
-```sql
-CREATE INDEX IF NOT EXISTS time_entries_timmy_v2_entry_date_idx
-  ON time_entries_timmy_v2 (entry_date);
-
-CREATE INDEX IF NOT EXISTS time_entries_timmy_v2_staff_date_idx
-  ON time_entries_timmy_v2 (staff_name, entry_date);
-
-CREATE INDEX IF NOT EXISTS time_entries_timmy_v2_office_date_idx
-  ON time_entries_timmy_v2 (office, entry_date);
-```
 
 ### Hydration warning (Grammarly)
 
