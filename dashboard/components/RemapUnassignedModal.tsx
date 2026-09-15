@@ -175,12 +175,12 @@ export function RemapUnassignedModal({
         </label>
 
         <label className={styles.field}>
-          <span>Notes contain (optional)</span>
+          <span>Add comment to Notes (optional)</span>
           <input
             className={styles.input}
             value={notesContains}
             onChange={(e) => setNotesContains(e.target.value)}
-            placeholder="Spoken client name fragment"
+            placeholder=""
           />
         </label>
 
