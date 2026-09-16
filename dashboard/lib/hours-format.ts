@@ -80,7 +80,38 @@ export function subtractHoursFromTime(end: string, hours: number): string {
   return minutesToTime(timeToMinutes(end) - hours * 60);
 }
 
-/** Display HH:MM from HH:MM:SS. */
+/** Display clock time as 12-hour AM/PM (e.g. 5:15 PM). Storage stays HH:MM:SS. */
+export function formatTime12(value: string | null | undefined): string {
+  if (!value?.trim()) return "";
+  const parsed = parseTimeInput(value.includes(" ") || /[ap]m/i.test(value) ? value : value.slice(0, 8));
+  if (!parsed) {
+    // Fallback: already HH:MM(:SS)
+    const m = value.trim().match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return value.trim();
+    let h = Number(m[1]);
+    const min = m[2];
+    if (h > 23) return value.trim();
+    const ampm = h >= 12 ? "PM" : "AM";
+    h = h % 12 || 12;
+    return `${h}:${min} ${ampm}`;
+  }
+  const [hs, ms] = parsed.split(":");
+  let h = Number(hs);
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  return `${h}:${ms} ${ampm}`;
+}
+
+/** Display HH:MM from HH:MM:SS — 12-hour AM/PM for UI fields. */
 export function displayHm(value: string | null | undefined): string {
-  return value ? value.slice(0, 5) : "";
+  return formatTime12(value);
+}
+
+/** Treat wall-clock in started_at as browser-local (strip Z/offset). Showcase elapsed fix. */
+export function parseLocalStartMs(startedAt: string): number {
+  const naive = startedAt
+    .trim()
+    .replace(/Z$/i, "")
+    .replace(/[+-]\d{2}:?\d{2}$/, "");
+  return new Date(naive).getTime();
 }

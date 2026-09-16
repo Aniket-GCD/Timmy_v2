@@ -3,7 +3,6 @@ import { isAdminEntry, type TimeEntry } from "./types/time-entry";
 
 export type Metrics = {
   totalHours: number;
-  billableHours: number;
   adminHours: number;
   adminPercent: number;
   clientCount: number;
@@ -11,18 +10,15 @@ export type Metrics = {
 
 export function computeMetrics(entries: TimeEntry[]): Metrics {
   let totalHours = 0;
-  let billableHours = 0;
   let adminHours = 0;
   const clients = new Set<string>();
   for (const e of entries) {
     totalHours += e.hours;
-    if (e.billable) billableHours += e.hours;
     if (isAdminEntry(e)) adminHours += e.hours;
     clients.add(e.client);
   }
   return {
     totalHours: round2(totalHours),
-    billableHours: round2(billableHours),
     adminHours: round2(adminHours),
     adminPercent: totalHours > 0 ? Math.round((adminHours / totalHours) * 100) : 0,
     clientCount: clients.size,

@@ -1,6 +1,6 @@
 "use client";
 
-import { formatHoursHM } from "@/lib/hours-format";
+import { formatHoursHM, parseLocalStartMs } from "@/lib/hours-format";
 import type { CurrentlyWorking } from "@/lib/types/currently-working";
 import type { Employee } from "@/lib/types/employee";
 import styles from "./OnTheClock.module.css";
@@ -11,7 +11,7 @@ type Props = {
 };
 
 function elapsedHours(startedAt: string): number {
-  const start = Date.parse(startedAt);
+  const start = parseLocalStartMs(startedAt);
   if (Number.isNaN(start)) return 0;
   return Math.max(0, (Date.now() - start) / 3_600_000);
 }

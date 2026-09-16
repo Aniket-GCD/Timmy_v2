@@ -82,7 +82,7 @@ class McpServerTests(unittest.TestCase):
         names = {tool["name"] for tool in tools}
         self.assertEqual(
             names,
-            {"init_state", "start", "switch", "clarify_active", "end", "add_missing", "edit", "review", "approve", "approve_all", "unapprove", "export", "sanitize_packet", "config", "reround", "import_clients", "add_client", "list_clients", "list_job_codes", "refresh_clients", "submit", "update_submitted", "draft_reception_email", "cancel", "checkin_status", "checkin", "snooze_checkin", "status", "cleanup", "discard_entry"},
+            {"init_state", "start", "switch", "clarify_active", "end", "add_missing", "edit", "review", "approve", "approve_all", "unapprove", "export", "sanitize_packet", "config", "reround", "import_clients", "add_client", "list_clients", "list_employees", "list_job_codes", "refresh_clients", "submit", "update_submitted", "draft_reception_email", "cancel", "checkin_status", "checkin", "snooze_checkin", "status", "cleanup", "discard_entry"},
         )
         switch_tool = next(tool for tool in tools if tool["name"] == "switch")
         minutes_ago_schema = switch_tool["inputSchema"]["properties"]["minutes_ago"]
@@ -201,9 +201,9 @@ class McpServerTests(unittest.TestCase):
 
         self.ensure_job_codes()
         review = self.payload("review", {"date": "2026-05-28"})
-        self.payload("approve", {"entry_id": 1, "review_token": review["review_token"], "at": "2026-05-28T10:45:00"})
+        self.payload("approve", {"confirm": True, "entry_id": 1, "review_token": review["review_token"], "at": "2026-05-28T10:45:00"})
         review = self.payload("review", {"date": "2026-05-28"})
-        self.payload("approve", {"entry_id": 2, "review_token": review["review_token"], "at": "2026-05-28T10:46:00"})
+        self.payload("approve", {"confirm": True, "entry_id": 2, "review_token": review["review_token"], "at": "2026-05-28T10:46:00"})
 
         export_path = self.workdir / "exports" / "qb.csv"
         review = self.payload("review", {"date": "2026-05-28"})
@@ -221,13 +221,13 @@ class McpServerTests(unittest.TestCase):
         self.payload("switch", {"client": "acme", "task": "test2", "at": "2026-05-28T09:10:00"})
         entry = self.payload("end", {"at": "2026-05-28T09:20:00"})
         review = self.payload("review", {"date": "2026-05-28"})
-        rejected = self.call("approve", {"entry_id": entry["entry_id"], "review_token": review["review_token"]})
+        rejected = self.call("approve", {"confirm": True, "entry_id": entry["entry_id"], "review_token": review["review_token"]})
         self.assertTrue(rejected.get("isError"))
         confirmed = self.payload("edit", {"entry_id": entry["entry_id"], "client": "acme", "job_type": "Tax"})
         self.assertEqual(confirmed["status"], "draft")
         self.assertNotIn("needs_info", confirmed)
         review = self.payload("review", {"date": "2026-05-28"})
-        approved = self.payload("approve", {"entry_id": entry["entry_id"], "review_token": review["review_token"]})
+        approved = self.payload("approve", {"confirm": True, "entry_id": entry["entry_id"], "review_token": review["review_token"]})
         self.assertEqual(approved["status"], "approved")
 
     def test_approve_all_approves_every_draft_for_the_date(self) -> None:
@@ -239,7 +239,7 @@ class McpServerTests(unittest.TestCase):
                 "start": f"2026-05-28T1{i}:00:00", "end": f"2026-05-28T1{i}:24:00",
             })
         review = self.payload("review", {"date": "2026-05-28"})
-        result = self.payload("approve_all", {"date": "2026-05-28", "review_token": review["review_token"], "at": "2026-05-28T17:00:00"})
+        result = self.payload("approve_all", {"confirm": True, "date": "2026-05-28", "review_token": review["review_token"], "at": "2026-05-28T17:00:00"})
         self.assertEqual(result["approved_count"], 3)
         after = self.payload("review", {"date": "2026-05-28"})
         self.assertEqual({e["status"] for e in after["entries"]}, {"approved"})
@@ -249,16 +249,50 @@ class McpServerTests(unittest.TestCase):
         self.payload("add_missing", {
             "client": "Client A", "task": "work", "start": "2026-05-28T10:00:00", "end": "2026-05-28T10:24:00",
         })
-        result = self.call("approve_all", {"date": "2026-05-28"})
+        result = self.call("approve_all", {"confirm": True, "date": "2026-05-28"})
         self.assertTrue(result.get("isError"))
         self.assertIn("review_token", json.loads(result["content"][0]["text"])["error"])
+
+    def test_approve_requires_confirm(self) -> None:
+        self.payload("init_state", {"at": "2026-05-28T08:55:00"})
+        self.seed_roster("Client A")
+        self.payload("add_missing", {
+            "client": "Client A", "task": "work", "job_type": "Tax",
+            "start": "2026-05-28T10:00:00", "end": "2026-05-28T10:24:00",
+        })
+        review = self.payload("review", {"date": "2026-05-28"})
+        rejected = self.call("approve", {
+            "entry_id": 1, "review_token": review["review_token"],
+        })
+        self.assertTrue(rejected.get("isError"))
+        self.assertIn("confirm=true", json.loads(rejected["content"][0]["text"])["error"])
+        approved = self.payload("approve", {
+            "confirm": True,
+            "entry_id": 1,
+            "review_token": review["review_token"],
+        })
+        self.assertEqual(approved["status"], "approved")
+
+    def test_approve_all_requires_confirm(self) -> None:
+        self.payload("init_state", {"at": "2026-05-28T08:55:00"})
+        self.seed_roster("Client A")
+        self.payload("add_missing", {
+            "client": "Client A", "task": "work", "job_type": "Tax",
+            "start": "2026-05-28T10:00:00", "end": "2026-05-28T10:24:00",
+        })
+        review = self.payload("review", {"date": "2026-05-28"})
+        rejected = self.call("approve_all", {
+            "date": "2026-05-28", "review_token": review["review_token"],
+        })
+        self.assertTrue(rejected.get("isError"))
+        self.assertIn("confirm=true", json.loads(rejected["content"][0]["text"])["error"])
 
     def test_approve_requires_current_review_token(self) -> None:
         self.payload("init_state", {"at": "2026-05-28T08:55:00"})
         self.payload("add_missing", {
             "client": "Client A", "task": "work", "start": "2026-05-28T10:00:00", "end": "2026-05-28T10:24:00",
         })
-        result = self.call("approve", {"entry_id": 1})
+        result = self.call("approve", {"confirm": True, "entry_id": 1})
         self.assertTrue(result.get("isError"))
         self.assertIn("review_token", json.loads(result["content"][0]["text"])["error"])
 
@@ -272,7 +306,7 @@ class McpServerTests(unittest.TestCase):
         # Hold updated_at at the pre-edit value (add_missing stamps it with the
         # entry's end time) so the token goes stale from content alone.
         self.payload("edit", {"entry_id": 1, "task": "changed after review", "at": "2026-05-28T10:24:00"})
-        result = self.call("approve", {"entry_id": 1, "review_token": review["review_token"]})
+        result = self.call("approve", {"confirm": True, "entry_id": 1, "review_token": review["review_token"]})
 
         self.assertTrue(result.get("isError"))
         self.assertIn("stale", json.loads(result["content"][0]["text"])["error"])
@@ -285,7 +319,7 @@ class McpServerTests(unittest.TestCase):
             "start": "2026-05-28T10:00:00", "end": "2026-05-28T10:24:00",
         })
         review = self.payload("review", {"date": "2026-05-28"})
-        self.payload("approve", {"entry_id": 1, "review_token": review["review_token"]})
+        self.payload("approve", {"confirm": True, "entry_id": 1, "review_token": review["review_token"]})
         result = self.call("export", {"date": "2026-05-28", "output": "qb.csv"})
         self.assertTrue(result.get("isError"))
         self.assertIn("review_token", json.loads(result["content"][0]["text"])["error"])
@@ -394,13 +428,13 @@ class McpServerTests(unittest.TestCase):
         self.assertNotIn("active_timer", review)  # idle: omitted entirely
         entry = review["entries"][0]
         self.assertEqual(sorted(entry), [
-            "billable", "client", "duration", "end", "entry_id", "hours",
+            "client", "duration", "end", "entry_date", "entry_id", "hours",
             "job_code", "job_type", "minutes", "notes", "start", "status",
         ])
 
     def test_tool_error_is_reported_as_iserror(self) -> None:
         self.payload("init_state", {"at": "2026-05-28T08:55:00"})
-        result = self.call("approve", {"entry_id": 999})
+        result = self.call("approve", {"confirm": True, "entry_id": 999})
         self.assertTrue(result.get("isError"))
         body = json.loads(result["content"][0]["text"])
         self.assertFalse(body["ok"])
@@ -457,7 +491,7 @@ class McpServerTests(unittest.TestCase):
             "start": "2026-05-28T10:00:00", "end": "2026-05-28T10:24:00",
         })
         review = self.payload("review", {"date": "2026-05-28"})
-        self.payload("approve", {"entry_id": 1, "review_token": review["review_token"], "at": "2026-05-28T10:45:00"})
+        self.payload("approve", {"confirm": True, "entry_id": 1, "review_token": review["review_token"], "at": "2026-05-28T10:45:00"})
         result = self.call("edit", {"entry_id": 1, "task": "too late"})
         self.assertTrue(result.get("isError"))
         self.assertIn("only draft entries", json.loads(result["content"][0]["text"])["error"])
@@ -682,7 +716,7 @@ class McpServerTests(unittest.TestCase):
                 "checkin", "snooze_checkin", "checkin_status", "end",
                 "add_missing", "edit", "review", "approve", "approve_all",
                 "unapprove", "export", "sanitize_packet", "config", "reround",
-                "cleanup", "status", "list_clients", "list_job_codes",
+                "cleanup", "status", "list_clients", "list_employees", "list_job_codes",
                 "refresh_clients", "submit", "update_submitted", "draft_reception_email",
                 "import_clients",
                 "add_client", "discard_entry",
@@ -799,9 +833,9 @@ class McpServerTests(unittest.TestCase):
         })
         # Approve each day using its single-day token
         tok27 = self.payload("review", {"date": "2026-05-27"})["review_token"]
-        self.payload("approve_all", {"date": "2026-05-27", "review_token": tok27})
+        self.payload("approve_all", {"confirm": True, "date": "2026-05-27", "review_token": tok27})
         tok28 = self.payload("review", {"date": "2026-05-28"})["review_token"]
-        self.payload("approve_all", {"date": "2026-05-28", "review_token": tok28})
+        self.payload("approve_all", {"confirm": True, "date": "2026-05-28", "review_token": tok28})
         # Now get a range token and export the span
         review = self.payload("review", {"date": "2026-05-27", "end_date": "2026-05-28"})
         tok = review["review_token"]
@@ -855,7 +889,7 @@ class McpServerTests(unittest.TestCase):
             "start": "2026-05-28T09:00:00", "end": "2026-05-28T09:30:00",
         })
         review = self.payload("review", {"date": "2026-05-28"})
-        self.payload("approve", {"entry_id": 1, "review_token": review["review_token"]})
+        self.payload("approve", {"confirm": True, "entry_id": 1, "review_token": review["review_token"]})
         review = self.payload("review", {"date": "2026-05-28"})
         export_path = self.workdir / "exports" / "jw_export.csv"
         export = self.payload("export", {
@@ -873,7 +907,7 @@ class McpServerTests(unittest.TestCase):
             "start": "2026-05-28T09:00:00", "end": "2026-05-28T09:30:00",
         })
         review = self.payload("review", {"date": "2026-05-28"})
-        self.payload("approve", {"entry_id": 1, "review_token": review["review_token"]})
+        self.payload("approve", {"confirm": True, "entry_id": 1, "review_token": review["review_token"]})
         review = self.payload("review", {"date": "2026-05-28"})
         export_path = self.workdir / "exports" / "no_code_export.csv"
         export = self.payload("export", {
@@ -895,7 +929,7 @@ class McpServerTests(unittest.TestCase):
             "timeassist.supabase_submit.submit_entry",
             return_value={"submitted": True, "supabase_id": "sb-1"},
         ) as submit:
-            approved = self.payload("approve", {
+            approved = self.payload("approve", {"confirm": True, 
                 "entry_id": added["entry_id"],
                 "review_token": review["review_token"],
                 "at": "2026-05-28T11:00:00",
@@ -917,7 +951,7 @@ class McpServerTests(unittest.TestCase):
             "timeassist.supabase_submit.submit_entry",
             side_effect=RuntimeError("supabase down"),
         ):
-            approved = self.payload("approve", {
+            approved = self.payload("approve", {"confirm": True, 
                 "entry_id": added["entry_id"],
                 "review_token": review["review_token"],
                 "at": "2026-05-28T11:00:00",
@@ -944,7 +978,7 @@ class McpServerTests(unittest.TestCase):
                 {"submitted": True, "supabase_id": "sb-b"},
             ],
         ) as submit:
-            result = self.payload("approve_all", {
+            result = self.payload("approve_all", {"confirm": True, 
                 "date": "2026-05-28",
                 "review_token": review["review_token"],
                 "at": "2026-05-28T17:00:00",

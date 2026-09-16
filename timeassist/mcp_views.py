@@ -42,7 +42,6 @@ def slim_entry(entry: dict[str, Any]) -> dict[str, Any]:
         # Always emit Job Code (blank string OK) so the snapshot table keeps the column.
         "job_type": job,
         "job_code": job,
-        "billable": "yes" if entry.get("billable") else "no",
         "start": start,
         "end": entry.get("end_at"),
         "minutes": minutes,
@@ -249,6 +248,8 @@ def _view_client_confirm(result: dict[str, Any]) -> dict[str, Any]:
         "match_kind": result.get("match_kind"),
         "spoken_client": result.get("spoken_client"),
         "suggested_client": result.get("suggested_client"),
+        "choices": result.get("choices") or [],
+        "other_label": result.get("other_label") or "Other",
         "ask": result.get("ask"),
         "if_yes": result.get("if_yes"),
         "if_new_client": result.get("if_new_client"),
@@ -285,7 +286,7 @@ def _view_switch(result: dict[str, Any]) -> dict[str, Any]:
 def _view_list_clients(result: dict[str, Any]) -> dict[str, Any]:
     shaped: dict[str, Any] = {
         "clients": [
-            {key: client[key] for key in ("client_key", "display_name", "aliases", "default_billable") if key in client}
+            {key: client[key] for key in ("client_key", "display_name", "aliases") if key in client}
             for client in result.get("clients", [])
         ]
     }
@@ -315,6 +316,8 @@ def _view_config(result: dict[str, Any]) -> dict[str, Any]:
             "spoken_name": result.get("spoken_name"),
             "suggested_staff_name": result.get("suggested_staff_name"),
             "suggested_office": result.get("suggested_office"),
+            "choices": result.get("choices") or [],
+            "other_label": result.get("other_label") or "Other",
             "ask": result.get("ask"),
             "if_yes": result.get("if_yes"),
         }
@@ -330,7 +333,7 @@ def _view_import_clients(result: dict[str, Any]) -> dict[str, Any]:
 
 def _view_add_client(result: dict[str, Any]) -> dict[str, Any]:
     client = result.get("client", {})
-    slim = {key: client.get(key) for key in ("client_key", "display_name", "default_billable")}
+    slim = {key: client.get(key) for key in ("client_key", "display_name")}
     if client.get("aliases"):
         slim["aliases"] = client["aliases"]
     if client.get("default_job_type"):

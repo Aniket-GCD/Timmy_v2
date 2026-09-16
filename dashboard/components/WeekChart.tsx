@@ -45,7 +45,7 @@ export function WeekChart({ data, selectedDate, onSelectDate }: Props) {
               contentStyle={{ borderRadius: 8, borderColor: "#d8d6d3", fontFamily: "var(--font-body)" }}
               formatter={(value, name) => [
                 formatHoursHM(Number(value ?? 0)),
-                name === "admin" ? "Admin" : "Billable & other",
+                name === "admin" ? "Admin" : "Client work",
               ]}
               labelFormatter={(_, payload) => {
                 const row = payload?.[0]?.payload as DailyTotal | undefined;

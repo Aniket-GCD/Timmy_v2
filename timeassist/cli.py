@@ -38,7 +38,11 @@ def build_parser() -> argparse.ArgumentParser:
         description="Local, human-reviewed billable-time assistant CLI prototype.",
     )
     parser.add_argument("--version", action="version", version=f"timeassist {__version__}")
-    parser.add_argument("--db", default=paths.default_db_path(), help="path to the local SQLite database")
+    parser.add_argument(
+        "--db",
+        default=paths.default_db_path(),
+        help="path to the local SQLite database (default: %%LOCALAPPDATA%%\\Timmy\\timeassist.sqlite)",
+    )
     sub = parser.add_subparsers(dest="command")
 
     init = sub.add_parser("init", help="initialize local state")
@@ -49,7 +53,6 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--client", required=True)
     start.add_argument("--task", required=True, help="notes: what was done")
     start.add_argument("--job-type", dest="job_type", help="job category, e.g. Administrative")
-    start.add_argument("--billable", type=yes_no, default=None)
     start.add_argument("--at", help="ISO timestamp for demos/tests")
     start.add_argument("--duration-minutes", type=int, dest="duration_minutes", help="planned duration; auto-stops to a local draft")
     start.add_argument("--planned-end-at", dest="planned_end_at", help="ISO planned stop; auto-stops to a local draft")
@@ -59,7 +62,6 @@ def build_parser() -> argparse.ArgumentParser:
     switch.add_argument("--client", required=True)
     switch.add_argument("--task", required=True, help="notes: what was done")
     switch.add_argument("--job-type", dest="job_type", help="job category, e.g. Administrative")
-    switch.add_argument("--billable", type=yes_no, default=None)
     switch.add_argument("--at", help="ISO timestamp for demos/tests")
     switch.add_argument("--minutes-ago", type=int, help="retroactively switch as if the work changed this many minutes before --at/now")
     switch.add_argument("--duration-minutes", type=int, dest="duration_minutes", help="planned duration for the NEW session")
@@ -70,7 +72,6 @@ def build_parser() -> argparse.ArgumentParser:
     clarify_active.add_argument("--client")
     clarify_active.add_argument("--task", help="notes: what was done")
     clarify_active.add_argument("--job-type", dest="job_type", help="job category, e.g. Administrative")
-    clarify_active.add_argument("--billable", type=yes_no, default=None)
     clarify_active.add_argument("--at", help="ISO timestamp for deterministic demos/tests")
     clarify_active.add_argument("--dry-run", action="store_true")
 
@@ -84,7 +85,6 @@ def build_parser() -> argparse.ArgumentParser:
     add_missing.add_argument("--job-type", dest="job_type", help="job category, e.g. Administrative")
     add_missing.add_argument("--start", required=True)
     add_missing.add_argument("--end", required=True)
-    add_missing.add_argument("--billable", type=yes_no, default=None)
     add_missing.add_argument("--dry-run", action="store_true")
 
     edit = sub.add_parser("edit", help="edit a draft entry, or a submitted entry in the pay window")
@@ -92,7 +92,6 @@ def build_parser() -> argparse.ArgumentParser:
     edit.add_argument("--client")
     edit.add_argument("--task", help="notes: what was done")
     edit.add_argument("--job-type", dest="job_type", help="job category, e.g. Administrative")
-    edit.add_argument("--billable", type=yes_no)
     edit.add_argument("--start")
     edit.add_argument("--end")
     edit.add_argument("--at", help="ISO timestamp for deterministic demos/tests")
@@ -111,6 +110,7 @@ def build_parser() -> argparse.ArgumentParser:
     approve.add_argument("--all", action="store_true", help="approve all draft entries for --date")
     approve.add_argument("--date", default="today", help="date for --all")
     approve.add_argument("--review-token", dest="review_token", help="current token returned by review for this entry/date")
+    approve.add_argument("--confirm", action="store_true", help="required; only after the operator explicitly asks to approve")
     approve.add_argument("--at", help="ISO timestamp for deterministic demos/tests")
     approve.add_argument("--dry-run", action="store_true")
 
@@ -295,7 +295,7 @@ def run_command(args: argparse.Namespace) -> CommandResult:
             db_path,
             args.client,
             args.task,
-            args.billable,
+            None,
             args.at,
             job_type=args.job_type,
             duration_minutes=getattr(args, "duration_minutes", None),
@@ -307,7 +307,7 @@ def run_command(args: argparse.Namespace) -> CommandResult:
             db_path,
             args.client,
             args.task,
-            args.billable,
+            None,
             args.at,
             args.minutes_ago,
             job_type=args.job_type,
@@ -316,16 +316,16 @@ def run_command(args: argparse.Namespace) -> CommandResult:
         )
         return CommandResult(True, command, "switched", f"Switched draft time to {args.client}.", details)
     if command == "clarify-active":
-        session = actions.clarify_active_session(db_path, args.client, args.task, args.billable, args.at, job_type=args.job_type)
+        session = actions.clarify_active_session(db_path, args.client, args.task, None, args.at, job_type=args.job_type)
         return CommandResult(True, command, "clarified", "Clarified the active timer without changing its start time.", {"active_session": session})
     if command == "end":
         entry = actions.end_session(db_path, args.at)
         return CommandResult(True, command, "ended", "Ended the active session and created a draft entry.", {"closed_entry": entry})
     if command == "add-missing":
-        entry = actions.add_missing_entry(db_path, args.client, args.task, args.start, args.end, args.billable, job_type=args.job_type)
+        entry = actions.add_missing_entry(db_path, args.client, args.task, args.start, args.end, None, job_type=args.job_type)
         return CommandResult(True, command, "added", "Added a missing draft time entry.", {"entry": entry})
     if command == "edit":
-        entry = actions.edit_entry(db_path, args.entry_id, args.client, args.task, args.billable, args.start, args.end, args.at, job_type=args.job_type)
+        entry = actions.edit_entry(db_path, args.entry_id, args.client, args.task, None, args.start, args.end, args.at, job_type=args.job_type)
         return CommandResult(True, command, "edited", f"Edited draft entry {args.entry_id}.", {"entry": entry})
     if command == "review":
         date_value = normalized_date(args.date)
@@ -340,6 +340,10 @@ def run_command(args: argparse.Namespace) -> CommandResult:
             details["html_output"] = actions.render_review_html(details, output, db_path)
         return CommandResult(True, command, "review-ready", "Review is ready. Nothing has been exported.", details)
     if command == "approve":
+        require_confirm(
+            bool(args.confirm),
+            "approving (approval needs confirm=true after the operator explicitly asks to approve)",
+        )
         if args.all and args.entry_id is not None:
             raise ValueError("approve accepts --all or --entry-id, not both")
         if args.all:
@@ -533,6 +537,10 @@ def main(argv: list[str] | None = None) -> int:
     if not args.command:
         parser.print_help()
         return 0
+    try:
+        args.db = paths.prepare_db_path(args.db)
+    except ValueError as exc:
+        return error_result(args.command, exc).emit()
     if args.command == "mcp":
         from .mcp_server import serve
 

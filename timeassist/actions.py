@@ -248,17 +248,48 @@ def _staff_confirm_payload(classified: dict[str, Any]) -> dict[str, Any]:
     spoken = classified.get("spoken") or ""
     kind = classified.get("kind")
     suggested = classified.get("staff_name")
+    office = classified.get("office")
+    employee_choices = classified.get("choices") or []
+
+    if kind == "ambiguous" and employee_choices:
+        labels = [c.get("label") or c.get("staff_name") for c in employee_choices]
+        return {
+            "needs_staff_confirm": True,
+            "match_kind": "ambiguous",
+            "spoken_name": spoken,
+            "suggested_staff_name": None,
+            "suggested_office": None,
+            "choices": employee_choices,
+            "other_label": "Other",
+            "ask": (
+                f'Several firm employees match "{spoken}". '
+                f"Please select your identity (name and office): "
+                + "; ".join(str(label) for label in labels if label)
+                + "."
+            ),
+            "if_yes": None,
+        }
+
     if kind == "soft" and suggested:
+        office_bit = (
+            f' and office {office}' if office in {"GCD", "MH"} else ""
+        )
         return {
             "needs_staff_confirm": True,
             "match_kind": "soft",
             "spoken_name": spoken,
             "suggested_staff_name": suggested,
-            "suggested_office": classified.get("office"),
+            "suggested_office": office if office in {"GCD", "MH"} else None,
+            "choices": (
+                [{"staff_name": suggested, "office": office, "label": f"{suggested} ({office})"}]
+                if office in {"GCD", "MH"}
+                else [{"staff_name": suggested, "office": None, "label": suggested}]
+            ),
+            "other_label": "Other",
             "ask": (
-                f'Did you mean "{suggested}" on the firm employee list? '
+                f'Please confirm: are you "{suggested}"{office_bit} on the firm employee list? '
                 f"If yes, I will set your Timmy identity to that exact name"
-                + (f' and office {classified["office"]}' if classified.get("office") in {"GCD", "MH"} else "")
+                + office_bit
                 + " so submissions stay uniform."
             ),
             "if_yes": {
@@ -272,10 +303,12 @@ def _staff_confirm_payload(classified: dict[str, Any]) -> dict[str, Any]:
         "spoken_name": spoken,
         "suggested_staff_name": None,
         "suggested_office": None,
+        "choices": [],
+        "other_label": "Other",
         "ask": (
             f'No match on the firm employees list for "{spoken}". '
             f"Use list_employees (query=your name) to find the exact staff_name, "
-            f"or ask an admin to add you to Supabase employees. Timmy cannot invent names."
+            f"or ask an admin to add you to the firm employees list. Timmy cannot invent names."
         ),
         "if_yes": None,
     }
@@ -316,6 +349,7 @@ def configure_staff_name(
     confirm_staff: bool = False,
     at: str | None = None,
     environ: dict[str, str] | None = None,
+    office: str | None = None,
 ) -> dict[str, Any]:
     """Set staff_name from the read-only employees table (canonical spelling + office)."""
     ensure_initialized(db_path)
@@ -326,8 +360,15 @@ def configure_staff_name(
 
     from .supabase_ref import classify_employee_remote
 
-    classified = classify_employee_remote(spoken_norm, environ=live_env, db_path=db_path)
+    office_hint = (office or "").strip().upper() or None
+    if office_hint not in {"GCD", "MH"}:
+        office_hint = None
+    classified = classify_employee_remote(
+        spoken_norm, environ=live_env, db_path=db_path, office_hint=office_hint,
+    )
     kind = classified["kind"]
+    if kind == "ambiguous":
+        return _staff_confirm_payload(classified)
     if kind == "soft" and not confirm_staff:
         return _staff_confirm_payload(classified)
     if kind == "none":
@@ -336,24 +377,24 @@ def configure_staff_name(
         return _staff_confirm_payload(classified)
 
     canonical = classified["staff_name"]
-    office = classified.get("office")
+    office_val = classified.get("office")
     changed_at = iso(parse_at(at)) if at else now_iso()
     with connect(db_path) as conn:
         before = get_setting(conn, "staff_name")
         _upsert_setting(conn, "staff_name", canonical, changed_at)
         office_result = None
-        if office in {"GCD", "MH"}:
+        if office_val in {"GCD", "MH"}:
             before_office = get_setting(conn, "office")
-            _upsert_setting(conn, "office", office, changed_at)
-            office_result = {"previous": before_office, "value": office}
+            _upsert_setting(conn, "office", office_val, changed_at)
+            office_result = {"previous": before_office, "value": office_val}
             log_event(
                 conn,
                 "config",
-                f"set office to {office} from employees",
+                f"set office to {office_val} from employees",
                 "setting",
                 None,
                 before={"key": "office", "value": before_office},
-                after={"key": "office", "value": office},
+                after={"key": "office", "value": office_val},
                 at=changed_at,
             )
         log_event(
@@ -380,7 +421,7 @@ def configure_staff_name(
 
 
 def staff_setup_status(db_path: str | Path) -> dict[str, Any]:
-    """Hint for first-run: staff_name must match Supabase employees."""
+    """Hint for first-run: staff_name must match firm employees."""
     ensure_initialized(db_path)
     with connect(db_path) as conn:
         staff = (get_setting(conn, "staff_name") or "").strip()
@@ -391,7 +432,7 @@ def staff_setup_status(db_path: str | Path) -> dict[str, Any]:
         "staff_name": staff or None,
         "office": office or None,
         "message": (
-            "Set your identity with config staff_name (must match Supabase employees). "
+            "Set your identity with config staff_name (must match the firm employees list). "
             "Timmy cross-checks the name and sets office from that row."
             if required
             else "Staff identity is set."
@@ -850,12 +891,32 @@ def _resolve_client_local(conn, name: str) -> tuple[str, int | None]:
 
 
 
+def _unassigned_known_row(
+    name: str,
+    *,
+    db_path: str | Path | None,
+    environ: dict[str, str] | None,
+):
+    """Treat configured Unassigned as known even if the live roster row is briefly missing."""
+    from .supabase_config import unassigned_client_name
+    from .supabase_ref import roster_row_from_display
+
+    label = unassigned_client_name(db_path=db_path, environ=environ)
+    if name.strip().casefold() == label.casefold():
+        return roster_row_from_display(label)
+    return None
+
+
 def resolve_client_row(conn, name: str, *, environ: dict[str, str] | None = None, db_path: str | Path | None = None):
     """Match spoken name against live Supabase clients only.
 
     Never reads the local SQLite ``clients`` table (stale CSV imports). Test
     suites without Supabase credentials may set TIMEASSIST_ALLOW_LOCAL_ROSTER=1
     to use SQLite; the pilot MCP always has Supabase env so that path is dead.
+
+    The configured holding-bucket name (default ``Unassigned``) resolves as known
+    even when the live Supabase row is briefly missing — seed it in Supabase only
+    (not QuickBooks); replace later via ``edit`` once the real client exists.
     """
     live_env = _supabase_environ(environ)
     if live_env is not None:
@@ -866,10 +927,14 @@ def resolve_client_row(conn, name: str, *, environ: dict[str, str] | None = None
             name, environ=live_env, office=office or None, db_path=resolved_db,
         )
         if display is None:
-            return None
+            return _unassigned_known_row(name, db_path=resolved_db, environ=live_env)
         return roster_row_from_display(display)
     if _local_roster_allowed():
-        return _resolve_client_row_local(conn, name)
+        row = _resolve_client_row_local(conn, name)
+        if row is not None:
+            return row
+        resolved_db = db_path or _sqlite_file_from_conn(conn)
+        return _unassigned_known_row(name, db_path=resolved_db, environ=environ)
     from .supabase_ref import resolve_client_remote, roster_row_from_display
     office = get_setting(conn, "office")
     resolved_db = db_path or _sqlite_file_from_conn(conn)
@@ -877,7 +942,7 @@ def resolve_client_row(conn, name: str, *, environ: dict[str, str] | None = None
         name, environ=environ, office=office or None, db_path=resolved_db,
     )
     if display is None:
-        return None
+        return _unassigned_known_row(name, db_path=resolved_db, environ=environ)
     return roster_row_from_display(display)
 
 
@@ -900,7 +965,7 @@ def client_confirm_gate(
     if confirm_client:
         return None
     from .supabase_config import unassigned_client_name
-    from .supabase_ref import classify_client_remote
+    from .supabase_ref import classify_client_remote, list_clients_remote, top_client_choices
 
     office = get_setting(conn, "office")
     resolved_db = db_path or _sqlite_file_from_conn(conn)
@@ -914,6 +979,23 @@ def client_confirm_gate(
     unassigned = unassigned_client_name(db_path=resolved_db, environ=live_env)
     if spoken.casefold() == unassigned.casefold():
         return None
+
+    roster_names = [
+        row["display_name"]
+        for row in list_clients_remote(
+            environ=live_env, office=office or None, db_path=resolved_db,
+        )
+        if row.get("display_name")
+        and str(row["display_name"]).casefold() != unassigned.casefold()
+    ]
+    prefer = classified.get("display_name") if kind == "soft" else None
+    choices = top_client_choices(spoken, roster_names, limit=3, prefer=prefer)
+
+    if_new = {
+        "client": unassigned,
+        "notes_prefix": f"NEW CLIENT: {spoken} | ",
+        "draft_reception_email": True,
+    }
     if kind == "soft":
         suggested = classified["display_name"]
         return {
@@ -921,37 +1003,32 @@ def client_confirm_gate(
             "match_kind": "soft",
             "spoken_client": spoken,
             "suggested_client": suggested,
+            "choices": choices,
+            "other_label": "Other",
             "ask": (
-                f'Did you mean "{suggested}"? If yes, I will record it under that roster name. '
-                f"If not, is this a new client? Then I can record it under \"{unassigned}\" with a "
-                f'NEW CLIENT note and draft a Reception email so they can add it in QuickBooks.'
+                f'Please select the correct client for "{spoken}" '
+                f"(choices include the closest roster matches, or Other for a new client / Unassigned)."
             ),
             "if_yes": {
                 "retry_with_client": suggested,
                 "or_confirm_client": True,
             },
-            "if_new_client": {
-                "client": unassigned,
-                "notes_prefix": f"NEW CLIENT: {spoken} | ",
-                "draft_reception_email": True,
-            },
+            "if_new_client": if_new,
         }
     return {
         "needs_client_confirm": True,
         "match_kind": "none",
         "spoken_client": spoken,
         "suggested_client": None,
+        "choices": choices,
+        "other_label": "Other",
         "ask": (
-            f'No close match on the Supabase client list for "{spoken}". '
-            f'Is this a new client? If yes, I can record it under "{unassigned}" with a '
-            f"NEW CLIENT note and draft a Reception email so they can add it in QuickBooks."
+            f'No exact match on the firm client list for "{spoken}". '
+            f"Please select from the closest matches, or Other for a new client "
+            f'(held under "{unassigned}" with a NEW CLIENT note).'
         ),
         "if_yes": None,
-        "if_new_client": {
-            "client": unassigned,
-            "notes_prefix": f"NEW CLIENT: {spoken} | ",
-            "draft_reception_email": True,
-        },
+        "if_new_client": if_new,
     }
 
 
@@ -1025,7 +1102,7 @@ def list_clients(
     return {"clients": clients, "client_count": len(clients)}
 
 
-# Always non-billable. auto_job=True sets Administrative when unset; Admin is suggest-only.
+# Special clients still get job-code defaults; billable is no longer forced.
 SPECIAL_CLIENT_POLICY: dict[str, dict[str, Any]] = {
     "admin": {"auto_job": False, "job_code": "Administrative"},
     "vacation": {"auto_job": True, "job_code": "Administrative"},
@@ -1036,7 +1113,7 @@ SPECIAL_CLIENT_POLICY: dict[str, dict[str, Any]] = {
 
 
 def special_client_policy(display_name: str | None) -> dict[str, Any] | None:
-    """Firm special clients: always non-billable; job code auto or suggest-only."""
+    """Firm special clients: job code auto or suggest-only (billable unused)."""
     if not display_name:
         return None
     return SPECIAL_CLIENT_POLICY.get(display_name.strip().casefold())
@@ -1050,42 +1127,23 @@ def apply_client_policy(
     current_billable: int | None = None,
     current_job_type: str | None = None,
 ) -> tuple[int, str]:
-    """Engine-enforced client policy (pilot feedback #34 + senior specials).
+    """Client policy for job codes. Billable is always yes (firm no longer tracks it).
 
-    Special clients (Admin, Vacation, Holiday, Early Out, Staff Meeting) are
-    never billable. Vacation/Holiday/Early Out/Staff Meeting auto-set
-    Administrative when job_type is unset; Admin is suggest-only (blank until
-    confirmed). Legacy ``billable_locked`` rows that are not special still force
-    non-billable and apply ``default_job_type``.
+    job_type_requested None = preserve current (then special auto_job if still blank);
+    "" = explicit clear; any other string wins.
     """
+    _ = billable_requested, current_billable  # accepted but ignored
     display = row["display_name"] if row is not None else None
     special = special_client_policy(display)
-    locked = row is not None and int(row["billable_locked"])
-    force_non_billable = locked or special is not None
+    billable = 1
 
-    if force_non_billable:
-        if billable_requested is not None and bool_to_int(billable_requested) == 1:
-            label = display or "client"
-            raise ValueError(f"client '{label}' is administrative and cannot be billable")
-        billable = 0
-    elif billable_requested is not None:
-        billable = bool_to_int(billable_requested)
-    elif current_billable is not None:
-        billable = int(current_billable)
+    if job_type_requested is None:
+        job_type = (current_job_type or "").strip()
+        if special is not None and special.get("auto_job") and not job_type:
+            job_type = str(special.get("job_code") or "Administrative")
     else:
-        billable = int(row["default_billable"]) if row is not None else 1
+        job_type = (job_type_requested or "").strip()
 
-    if job_type_requested is not None:
-        job_type = job_type_requested.strip()
-    elif current_job_type is not None:
-        job_type = current_job_type
-    elif special is not None and special["auto_job"]:
-        job_type = str(special["job_code"])
-    elif locked and special is None:
-        job_type = row["default_job_type"]
-    else:
-        # Admin special (auto_job=False) and unlocked clients: blank until confirmed.
-        job_type = ""
     return billable, job_type
 
 
@@ -1127,7 +1185,7 @@ def resolve_capture_with_metadata(
     # capture-now/clarify-later is an invariant under every mode.
     if not known_client and clarification and billable_explicit and strict_roster_enabled(conn):
         raise ValueError(
-            f"strict roster mode is on: '{raw_client}' is not on the Supabase client list; "
+            f"strict roster mode is on: '{raw_client}' is not on the firm client list; "
             "correct the entry to a known client, or use Unassigned + draft_reception_email for a new firm client"
         )
     needs_info = not known_client and not (clarification and billable_explicit)
@@ -2379,15 +2437,11 @@ def review_entries(db_path: str | Path, date_value: str, at: str | None = None, 
 
 
 def _locked_billable_reason(conn, entry: dict[str, Any]) -> str | None:
-    """Non-None when a billable entry names a billable_locked client — legacy
-    (pre-lock) data the capture/edit paths never see. Finalize gates use this
-    so such time can never be approved or exported billable."""
-    if not entry.get("billable"):
-        return None
-    row = resolve_client_row(conn, entry["client_name"])
-    if row is not None and int(row["billable_locked"]):
-        return (f"entry {entry['entry_id']} bills '{row['display_name']}', which is "
-                "administrative and cannot be billable; edit billable to no before approving")
+    """Formerly blocked approve/export of billable+admin-locked clients.
+
+    Firm no longer tracks billable vs non-billable — always allow.
+    """
+    _ = conn, entry
     return None
 
 

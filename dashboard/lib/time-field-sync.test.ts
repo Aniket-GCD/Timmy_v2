@@ -22,7 +22,7 @@ describe("reconcileTimeFields", () => {
     });
     expect(r.hoursHm).toBe("1:30");
     expect(r.hours).toBe(1.5);
-    expect(r.endHm).toBe("10:30");
+    expect(r.endHm).toBe("10:30 AM");
   });
 
   it("updates end when duration changes and start is set", () => {
@@ -32,9 +32,9 @@ describe("reconcileTimeFields", () => {
       hoursHm: "0:15",
       touched: "duration",
     });
-    expect(r.endHm).toBe("00:15");
+    expect(r.endHm).toBe("12:15 AM");
     expect(r.hours).toBe(0.25);
-    expect(r.startHm).toBe("00:00");
+    expect(r.startHm).toBe("12:00 AM");
   });
 
   it("updates duration when end changes and start is set", () => {
@@ -78,7 +78,7 @@ describe("reconcileTimeFields", () => {
       hoursHm: "1:00",
       touched: "start",
     });
-    expect(r.endHm).toBe("10:00");
+    expect(r.endHm).toBe("10:00 AM");
     expect(r.hoursHm).toBe("1:00");
   });
 });

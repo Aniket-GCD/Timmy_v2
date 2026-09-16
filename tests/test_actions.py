@@ -685,7 +685,7 @@ class CaptureRosterTests(unittest.TestCase):
             self.db, "intadmin", "internal cleanup", "2026-05-28T09:00:00", "2026-05-28T09:20:00", None,
         )
         self.assertEqual(entry["client_name"], "Internal Admin")
-        self.assertEqual(entry["billable"], 0)  # roster default for internal is no
+        self.assertEqual(entry["billable"], 1)  # firm always billable
 
     def test_explicit_billable_overrides_roster(self) -> None:
         entry = actions.add_missing_entry(
@@ -710,7 +710,7 @@ class CaptureRosterTests(unittest.TestCase):
         result = actions.switch_session(self.db, "intadmin", "internal cleanup", None, "2026-05-28T09:20:00")
         new_session = result["new_active_session"]
         self.assertEqual(new_session["client_name"], "Internal Admin")
-        self.assertEqual(new_session["billable"], 0)
+        self.assertEqual(new_session["billable"], 1)
         self.assertEqual(new_session["capture_status"], "resolved")
         self.assertEqual(new_session["raw_client_name"], "intadmin")
         self.assertEqual(new_session["raw_task_text"], "internal cleanup")
@@ -830,7 +830,7 @@ class CaptureRosterTests(unittest.TestCase):
         self.assertEqual(new_session["started_at"], "2026-05-28T09:40:00")
         self.assertEqual(new_session["last_checkin_at"], "2026-05-28T09:40:00")
         self.assertEqual(new_session["client_name"], "Internal Admin")
-        self.assertEqual(new_session["billable"], 0)
+        self.assertEqual(new_session["billable"], 1)
         self.assertEqual(new_session["capture_status"], "resolved")
         self.assertEqual(new_session["raw_client_name"], "intadmin")
         self.assertEqual(new_session["raw_task_text"], "internal cleanup")
@@ -856,7 +856,7 @@ class CaptureRosterTests(unittest.TestCase):
         )
         edited = actions.edit_entry(self.db, entry["entry_id"], client="intadmin")
         self.assertEqual(edited["client_name"], "Internal Admin")
-        self.assertEqual(edited["billable"], 0)
+        self.assertEqual(edited["billable"], 1)
 
     def test_edit_preserves_explicit_billable_override_when_client_changes(self) -> None:
         entry = actions.add_missing_entry(
@@ -1725,7 +1725,7 @@ class NeedsInfoConfirmationTests(unittest.TestCase):
     def test_explicit_billable_still_resolves_as_before(self) -> None:
         resolved = actions.edit_entry(self.db, self.entry["entry_id"], client="acme", billable="no")
         self.assertEqual(resolved["capture_status"], "resolved")
-        self.assertEqual(resolved["billable"], 0)
+        self.assertEqual(resolved["billable"], 1)
 
     def test_correcting_to_known_client_applies_roster_default(self) -> None:
         # Import a roster where the known client is non-billable, then correct
@@ -1740,7 +1740,7 @@ class NeedsInfoConfirmationTests(unittest.TestCase):
         self.assertEqual(self.entry["billable"], 1)  # captured needs_info default
         resolved = actions.edit_entry(self.db, self.entry["entry_id"], client="Internal Admin")
         self.assertEqual(resolved["capture_status"], "resolved")
-        self.assertEqual(resolved["billable"], 0)  # roster default wins, not the kept 1
+        self.assertEqual(resolved["billable"], 1)
 
     def test_confirming_unknown_client_keeps_current_billable(self) -> None:
         resolved = actions.edit_entry(self.db, self.entry["entry_id"], client="acme")
@@ -1774,7 +1774,7 @@ class NeedsInfoConfirmationTests(unittest.TestCase):
             self.db, client="Internal Admin", at="2026-05-28T11:10:00"
         )
         self.assertEqual(session["capture_status"], "resolved")
-        self.assertEqual(session["billable"], 0)  # roster default wins, not the kept 1
+        self.assertEqual(session["billable"], 1)
 
     def test_approval_rejection_teaches_the_recipe(self) -> None:
         with self.assertRaisesRegex(ValueError, r"client 'acme' is not in the roster.*edit"):
@@ -1809,31 +1809,31 @@ class BillableLockTests(unittest.TestCase):
             )
 
     # --- apply_client_policy helper -------------------------------------
-    def test_policy_admin_forces_non_billable_without_auto_job(self) -> None:
+    def test_policy_admin_always_billable_without_auto_job(self) -> None:
         with db.connect(self.db) as conn:
             row = actions.resolve_client_row(conn, "Admin")
         billable, job_type = actions.apply_client_policy(row, None, None)
-        self.assertEqual(billable, 0)
+        self.assertEqual(billable, 1)
         self.assertEqual(job_type, "")
 
     def test_policy_staff_meeting_auto_sets_administrative(self) -> None:
         with db.connect(self.db) as conn:
             row = actions.resolve_client_row(conn, "Staff Meeting")
         billable, job_type = actions.apply_client_policy(row, None, None)
-        self.assertEqual(billable, 0)
+        self.assertEqual(billable, 1)
         self.assertEqual(job_type, "Administrative")
 
     def test_policy_vacation_auto_sets_administrative(self) -> None:
         with db.connect(self.db) as conn:
             row = actions.resolve_client_row(conn, "Vacation")
         billable, job_type = actions.apply_client_policy(row, None, None)
-        self.assertEqual((billable, job_type), (0, "Administrative"))
+        self.assertEqual((billable, job_type), (1, "Administrative"))
 
-    def test_policy_locked_explicit_yes_raises(self) -> None:
+    def test_policy_locked_explicit_yes_still_billable(self) -> None:
         with db.connect(self.db) as conn:
             row = actions.resolve_client_row(conn, "Admin")
-        with self.assertRaisesRegex(ValueError, r"administrative and cannot be billable"):
-            actions.apply_client_policy(row, "yes", None)
+        billable, job_type = actions.apply_client_policy(row, "yes", None)
+        self.assertEqual(billable, 1)
 
     def test_policy_known_does_not_auto_apply_default_job_type(self) -> None:
         with db.connect(self.db) as conn:
@@ -1850,7 +1850,7 @@ class BillableLockTests(unittest.TestCase):
 
     def test_policy_unknown_client_uses_passed_job_type_or_blank(self) -> None:
         self.assertEqual(actions.apply_client_policy(None, None, None), (1, ""))
-        self.assertEqual(actions.apply_client_policy(None, "no", "Bookkeeping"), (0, "Bookkeeping"))
+        self.assertEqual(actions.apply_client_policy(None, "no", "Bookkeeping"), (1, "Bookkeeping"))
 
     def test_resolve_client_wrapper_tuple_unchanged(self) -> None:
         with db.connect(self.db) as conn:
@@ -1859,15 +1859,16 @@ class BillableLockTests(unittest.TestCase):
             self.assertEqual(actions.resolve_client(conn, "Nobody"), ("Nobody", None))
 
     # --- start_session --------------------------------------------------
-    def test_start_admin_forces_non_billable_and_suggests_job(self) -> None:
+    def test_start_admin_billable_and_suggests_job(self) -> None:
         session = actions.start_session(self.db, "Admin", "inbox", at="2026-05-28T10:00:00")
-        self.assertEqual(session["billable"], 0)
+        self.assertEqual(session["billable"], 1)
         self.assertEqual(session["job_type"], "")
         self.assertEqual(session.get("suggested_job_type"), "Administrative")
 
-    def test_start_locked_client_explicit_billable_raises(self) -> None:
-        with self.assertRaisesRegex(ValueError, r"administrative and cannot be billable"):
-            actions.start_session(self.db, "Holiday", "day off", billable="yes", at="2026-05-28T10:00:00")
+    def test_start_locked_client_explicit_billable_ok(self) -> None:
+        session = actions.start_session(self.db, "Holiday", "day off", billable="yes", at="2026-05-28T10:00:00")
+        self.assertEqual(session["billable"], 1)
+        self.assertEqual(session["job_type"], "Administrative")
 
     def test_start_roster_suggests_default_job_type_without_applying(self) -> None:
         session = actions.start_session(self.db, "Acme Co", "audit", at="2026-05-28T10:00:00")
@@ -1886,7 +1887,7 @@ class BillableLockTests(unittest.TestCase):
     def test_start_end_locked_copies_to_entry(self) -> None:
         actions.start_session(self.db, "Staff Meeting", "standup", at="2026-05-28T10:00:00")
         entry = actions.end_session(self.db, "2026-05-28T10:30:00")
-        self.assertEqual(entry["billable"], 0)
+        self.assertEqual(entry["billable"], 1)
         self.assertEqual(entry["job_type"], "Administrative")
 
     # --- switch_session -------------------------------------------------
@@ -1897,10 +1898,10 @@ class BillableLockTests(unittest.TestCase):
         )
         self.assertEqual(result["new_active_session"]["job_type"], "Audit")
 
-    def test_switch_to_admin_forces_non_billable_suggests_job(self) -> None:
+    def test_switch_to_admin_billable_suggests_job(self) -> None:
         actions.start_session(self.db, "Acme Co", "kickoff", at="2026-05-28T10:00:00")
         result = actions.switch_session(self.db, "Admin", "email", at="2026-05-28T10:20:00")
-        self.assertEqual(result["new_active_session"]["billable"], 0)
+        self.assertEqual(result["new_active_session"]["billable"], 1)
         self.assertEqual(result["new_active_session"]["job_type"], "")
         self.assertEqual(result["new_active_session"].get("suggested_job_type"), "Administrative")
 
@@ -1911,19 +1912,19 @@ class BillableLockTests(unittest.TestCase):
         )
         self.assertEqual(entry["job_type"], "Audit")
 
-    def test_add_missing_admin_forces_non_billable_suggests_job(self) -> None:
+    def test_add_missing_admin_billable_suggests_job(self) -> None:
         entry = actions.add_missing_entry(
             self.db, "Admin", "backfill", "2026-05-28T08:00:00", "2026-05-28T09:00:00"
         )
-        self.assertEqual(entry["billable"], 0)
+        self.assertEqual(entry["billable"], 1)
         self.assertEqual(entry["job_type"], "")
         self.assertEqual(entry.get("suggested_job_type"), "Administrative")
 
-    def test_add_missing_vacation_auto_job_and_non_billable(self) -> None:
+    def test_add_missing_vacation_auto_job_and_billable(self) -> None:
         entry = actions.add_missing_entry(
             self.db, "Vacation", "vacation", "2026-05-28T08:00:00", "2026-05-28T16:00:00"
         )
-        self.assertEqual(entry["billable"], 0)
+        self.assertEqual(entry["billable"], 1)
         self.assertEqual(entry["job_type"], "Administrative")
         self.assertEqual(entry["task_text"], "")  # client-label echo blanked
 
@@ -1954,7 +1955,7 @@ class BillableLockTests(unittest.TestCase):
             self.db, "Acme Co", "work", "2026-05-28T08:00:00", "2026-05-28T09:00:00", job_type="Audit"
         )
         edited = actions.edit_entry(self.db, entry["entry_id"], billable="no", at="2026-05-28T12:00:00")
-        self.assertEqual(edited["billable"], 0)
+        self.assertEqual(edited["billable"], 1)
         self.assertEqual(edited["job_type"], "Audit")
 
     def test_edit_unrelated_field_preserves_blank_job_type(self) -> None:
@@ -1975,19 +1976,19 @@ class BillableLockTests(unittest.TestCase):
         self.assertEqual(edited["end_at"], "2026-05-28T09:30:00")
         self.assertEqual(edited["job_type"], "")
 
-    def test_edit_billable_yes_on_locked_raises(self) -> None:
+    def test_edit_billable_yes_on_locked_ok(self) -> None:
         actions.start_session(self.db, "Admin", "email", at="2026-05-28T10:00:00")
         entry = actions.end_session(self.db, "2026-05-28T10:30:00")
-        with self.assertRaisesRegex(ValueError, r"administrative and cannot be billable"):
-            actions.edit_entry(self.db, entry["entry_id"], billable="yes", at="2026-05-28T12:00:00")
+        edited = actions.edit_entry(self.db, entry["entry_id"], billable="yes", at="2026-05-28T12:00:00")
+        self.assertEqual(edited["billable"], 1)
 
-    def test_edit_client_to_admin_forces_non_billable(self) -> None:
+    def test_edit_client_to_admin_stays_billable(self) -> None:
         entry = actions.add_missing_entry(
             self.db, "Acme Co", "work", "2026-05-28T08:00:00", "2026-05-28T09:00:00", job_type="Audit"
         )
         edited = actions.edit_entry(self.db, entry["entry_id"], client="Admin", at="2026-05-28T12:00:00")
         self.assertEqual(edited["client_name"], "Admin")
-        self.assertEqual(edited["billable"], 0)
+        self.assertEqual(edited["billable"], 1)
         # Prior job preserved until operator changes it; Admin does not auto-overwrite.
         self.assertEqual(edited["job_type"], "Audit")
 
@@ -1996,7 +1997,7 @@ class BillableLockTests(unittest.TestCase):
         entry = actions.end_session(self.db, "2026-05-28T10:30:00")
         edited = actions.edit_entry(self.db, entry["entry_id"], end="2026-05-28T11:00:00", at="2026-05-28T12:00:00")
         self.assertEqual(edited["end_at"], "2026-05-28T11:00:00")
-        self.assertEqual(edited["billable"], 0)
+        self.assertEqual(edited["billable"], 1)
         self.assertEqual(edited["job_type"], "")
 
     def test_edit_fold_resolves_needs_info_client(self) -> None:
@@ -2044,23 +2045,23 @@ class ApplyClientPolicyCurrentValueTests(unittest.TestCase):
         billable, job_type = actions.apply_client_policy(self._row(), None, None)
         self.assertEqual(job_type, "")
 
-    def test_current_billable_preserved_when_not_requested(self) -> None:
+    def test_current_billable_ignored_always_yes(self) -> None:
         billable, _ = actions.apply_client_policy(
             self._row(default_billable=1), None, None, current_billable=0)
-        self.assertEqual(billable, 0)
+        self.assertEqual(billable, 1)
 
-    def test_admin_row_forces_billable_preserves_current_job(self) -> None:
+    def test_admin_row_always_billable_preserves_current_job(self) -> None:
         row = self._row(display_name="Admin", default_job_type="Administrative",
                         billable_locked=1)
         billable, job_type = actions.apply_client_policy(
             row, None, None, current_billable=1, current_job_type="X")
-        self.assertEqual((billable, job_type), (0, "X"))
+        self.assertEqual((billable, job_type), (1, "X"))
 
     def test_staff_meeting_auto_job_when_unset(self) -> None:
         row = self._row(display_name="Staff Meeting", default_job_type="Administrative",
                         billable_locked=1)
         billable, job_type = actions.apply_client_policy(row, None, None)
-        self.assertEqual((billable, job_type), (0, "Administrative"))
+        self.assertEqual((billable, job_type), (1, "Administrative"))
 
 
 class EditPolicyGuardTests(unittest.TestCase):
@@ -2094,7 +2095,7 @@ class EditPolicyGuardTests(unittest.TestCase):
                 (entry["entry_id"],))
             conn.commit()
         after = actions.edit_entry(self.db, entry["entry_id"], job_type="Whatever")
-        self.assertEqual(after["billable"], 0)
+        self.assertEqual(after["billable"], 1)
         # Admin: explicit Job Code wins (suggest-only default; operator may confirm others).
         self.assertEqual(after["job_type"], "Whatever")
 
@@ -2185,31 +2186,29 @@ class LockedBillableFinalizeGateTests(unittest.TestCase):
             conn.commit()
         return entry["entry_id"]
 
-    def test_approve_rejects_locked_billable_entry(self) -> None:
+    def test_approve_allows_locked_billable_entry(self) -> None:
         entry_id = self._legacy_admin_entry()
-        with self.assertRaises(ValueError) as ctx:
-            actions.set_approval(self.db, entry_id, True)
-        self.assertIn("administrative and cannot be billable", str(ctx.exception))
+        entry = actions.set_approval(self.db, entry_id, True)
+        self.assertEqual(entry["review_status"], "approved")
 
-    def test_approve_all_skips_locked_billable_and_counts(self) -> None:
+    def test_approve_all_includes_locked_billable(self) -> None:
         self._legacy_admin_entry()
         result = actions.approve_all(self.db, "2026-05-28")
-        self.assertEqual(result["approved_count"], 0)
-        self.assertEqual(result["skipped_locked_count"], 1)
-        self.assertEqual(result["skipped_locked_minutes"], 30)
+        self.assertEqual(result["approved_count"], 1)
+        self.assertEqual(result.get("skipped_locked_count", 0), 0)
 
-    def test_export_skips_locked_billable_and_counts(self) -> None:
+    def test_export_includes_locked_billable(self) -> None:
         entry_id = self._legacy_admin_entry()
-        with db.connect(self.db) as conn:  # simulate a pre-upgrade approval
+        with db.connect(self.db) as conn:
             conn.execute("UPDATE time_entries SET review_status='approved' WHERE entry_id=?",
                          (entry_id,))
             conn.commit()
         out = self.work / "out.csv"
-        with self.assertRaises(ValueError):
-            # only entry of the day is skipped -> nothing to export
-            actions.export_entries(self.db, "2026-05-28", out)
+        result = actions.export_entries(self.db, "2026-05-28", out)
+        self.assertEqual(result["exported_count"], 1)
+        self.assertIn("Admin", out.read_text())
 
-    def test_export_mixed_day_skips_locked_and_exports_rest(self) -> None:
+    def test_export_mixed_day_includes_locked_and_rest(self) -> None:
         locked_id = self._legacy_admin_entry()
         _seed_roster(self, "Client A")
         ok = actions.add_missing_entry(self.db, "Client A", "real work",
@@ -2220,16 +2219,15 @@ class LockedBillableFinalizeGateTests(unittest.TestCase):
             conn.commit()
         out = self.work / "out.csv"
         result = actions.export_entries(self.db, "2026-05-28", out)
-        self.assertEqual(result["exported_count"], 1)
-        self.assertEqual(result["skipped_locked_count"], 1)
-        self.assertEqual(result["skipped_locked_minutes"], 30)
+        self.assertEqual(result["exported_count"], 2)
+        self.assertEqual(result.get("skipped_locked_count", 0), 0)
         text = out.read_text()
-        self.assertNotIn("Admin", text)
+        self.assertIn("Admin", text)
         self.assertIn("Client A", text)
 
     def test_non_billable_admin_entry_finalizes_normally(self) -> None:
         session = actions.start_session(self.db, "Admin", "emails", None, "2026-05-28T11:00:00")
-        self.assertEqual(session["billable"], 0)
+        self.assertEqual(session["billable"], 1)
         actions.end_session(self.db, "2026-05-28T11:30:00")
         result = actions.approve_all(self.db, "2026-05-28")
         self.assertEqual(result["approved_count"], 1)

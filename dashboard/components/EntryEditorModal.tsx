@@ -14,7 +14,6 @@ import { isWithinEditWindow } from "@/lib/pay-period";
 import { reconcileTimeFields, type TimeFieldTouched } from "@/lib/time-field-sync";
 import type { ClientOption, JobCodeOption } from "@/lib/types/reference-data";
 import type { EntryWritePayload, TimeEntry } from "@/lib/types/time-entry";
-import { isAdminJobCode } from "@/lib/types/time-entry";
 import { ENTRY_ERRORS } from "@/lib/validate-entry";
 import { OutOfWindowConfirm } from "./OutOfWindowConfirm";
 import styles from "./EntryEditorModal.module.css";
@@ -218,7 +217,7 @@ export function EntryEditorModal({
         start_time: start,
         end_time: end,
         hours: Math.round(hours * 100) / 100,
-        billable: isAdminJobCode(draft.job_code) ? false : draft.billable,
+        billable: true,
       };
       await onSave(payload);
       onClose();
@@ -280,7 +279,7 @@ export function EntryEditorModal({
               <span>Start</span>
               <input
                 className={styles.input}
-                placeholder="HH:MM"
+                placeholder="9:00 AM"
                 value={startHm}
                 onChange={(e) =>
                   applyTimeFields(
@@ -294,7 +293,7 @@ export function EntryEditorModal({
               <span>End</span>
               <input
                 className={styles.input}
-                placeholder="HH:MM"
+                placeholder="9:00 AM"
                 value={endHm}
                 onChange={(e) =>
                   applyTimeFields(
@@ -349,13 +348,7 @@ export function EntryEditorModal({
             <Combobox
               value={draft.job_code}
               options={jobCodes.map((j) => j.job_code)}
-              onChange={(job_code) =>
-                setDraft((d) => ({
-                  ...d,
-                  job_code,
-                  billable: isAdminJobCode(job_code) ? false : d.billable,
-                }))
-              }
+              onChange={(job_code) => setDraft((d) => ({ ...d, job_code }))}
               placeholder="Select job code"
             />
           </label>
@@ -368,17 +361,6 @@ export function EntryEditorModal({
               onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))}
             />
           </label>
-
-          {draft.job_code !== "Admin" ? (
-            <label className={styles.check}>
-              <input
-                type="checkbox"
-                checked={draft.billable}
-                onChange={(e) => setDraft((d) => ({ ...d, billable: e.target.checked }))}
-              />
-              Billable
-            </label>
-          ) : null}
 
           {error ? <p className={styles.error}>{error}</p> : null}
 

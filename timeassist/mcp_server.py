@@ -16,6 +16,7 @@ from . import __version__
 from . import actions
 from . import mcp_views
 from . import paths
+from .db import connect
 
 PROTOCOL_VERSION = "2025-06-18"
 SERVER_NAME = "timeassist"
@@ -36,8 +37,10 @@ TOOLS: list[dict[str, Any]] = [
         "name": "start",
         "description": (
             "Start a draft time session. Soft nickname matches and unknown names return "
-            "needs_client_confirm (ask the operator) instead of writing — retry with the "
-            "suggested roster client, or Unassigned + draft_reception_email for a new client. "
+            "needs_client_confirm with choices (top roster matches + Other) — present those "
+            "as multiple choice, then retry with the chosen roster client, or Unassigned + "
+            "draft_reception_email for a new client. "
+            "Do not write until the operator confirms. "
             "Fails if a session is already active (use switch or end first)."
         ),
         "inputSchema": {
@@ -46,7 +49,6 @@ TOOLS: list[dict[str, Any]] = [
                 "client": {"type": "string"},
                 "task": {"type": "string", "description": "notes: what was done."},
                 "job_type": {"type": "string", "description": "Job Code from list_job_codes (stored locally as job_type)."},
-                "billable": {"type": "string", "enum": ["yes", "no"], "description": "Omit to use roster default (else yes)."},
                 "at": {"type": "string", "description": "Optional ISO timestamp."},
                 "duration_minutes": {
                     "type": "integer",
@@ -77,7 +79,6 @@ TOOLS: list[dict[str, Any]] = [
                 "client": {"type": "string"},
                 "task": {"type": "string", "description": "notes: what was done."},
                 "job_type": {"type": "string", "description": "Job Code from list_job_codes (stored locally as job_type)."},
-                "billable": {"type": "string", "enum": ["yes", "no"], "description": "Omit to use roster default (else yes)."},
                 "at": {"type": "string", "description": "Optional ISO timestamp."},
                 "minutes_ago": {"type": "integer", "minimum": 1, "description": "If the operator says they switched N minutes ago, close/start at at-now minus this many minutes."},
                 "duration_minutes": {
@@ -96,14 +97,13 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "clarify_active",
-        "description": "Clarify client/notes/billable labels on the active timer without changing its start time.",
+        "description": "Clarify client/notes/job labels on the active timer without changing its start time.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "client": {"type": "string"},
                 "task": {"type": "string", "description": "notes: what was done."},
                 "job_type": {"type": "string", "description": "Job Code from list_job_codes (stored locally as job_type)."},
-                "billable": {"type": "string", "enum": ["yes", "no"]},
                 "at": {"type": "string", "description": "Optional ISO timestamp."},
             },
         },
@@ -138,9 +138,8 @@ TOOLS: list[dict[str, Any]] = [
                 "duration_minutes": {
                     "type": "integer",
                     "minimum": 1,
-                    "description": "Billable duration in minutes when start/end are omitted.",
+                    "description": "Duration in minutes when start/end are omitted.",
                 },
-                "billable": {"type": "string", "enum": ["yes", "no"], "description": "Omit to use roster default (else yes)."},
                 "confirm_client": {
                     "type": "boolean",
                     "description": "True after the operator confirmed a soft match or unmatched spoken name.",
@@ -151,7 +150,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "edit",
-        "description": "Correct a draft/needs_info entry, or a submitted entry when the pay-period window (or superuser) allows. After editing a submitted row, call update_submitted to PATCH Supabase.",
+        "description": "Correct a draft/needs_info entry, or a submitted entry when the pay-period window (or superuser) allows. After editing a submitted row, call update_submitted to PATCH the firm time system.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -159,7 +158,6 @@ TOOLS: list[dict[str, Any]] = [
                 "client": {"type": "string"},
                 "task": {"type": "string", "description": "notes: what was done."},
                 "job_type": {"type": "string", "description": "Job Code from list_job_codes (stored locally as job_type)."},
-                "billable": {"type": "string", "enum": ["yes", "no"]},
                 "start": {"type": "string", "description": "ISO start timestamp."},
                 "end": {"type": "string", "description": "ISO end timestamp."},
                 "at": {"type": "string", "description": "Optional ISO timestamp."},
@@ -183,15 +181,19 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "approve",
         "description": (
-            "Approve a single draft entry, then immediately submit it to Supabase. "
-            "Requires a confirmed Job Code. Human-authority: only after the person "
-            "confirms this entry from the current review. Do not offer CSV afterward."
+            "Approve a single draft entry, then immediately post it to the firm time system. "
+            "Only when the operator explicitly asks to approve; pass confirm=true. "
+            "Requires a confirmed Job Code and current review_token. Do not offer CSV afterward."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "entry_id": {"type": "integer"},
                 "review_token": {"type": "string", "description": "Current token returned by review for this entry's date."},
+                "confirm": {
+                    "type": "boolean",
+                    "description": "Required true after the operator explicitly asks to approve.",
+                },
                 "at": {"type": "string", "description": "Optional ISO timestamp."},
             },
             "required": ["entry_id", "review_token"],
@@ -200,16 +202,20 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "approve_all",
         "description": (
-            "Approve ALL draft entries for a date that have a Job Code, then submit each "
-            "to Supabase. Skips needs_info and missing Job Code (reported). Only when the "
-            "operator explicitly asks to approve everything — never on your own. Do not "
-            "offer CSV afterward."
+            "Approve ALL draft entries for a date that have a Job Code, then post each "
+            "to the firm time system. Skips needs_info and missing Job Code (reported). "
+            "Only when the operator explicitly asks to approve everything; pass confirm=true. "
+            "Never on your own. Do not offer CSV afterward."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "date": {"type": "string", "default": "today", "description": "YYYY-MM-DD or 'today'."},
                 "review_token": {"type": "string", "description": "Current token returned by review for this date."},
+                "confirm": {
+                    "type": "boolean",
+                    "description": "Required true after the operator explicitly asks to approve everything.",
+                },
                 "at": {"type": "string", "description": "Optional ISO timestamp."},
             },
             "required": ["review_token"],
@@ -218,7 +224,7 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "submit",
         "description": (
-            "POST one locally approved time entry to Supabase (time_entries table). "
+            "POST one locally approved time entry to the firm time system. "
             "Required after approve — same timeassist MCP, not a separate submit server. "
             "Refuses drafts and missing staff_name/office. Already-submitted rows skip "
             "(use update_submitted to PATCH)."
@@ -234,7 +240,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "update_submitted",
-        "description": "PATCH the existing Supabase time_entries row for a locally submitted entry (by supabase_id). Pay-period/superuser gate applies. Never inserts a second row.",
+        "description": "PATCH the existing firm time-system row for a locally submitted entry (by supabase_id). Pay-period/superuser gate applies. Never inserts a second row.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -247,7 +253,7 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "list_clients",
         "description": (
-            "Live read-only GET of firm clients from Supabase only (never local CSV/SQLite). "
+            "Live read-only GET of the firm client list (never local CSV/SQLite). "
             "When the operator asks to list all clients, pass confirm_full_list=true. "
             "To search, pass query with part of the spoken name. "
             "For capturing time, prefer add_missing/start/switch (soft match + needs_client_confirm)."
@@ -257,11 +263,11 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Optional filter on display name (token soft-match). Omit with confirm_full_list for the full Supabase roster.",
+                    "description": "Optional filter on display name (token soft-match). Omit with confirm_full_list for the full firm roster.",
                 },
                 "confirm_full_list": {
                     "type": "boolean",
-                    "description": "Required true to return every active Supabase client when the operator asked for the full list.",
+                    "description": "Required true to return every active firm client when the operator asked for the full list.",
                 },
             },
         },
@@ -269,16 +275,30 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "list_job_codes",
         "description": (
-            "GET job codes and accounts from Supabase on this same timeassist MCP. "
+            "GET Job Codes and accounts from the firm list on this same timeassist MCP. "
             "Use these Job Code values; copy account from the matching row, never type account. "
-            "Do not ask the operator for Supabase URL/API keys."
+            "Pass client (and optional office) to get suggested_job_codes (top 3) for multiple-choice. "
+            "Do not ask the operator for backend URL/API keys."
         ),
-        "inputSchema": {"type": "object", "properties": {}},
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "client": {
+                    "type": "string",
+                    "description": "Confirmed roster client name — returns suggested_job_codes for MCQ.",
+                },
+                "office": {
+                    "type": "string",
+                    "enum": ["GCD", "MH"],
+                    "description": "Optional office scope for suggestions (defaults to local setting when omitted).",
+                },
+            },
+        },
     },
     {
         "name": "list_employees",
         "description": (
-            "Live read-only GET of firm employees from Supabase (never written by Timmy). "
+            "Live read-only GET of firm employees (never written by Timmy). "
             "Use during setup to find the exact staff_name before config. "
             "Pass query to search, or confirm_full_list=true for the full active list."
         ),
@@ -339,7 +359,7 @@ TOOLS: list[dict[str, Any]] = [
         "description": (
             "Show local settings, or set staff_name/office (GCD or MH)/reception_email/rounding/"
             "export copy folder/strict roster/operator initials. staff_name is cross-checked "
-            "against the read-only Supabase employees table (canonical spelling + office). "
+            "against the firm employees list (canonical spelling + office). "
             "Admin action — confirm with the operator before changing settings."
         ),
         "inputSchema": {
@@ -400,7 +420,7 @@ TOOLS: list[dict[str, Any]] = [
                 },
                 "clear_reception_email": {
                     "type": "boolean",
-                    "description": "Clear reception_email (drafts fall back to reception@example.com).",
+                    "description": "Clear reception_email (drafts fall back to reception@gcd.cpa).",
                 },
                 "confirm": {"type": "boolean", "description": "Required true when changing a setting."},
             },
@@ -421,7 +441,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "import_clients",
-        "description": "DISABLED. Firm clients live only in Supabase (QuickBooks sync). Always errors — use add_missing/start (live soft-match) or Unassigned + draft_reception_email.",
+        "description": "DISABLED. Firm clients live only on the firm client list (QuickBooks sync). Always errors — use add_missing/start (live soft-match) or Unassigned + draft_reception_email.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -434,7 +454,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "add_client",
-        "description": "DISABLED. Firm clients live only in Supabase. Always errors — use Unassigned + draft_reception_email for new QuickBooks clients.",
+        "description": "DISABLED. Firm clients live only on the firm client list. Always errors — use Unassigned + draft_reception_email for new QuickBooks clients.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -469,7 +489,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "cancel",
-        "description": "Discard the active tracking session WITHOUT creating a billable entry (for an abandoned or mistaken session). Fails if no session is active.",
+        "description": "Discard the active tracking session WITHOUT creating a time entry (for an abandoned or mistaken session). Fails if no session is active.",
         "inputSchema": {"type": "object", "properties": {"at": {"type": "string", "description": "Optional ISO timestamp."}}},
     },
     {
@@ -648,10 +668,14 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
             review["html_output"] = actions.render_review_html(review, html_output, db_path, restrict_to_data_dir=True)
         return review
     if name == "approve":
+        _require_confirm(
+            arguments,
+            "approving an entry (approval needs confirm=true after the operator explicitly asks to approve)",
+        )
         entry_id = int(arguments["entry_id"])
         _validate_token_for_entry(db_path, entry_id, arguments)
         approved = actions.set_approval(db_path, entry_id, True, arguments.get("at"))
-        # Approve → immediate Supabase submit (CSV/export is opt-in only).
+        # Approve → immediate firm submit (CSV/export is opt-in only).
         from . import supabase_submit
 
         try:
@@ -663,6 +687,10 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
             approved["submit_error"] = str(exc)
         return approved
     if name == "approve_all":
+        _require_confirm(
+            arguments,
+            "approving all drafts (approval needs confirm=true after the operator explicitly asks to approve)",
+        )
         date_value = _date(arguments.get("date"))
         _validate_token_for_date(db_path, date_value, arguments)
         result = actions.approve_all(db_path, date_value, arguments.get("at"))
@@ -717,7 +745,24 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
         reception_email = arguments.get("reception_email")
         clear_reception_email = arguments.get("clear_reception_email") is True
         if sum(1 for value in (rule, strict_roster, user_export_dir, clear_user_export_dir, confirm_default_user_export_dir, operator_code, clear_operator_code, staff_name, clear_staff_name, office, clear_office, reception_email, clear_reception_email) if value) > 1:
-            raise ValueError("change one TimeAssist setting at a time")
+            # staff_name + office together is allowed for employee office disambiguation.
+            only_staff_office = bool(staff_name) and bool(office) and not any(
+                (
+                    rule,
+                    strict_roster,
+                    user_export_dir,
+                    clear_user_export_dir,
+                    confirm_default_user_export_dir,
+                    operator_code,
+                    clear_operator_code,
+                    clear_staff_name,
+                    clear_office,
+                    reception_email,
+                    clear_reception_email,
+                )
+            )
+            if not only_staff_office:
+                raise ValueError("change one TimeAssist setting at a time")
         if confirm_default_user_export_dir:
             _require_confirm(arguments, "changing TimeAssist settings")
             return actions.confirm_default_user_export_dir(db_path, arguments.get("at"))
@@ -746,6 +791,7 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
                 staff_name,
                 confirm_staff=confirm_staff,
                 at=arguments.get("at"),
+                office=office if isinstance(office, str) else None,
             )
         if clear_staff_name:
             _require_confirm(arguments, "changing TimeAssist settings")
@@ -796,7 +842,20 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
     if name == "list_job_codes":
         from .supabase_ref import list_job_codes
 
-        return list_job_codes(db_path=db_path)
+        client_arg = (arguments.get("client") or "").strip() or None
+        office_arg = (arguments.get("office") or "").strip().upper() or None
+        if office_arg not in {"GCD", "MH"}:
+            office_arg = None
+        if client_arg and not office_arg:
+            with connect(db_path) as conn:
+                office_arg = (actions.get_setting(conn, "office") or "").strip().upper() or None
+            if office_arg not in {"GCD", "MH"}:
+                office_arg = None
+        return list_job_codes(
+            db_path=db_path,
+            client=client_arg,
+            office=office_arg,
+        )
     if name == "list_employees":
         return actions.list_employees(
             db_path,

@@ -105,7 +105,7 @@ def time_entry_payload(
         "start_time": start_time,
         "end_time": end_time,
         "hours": minutes / 60,
-        "billable": bool(entry.get("billable")),
+        "billable": True,
         "source_file": "timmy",
     }
     return apply_unassigned_payload(entry, payload, db_path=db_path, environ=environ)

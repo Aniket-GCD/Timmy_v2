@@ -1,7 +1,7 @@
 import { durationHoursFromTimes, parseTimeInput } from "./hours-format";
 import { isWithinEditWindow } from "./pay-period";
 import type { ClientOption, JobCodeOption } from "./types/reference-data";
-import { isAdminJobCode, type EntryWritePayload } from "./types/time-entry";
+import type { EntryWritePayload } from "./types/time-entry";
 
 export type ValidationResult =
   | { ok: true; payload: EntryWritePayload; account: string }
@@ -19,7 +19,7 @@ export const ENTRY_ERRORS = {
     "This date is locked for editing. Contact an admin if it needs to change.",
   bothOrNeither:
     "Enter both a start time and an end time, or clear both and enter the duration instead.",
-  badTime: "Enter start and end as hours and minutes, like 9:00 and 9:05.",
+  badTime: "Enter start and end like 9:00 AM and 9:05 AM (or 09:00 and 09:05).",
   badDuration: "Enter how long the work took, like 0:05 or 1:30.",
   endBeforeStart: "End time needs to be after start time.",
   ownOnly: "You can only edit your own time entries.",
@@ -76,7 +76,7 @@ export function validateEntryWrite(
     return { ok: false, error: ENTRY_ERRORS.badDuration };
   }
 
-  const billable = isAdminJobCode(draft.job_code) ? false : draft.billable;
+  const billable = true;
 
   return {
     ok: true,

@@ -7,7 +7,6 @@ type Props = { metrics: Metrics };
 export function MetricCards({ metrics }: Props) {
   const cards = [
     { label: "Total hours", value: formatHoursHM(metrics.totalHours) },
-    { label: "Billable", value: formatHoursHM(metrics.billableHours) },
     {
       label: "Admin",
       value: `${formatHoursHM(metrics.adminHours)} (${formatPercent(metrics.adminHours, metrics.totalHours)})`,

@@ -502,7 +502,7 @@ function EntryRow({
             <input
               className={styles.cellInput}
               value={startHm}
-              placeholder="HH:MM"
+              placeholder="9:00 AM"
               onChange={(e) =>
                 applyTimeFields(
                   { startHm: e.target.value, endHm, hoursHm },
@@ -515,7 +515,7 @@ function EntryRow({
             <input
               className={styles.cellInput}
               value={endHm}
-              placeholder="HH:MM"
+              placeholder="9:00 AM"
               onChange={(e) =>
                 applyTimeFields(
                   { startHm, endHm: e.target.value, hoursHm },

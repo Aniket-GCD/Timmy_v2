@@ -28,7 +28,7 @@ import {
   todayISO,
   type RangeKey,
 } from "@/lib/dates";
-import { formatHoursHM } from "@/lib/hours-format";
+import { formatHoursHM, parseLocalStartMs } from "@/lib/hours-format";
 import { isWithinEditWindow } from "@/lib/pay-period";
 import type { CurrentlyWorking } from "@/lib/types/currently-working";
 import type { DashboardUser, Employee } from "@/lib/types/employee";
@@ -50,7 +50,7 @@ type EditorState =
     };
 
 function elapsedLabel(startedAt: string): string {
-  const start = new Date(startedAt).getTime();
+  const start = parseLocalStartMs(startedAt);
   if (Number.isNaN(start)) return "";
   const hours = Math.max(0, (Date.now() - start) / 3_600_000);
   return formatHoursHM(hours);
@@ -339,6 +339,41 @@ export function Dashboard() {
     openCreateEditor(defaults);
   }
 
+  function requestTableCreate() {
+    if (!me) return;
+    let staff = calendarStaff;
+    if (!staff && me.is_admin) {
+      const withHours = staffOptions.find((name) =>
+        entries.some((e) => e.staff_name === name && resolved.chartDays.includes(e.entry_date)),
+      );
+      staff = withHours ?? staffOptions[0] ?? me.staff_name;
+      if (staff) setStaffFilter(staff);
+    }
+    if (!staff) return;
+    const entryDate = dayFilter || todayISO();
+    const defaults: EntryEditorDefaults = {
+      entry_date: entryDate,
+      start_time: null,
+      end_time: null,
+      hours: 1,
+      office: officeFilter || me.office || "GCD",
+    };
+    if (me.is_admin && !isWithinEditWindow(entryDate)) {
+      setPendingCreate(defaults);
+      setCreateWarnOpen(true);
+      return;
+    }
+    setEditor({
+      open: true,
+      mode: "create",
+      defaults: {
+        ...defaults,
+        office: defaults.office || officeFilter || me.office || "GCD",
+      },
+      staffName: staff,
+    });
+  }
+
   function requestCalendarEdit(entry: TimeEntry) {
     if (!me) return;
     setEditor({
@@ -490,31 +525,41 @@ export function Dashboard() {
               <h2 className="section-title" style={{ marginBottom: 0 }}>
                 Time Entry Detail
               </h2>
-              <div className={rangeStyles.wrap} role="tablist" aria-label="Detail view">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={detailView === "detail"}
-                  className={detailView === "detail" ? rangeStyles.active : rangeStyles.btn}
-                  onClick={() => setDetailView("detail")}
-                >
-                  Table View
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={detailView === "calendar"}
-                  className={detailView === "calendar" ? rangeStyles.active : rangeStyles.btn}
-                  onClick={() => {
-                    pickStaffForCalendar();
-                    setDetailView("calendar");
-                  }}
-                >
-                  Calendar View
-                </button>
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+                {detailView === "detail" ? (
+                  <button type="button" className="chip" onClick={() => requestTableCreate()}>
+                    Add entry
+                  </button>
+                ) : null}
+                <div className={rangeStyles.wrap} role="tablist" aria-label="Detail view">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={detailView === "detail"}
+                    className={detailView === "detail" ? rangeStyles.active : rangeStyles.btn}
+                    onClick={() => setDetailView("detail")}
+                  >
+                    Table View
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={detailView === "calendar"}
+                    className={detailView === "calendar" ? rangeStyles.active : rangeStyles.btn}
+                    onClick={() => {
+                      pickStaffForCalendar();
+                      setDetailView("calendar");
+                    }}
+                  >
+                    Calendar View
+                  </button>
+                </div>
               </div>
             </div>
             {detailView === "detail" ? (
+              !calendarStaff && me?.is_admin ? (
+                <p className="muted">Select an employee to add or edit time entries.</p>
+              ) : (
               <DayEntriesTable
                 entries={tableEntries}
                 multiDay={multiDay || new Set(tableEntries.map((e) => e.entry_date)).size > 1}
@@ -524,6 +569,7 @@ export function Dashboard() {
                 jobCodes={jobCodes}
                 onSave={handleSave}
               />
+              )
             ) : staffFilter || (me && !me.is_admin) ? (
               <WeekCalendar
                 days={resolved.chartDays}
