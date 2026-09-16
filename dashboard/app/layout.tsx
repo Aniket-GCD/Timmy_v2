@@ -17,6 +17,12 @@ const ptSerif = PT_Serif({
 export const metadata: Metadata = {
   title: "Timmy Dashboard",
   description: "Firm hours dashboard for Timmy time entries across GCD and MH.",
+  icons: {
+    icon: [
+      { url: "/timmy-icon-green.svg", type: "image/svg+xml" },
+      { url: "/timmy-icon-green-128.png", type: "image/png", sizes: "128x128" },
+    ],
+  },
 };
 
 export default function RootLayout({
