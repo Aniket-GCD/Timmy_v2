@@ -4,6 +4,32 @@ All notable TimeAssist prototype changes should be recorded here.
 
 This project is still pre-1.0. Treat each `v0.1.x-prototype` release as a guided-pilot checkpoint: what changed for operators, what changed in the deterministic engine, and what was verified before publishing downloadable assets.
 
+## Unreleased — MCQ capture + office + QBO sync
+
+### Added
+- Multiple-choice client confirm: soft/miss capture returns `choices` (top 3) +
+  `other_label` for AskUserQuestion / numbered lists (Weston feedback).
+- `list_job_codes` accepts `client` / `office` and returns `suggested_job_codes`
+  (recent entry frequency, else catalog fallback).
+- Office-aware employee classify: same name at GCD+MH returns `ambiguous`
+  choices; `config` may pass `staff_name` + `office` together to disambiguate.
+- QBO→Supabase sync seeds Unassigned (GCD/MH) via `timeassist/clients_seed.py`;
+  docs in `docs/qbo-clients-sync.md`; GH Actions workflow
+  `.github/workflows/qbo-clients-sync.yml` (every 6h).
+- `qbo_tokens` table SQL (`docs/supabase-qbo-tokens.sql`) + `qbo_oauth_setup.py`
+  for one-time Intuit authorize per office (GCD/MH).
+- Dashboard Production OAuth: `/qbo-connect`, `/api/qbo/start`, `/api/qbo/callback`
+  (HTTPS redirect on Vercel; writes `qbo_tokens`).
+- Pilot checklist: `docs/pilot-mcq-checklist.md`.
+
+### Changed
+- Operator success copy: **Entry logged.** — never say Supabase / ready for export.
+- Timmy skill: MCQ start flow (client → job → notes → single timer start).
+- QBO sync loads companies from Supabase `qbo_tokens` (not `QBO_COMPANIES`);
+  persists rotated refresh tokens immediately (including `--dry-run`); skips an
+  office if `updated_at` is within 5 minutes; per-office refresh failures log
+  re-auth instructions and exit non-zero.
+
 ## v0.1.24-prototype — 2026-07-08
 
 ### Added
