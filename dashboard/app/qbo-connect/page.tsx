@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 type Me = {
@@ -35,7 +36,7 @@ export default function QboConnectPage() {
         <h1>QuickBooks connect</h1>
         <p className="muted">{error}</p>
         <p>
-          <a href="/login">Sign in</a>
+          <Link href="/login">Sign in</Link>
         </p>
       </div>
     );
@@ -55,7 +56,7 @@ export default function QboConnectPage() {
         <h1>QuickBooks connect</h1>
         <p className="muted">Admin only. Signed in as {me.email}.</p>
         <p>
-          <a href="/">Back to dashboard</a>
+          <Link href="/">Back to dashboard</Link>
         </p>
       </div>
     );
@@ -101,7 +102,7 @@ export default function QboConnectPage() {
         dashboard host + <code>/api/qbo/callback</code>).
       </p>
       <p style={{ marginTop: "1rem" }}>
-        <a href="/">← Dashboard</a>
+        <Link href="/">← Dashboard</Link>
       </p>
     </div>
   );
