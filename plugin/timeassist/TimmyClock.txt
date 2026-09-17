@@ -1,0 +1,23 @@
+Timmy Clock — desk widget
+=========================
+
+What it is
+  A small always-on-top window that shows your current Timmy timer.
+  It is not inside Claude. Display only — stop the timer in Claude/Timmy.
+
+How to open it
+  Look for **Timmy Clock** on your Desktop or Start Menu
+  (created the first time the clock runs successfully).
+
+Install (once per PC)
+  1. TimmyClock.exe ships with the Timmy plugin (next to .mcp.json).
+  2. Double-click TimmyClock.exe once.
+  3. After that, use the Desktop / Start Menu shortcut.
+
+First time
+  Open Claude and use Timmy once so your database exists, then open the clock.
+
+If something looks wrong
+  • "Could not find Timmy's database" — use Timmy in Claude once, then reopen.
+  • "Set your name in Timmy" — ask Timmy to set staff_name (your roster name).
+  • Prefer the Desktop shortcut after the first successful launch.

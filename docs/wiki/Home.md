@@ -37,4 +37,4 @@ QuickBooks-ready CSV. The goal is helpful capture, not surveillance.
   python3 -m unittest discover -s tests -v
   python3 scripts/timeassist_mcp.py --db timeassist.sqlite   # MCP server
   ```
-- **Data location:** Cowork/plugin installs use `${CLAUDE_PLUGIN_DATA}/timeassist.sqlite`; default exports/review files/backups land next to it and tool results report full paths.
+- **Data location:** Plugin installs use `%LOCALAPPDATA%\Timmy\timeassist.sqlite`; default exports/review files/backups land next to it and tool results report full paths.

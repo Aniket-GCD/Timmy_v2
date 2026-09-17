@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Build a platform-native TimeAssist executable with PyInstaller.
+"""Build platform-native TimeAssist + TimmyClock executables with PyInstaller.
 
-This intentionally builds for the current platform only. A Linux machine creates a
-Linux binary; Windows .exe artifacts should be built on Windows or in CI.
+This intentionally builds for the current platform only. A Linux machine creates
+Linux binaries; Windows .exe artifacts should be built on Windows or in CI.
 """
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import sys
 import venv
@@ -17,8 +16,10 @@ ROOT = Path(__file__).resolve().parents[1]
 VENV_DIR = ROOT / ".packaging-venv"
 BUILD_DIR = ROOT / "build" / "pyinstaller"
 DIST_DIR = ROOT / "dist"
-ENTRYPOINT = ROOT / "packaging" / "timeassist_entry.py"
-EXECUTABLE_NAME = "timeassist.exe" if os.name == "nt" else "timeassist"
+TIMEASSIST_ENTRY = ROOT / "packaging" / "timeassist_entry.py"
+CLOCK_ENTRY = ROOT / "packaging" / "timmy_clock_entry.py"
+TIMEASSIST_NAME = "timeassist"
+CLOCK_NAME = "TimmyClock"
 
 
 def venv_python() -> Path:
@@ -42,17 +43,22 @@ def ensure_packaging_venv() -> Path:
     return python
 
 
-def build() -> Path:
-    python = ensure_packaging_venv()
-    DIST_DIR.mkdir(exist_ok=True)
-    BUILD_DIR.mkdir(parents=True, exist_ok=True)
+def _artifact_name(base: str) -> str:
+    return f"{base}.exe" if os.name == "nt" else base
 
-    # Remove the old platform artifact so smoke tests cannot accidentally use it.
-    artifact = DIST_DIR / EXECUTABLE_NAME
+
+def _build_one(
+    python: Path,
+    *,
+    name: str,
+    entry: Path,
+    windowed: bool,
+) -> Path:
+    artifact = DIST_DIR / _artifact_name(name)
     if artifact.exists():
         artifact.unlink()
 
-    run([
+    cmd: list[str | Path] = [
         python,
         "-m",
         "PyInstaller",
@@ -60,19 +66,22 @@ def build() -> Path:
         "--noconfirm",
         "--onefile",
         "--name",
-        "timeassist",
+        name,
         "--distpath",
         DIST_DIR,
         "--workpath",
-        BUILD_DIR,
+        BUILD_DIR / name,
         "--specpath",
-        BUILD_DIR,
+        BUILD_DIR / name,
         "--paths",
         ROOT,
         "--collect-submodules",
         "timeassist",
-        ENTRYPOINT,
-    ])
+    ]
+    if windowed and os.name == "nt":
+        cmd.append("--windowed")
+    cmd.append(entry)
+    run(cmd)
 
     if not artifact.exists():
         raise FileNotFoundError(f"Expected executable was not created: {artifact}")
@@ -81,14 +90,25 @@ def build() -> Path:
     return artifact
 
 
+def build() -> tuple[Path, Path]:
+    python = ensure_packaging_venv()
+    DIST_DIR.mkdir(exist_ok=True)
+    BUILD_DIR.mkdir(parents=True, exist_ok=True)
+    timeassist = _build_one(
+        python, name=TIMEASSIST_NAME, entry=TIMEASSIST_ENTRY, windowed=False
+    )
+    clock = _build_one(python, name=CLOCK_NAME, entry=CLOCK_ENTRY, windowed=True)
+    return timeassist, clock
+
+
 def main() -> int:
-    artifact = build()
-    print("\nBuilt TimeAssist executable:")
-    print(f"  {artifact}")
-    print("\nTry it:")
-    print(f"  {artifact} --help")
-    print(f"  {artifact} demo --output demo/generated-exe")
-    print("\nNote: this artifact is platform-native. Build on Windows for a .exe.")
+    timeassist, clock = build()
+    print("\nBuilt executables:")
+    print(f"  {timeassist}")
+    print(f"  {clock}")
+    print("\nTimmy Clock: copy TimmyClock.exe into the Timmy plugin folder")
+    print("(same folder as .mcp.json), then double-click.")
+    print(f"\nCLI help: {timeassist} --help")
     return 0
 
 

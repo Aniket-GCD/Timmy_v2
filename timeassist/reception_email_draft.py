@@ -6,7 +6,7 @@ from typing import Any
 from urllib.parse import quote
 
 
-DEFAULT_RECEPTION_EMAIL = "reception@example.com"
+DEFAULT_RECEPTION_EMAIL = "reception@gcd.cpa"
 
 
 def draft_reception_email(
@@ -20,15 +20,15 @@ def draft_reception_email(
     if not spoken:
         raise ValueError("spoken_client_name is required")
     staff = (staff_name or "").strip() or "Staff"
-    office_code = (office or "").strip().upper() or "GCD"
+    # office kept for callers / future templates; body is firm-wide Reception wording.
+    _ = (office or "").strip().upper() or "GCD"
     to_addr = ((to_email or "").strip() or DEFAULT_RECEPTION_EMAIL)
-    subject = f"New QuickBooks client request: {spoken}"
+    subject = f"New Client Setup Request: {spoken}"
     body = (
-        f"Hi Reception,\n\n"
-        f"Please create a new client in QuickBooks.\n\n"
-        f"Client name: {spoken}\n"
-        f"Requested by: {staff}\n"
-        f"Office: {office_code}\n\n"
+        f"Hi Reception Team,\n\n"
+        f"Will you please set up this new client in QuickBooks and Practice. "
+        f"Source documents are attached.\n\n"
+        f"Client name: {spoken}\n\n"
         f"Thank you,\n"
         f"{staff}\n"
     )
@@ -39,5 +39,8 @@ def draft_reception_email(
         "body": body,
         "mailto": mailto,
         "sent": False,
-        "note": "Draft only — Timmy never sends email. Copy or open the mailto link.",
+        "note": (
+            "Draft only — Timmy never sends or attaches. "
+            "Operator: attach source documents (name, DOB, SSN, etc.) before sending."
+        ),
     }

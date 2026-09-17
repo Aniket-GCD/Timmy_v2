@@ -17,18 +17,19 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.append(str(SCRIPTS))
 
 from _supabase_env import load_supabase_script_env  # noqa: E402
-from timeassist.supabase_ref import _fetch_table_rows, request_json  # noqa: E402
+from timeassist.clients_seed import (  # noqa: E402
+    CLIENTS_TABLE,
+    ensure_unassigned,
+    index_clients_by_name_office,
+)
+from timeassist.supabase_ref import request_json  # noqa: E402
 
 DEFAULT_CSV = ROOT / "McKinley & Hutchings GCD CPAS_Customer Contact List (2).csv"
-CLIENTS_TABLE = "clients"
-UNASSIGNED = [
-    {"name": "Unassigned", "office": "GCD", "qbo_customer_id": "UNASSIGNED", "active": True},
-    {"name": "Unassigned", "office": "MH", "qbo_customer_id": "UNASSIGNED-MH", "active": True},
-]
 
 
 def load_rows(path: Path) -> list[dict[str, str]]:
@@ -45,27 +46,7 @@ def load_rows(path: Path) -> list[dict[str, str]]:
 
 
 def index_existing() -> dict[tuple[str, str], dict]:
-    rows = _fetch_table_rows(CLIENTS_TABLE)
-    idx: dict[tuple[str, str], dict] = {}
-    for row in rows:
-        name = str(row.get("name") or row.get("display_name") or "").strip()
-        office = str(row.get("office") or "").strip().upper()
-        if name and office:
-            idx[(name.casefold(), office)] = row
-    return idx
-
-
-def ensure_unassigned(idx: dict[tuple[str, str], dict], *, dry_run: bool) -> None:
-    for row in UNASSIGNED:
-        key = (row["name"].casefold(), row["office"])
-        if key in idx:
-            print(f"Unassigned already present for {row['office']}")
-            continue
-        if dry_run:
-            print(f"would insert Unassigned ({row['office']})")
-            continue
-        request_json("POST", CLIENTS_TABLE, body=row, prefer="return=minimal")
-        print(f"inserted Unassigned ({row['office']})")
+    return index_clients_by_name_office()
 
 
 def upsert_clients(
@@ -119,6 +100,7 @@ def main() -> int:
     idx = index_existing()
     print(f"Existing clients in Supabase: {len(idx)}")
     ensure_unassigned(idx, dry_run=args.dry_run)
+    print("Unassigned seed checked (GCD + MH)")
     inserted, updated = upsert_clients(rows, idx, dry_run=args.dry_run)
     print(f"Inserted {inserted}, updated/reactivated {updated}" + (" (dry-run)" if args.dry_run else ""))
     return 0

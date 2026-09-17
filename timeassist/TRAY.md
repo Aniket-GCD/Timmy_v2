@@ -1,39 +1,38 @@
 # Timmy Windows clock widget
 
-Always-on-top companion next to Timmy. It is **not** inside Claude and does **not** use a staff login.
+Small always-on-top window for **this machine’s** Timmy session. Not inside Claude.
+**Display only** — stop the timer in Claude / Timmy, not on the widget.
 
-Identity is this machine’s local Timmy `staff_name` (same setting used on submit).
+## For everyone (recommended)
+
+1. Open **Timmy Clock** from your **Desktop** or **Start Menu** (created the first time the clock runs successfully).
+2. Or double-click **`TimmyClock.exe`** next to Timmy’s `.mcp.json` in the plugin folder (org install or zip).
+
+First-time tip: open Claude and use Timmy once so the database exists, then start the clock. After that, use the Desktop shortcut.
+
+Plain-language card: `plugin/timeassist/TimmyClock.txt`.
 
 ## What it shows
 
-- On the clock: client + elapsed hours:minutes, plus countdown to `planned_end_at` when Timmy set a planned duration.
-- Idle: `Not on the clock`.
-- **Stop**: local `end_session` (draft in SQLite). Existing Timmy sync then closes `currently_working`. Never auto-submits to `time_entries_timmy_v2`.
+- On the clock: client + large **elapsed** time (local wall-clock, same as the dashboard)
+- Countdown when a planned end is set
+- Idle: `Not on the clock`
 
-Polls `currently_working` every 20 seconds (GET only). Also runs the local planned-end heartbeat so a missed auto-stop can close at `planned_end_at` while the widget is open.
+Polls Supabase `currently_working` about every 20 seconds.
 
-## Run
+## How TimmyClock.exe finds data
 
-Same env as Timmy (`SUPABASE_URL`, `SUPABASE_KEY` or `SUPABASE_ANON_KEY` / `SUPABASE_SECRET`). Point `--db` at the same SQLite Timmy uses.
+1. Loads `SUPABASE_URL` / `SUPABASE_KEY` from `.mcp.json` beside the exe, or from the org Timmy plugin under Claude’s session folders
+2. Finds `timeassist.sqlite` under `%LOCALAPPDATA%\Timmy\`, then Claude Store  
+   `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Local\Timmy\`, then beside the plugin
+3. Uses local `staff_name` from that database
+4. On success, copies itself to `%LOCALAPPDATA%\Timmy\TimmyClock.exe` and refreshes Desktop / Start Menu shortcuts
 
-From the kit root:
+## Developers
 
 ```bash
 python scripts/timeassist.py --db timeassist.sqlite tray
+python scripts/package_executable.py   # builds dist/timeassist.exe + dist/TimmyClock.exe
 ```
 
-Plugin data dir (Cowork):
-
-```bash
-python scripts/timeassist.py --db "%CLAUDE_PLUGIN_DATA%\timeassist.sqlite" tray
-```
-
-Optional: `--interval 15` (seconds; 15–30 is the intended range).
-
-Requires Windows Python with tkinter (the usual python.org installer). No extra packages.
-
-Set `staff_name` first if the widget shows `(set staff_name in Timmy config)`:
-
-```bash
-python scripts/timeassist.py --db timeassist.sqlite config --staff-name "Hannah Curtis" --office GCD --confirm
-```
+Kit-root `Start Timmy Clock.vbs` is a thin fallback: prefers `TimmyClock.exe` in `plugin/timeassist/`, otherwise the old script launcher.

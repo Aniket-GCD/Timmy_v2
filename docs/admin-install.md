@@ -92,7 +92,7 @@ Known packaging note: the zip should contain a top-level `timeassist/` folder, n
 7. Run the synthetic pilot checklist before real entries.
 8. Record where the database and exports land on this machine.
 
-Plugin installs now pin the database to `${CLAUDE_PLUGIN_DATA}/timeassist.sqlite`. Default exports, review HTML, and sanitized packets are written under `${CLAUDE_PLUGIN_DATA}/exports/`, `${CLAUDE_PLUGIN_DATA}/reviews/`, and `${CLAUDE_PLUGIN_DATA}/packets/`; backups are written under `${CLAUDE_PLUGIN_DATA}/backups/`. QuickBooks CSV exports are also copied byte-for-byte to the confirmed/default handoff folder, normally `Documents/TimeAssist Exports`. Tool results report full paths. During the pilot, ask TimeAssist for `status`, `config`, or review/export results if you need to confirm the exact local path.
+Plugin installs store the database at `%LOCALAPPDATA%\Timmy\timeassist.sqlite` (chosen by `timeassist.exe`, not Claude). Default exports, review HTML, and sanitized packets are written under that folder’s `exports/`, `reviews/`, and `packets/` subdirs; backups under `backups/`. QuickBooks CSV exports are also copied byte-for-byte to the confirmed/default handoff folder, normally `Documents/TimeAssist Exports`. Tool results report full paths. During the pilot, ask TimeAssist for `status`, `config`, or review/export results if you need to confirm the exact local path.
 
 ## Troubleshooting
 

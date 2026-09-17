@@ -80,11 +80,16 @@ class PackagePluginTests(unittest.TestCase):
         fake = self.workdir / "timeassist.exe"
         fake.write_bytes(b"MZfake-pe-for-package-test")
         out = self.workdir / "timeassist-plugin.zip"
+        existed_before = PLUGIN_BINARY.exists()
 
         result = self.run_packager("--exe", str(fake), "--out", str(out))
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertFalse(PLUGIN_BINARY.exists(), "packager should not leave a binary in the source plugin directory")
+        if not existed_before:
+            self.assertFalse(
+                PLUGIN_BINARY.exists(),
+                "packager should not leave a binary in the source plugin directory",
+            )
         with zipfile.ZipFile(out) as zf:
             self.assertEqual(zf.read("timeassist/engine/timeassist.exe"), fake.read_bytes())
             names = zf.namelist()
@@ -92,6 +97,28 @@ class PackagePluginTests(unittest.TestCase):
             self.assertFalse(any(n.startswith("timeassist/bin/") for n in names))
             self.assertIn("timeassist/.claude-plugin/plugin.json", names)
             self.assertIn("timeassist/config/supabase.json", names)
+            self.assertNotIn("timeassist/TimmyClock.exe", names)
+
+    def test_packages_optional_timmy_clock_beside_mcp(self) -> None:
+        fake = self.workdir / "timeassist.exe"
+        fake.write_bytes(b"MZfake-pe-engine")
+        clock = self.workdir / "TimmyClock.exe"
+        clock.write_bytes(b"MZfake-pe-clock")
+        out = self.workdir / "timeassist-plugin.zip"
+
+        result = self.run_packager(
+            "--exe",
+            str(fake),
+            "--clock-exe",
+            str(clock),
+            "--out",
+            str(out),
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        with zipfile.ZipFile(out) as zf:
+            self.assertEqual(zf.read("timeassist/TimmyClock.exe"), clock.read_bytes())
+            self.assertEqual(zf.read("timeassist/engine/timeassist.exe"), fake.read_bytes())
 
 
 if __name__ == "__main__":

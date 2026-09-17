@@ -177,15 +177,22 @@ jobs:
             }
           }
 
+      - name: Verify TimmyClock artifact
+        run: |
+          if (!(Test-Path dist\TimmyClock.exe)) { throw "TimmyClock.exe was not built" }
+        shell: pwsh
+
       - name: Upload executable
         uses: actions/upload-artifact@v7
         with:
           name: timeassist-windows
-          path: dist/timeassist.exe
+          path: |
+            dist/timeassist.exe
+            dist/TimmyClock.exe
           if-no-files-found: error
 
       - name: Package Cowork plugin
-        run: python scripts/package_plugin.py --exe dist/timeassist.exe --out dist/timeassist-plugin.zip
+        run: python scripts/package_plugin.py --exe dist/timeassist.exe --clock-exe dist/TimmyClock.exe --out dist/timeassist-plugin.zip
 
       - name: Upload plugin
         uses: actions/upload-artifact@v7
@@ -201,10 +208,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = $env:GITHUB_REF_NAME
-          $assets = @("dist/timeassist.exe", "dist/timeassist-plugin.zip")
+          $assets = @("dist/timeassist.exe", "dist/TimmyClock.exe", "dist/timeassist-plugin.zip")
           gh release view $tag *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $tag $assets --title "TimeAssist $tag" --notes "Automated Windows build. Install the Cowork plugin (timeassist-plugin.zip) or run timeassist.exe directly."
+            gh release create $tag $assets --title "TimeAssist $tag" --notes "Automated Windows build. Install the Cowork plugin (timeassist-plugin.zip), run timeassist.exe, or drop TimmyClock.exe next to .mcp.json for the desk clock."
           } else {
             gh release upload $tag $assets --clobber
           }

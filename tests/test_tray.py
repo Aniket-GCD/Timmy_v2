@@ -53,6 +53,56 @@ class FormatClockLineTests(unittest.TestCase):
         )
         self.assertEqual(line, "Acme Co  2:10  overdue -0:10")
 
+    def test_clock_display_live(self) -> None:
+        now = datetime(2026, 5, 28, 10, 15, 0)
+        display = tray.clock_display(
+            {
+                "client": "Acme Co",
+                "job_code": "books",
+                "started_at": "2026-05-28T09:00:00",
+                "planned_end_at": "2026-05-28T11:00:00",
+            },
+            now,
+        )
+        self.assertEqual(display["client"], "Acme Co")
+        self.assertEqual(display["elapsed"], "1:15")
+        self.assertEqual(display["status"], "live")
+        self.assertIn("0:45 left", display["secondary"])
+        self.assertIn("books", display["secondary"])
+
+    def test_clock_display_idle(self) -> None:
+        display = tray.clock_display(None, datetime(2026, 5, 28, 10, 0))
+        self.assertEqual(display["client"], tray.IDLE_LINE)
+        self.assertEqual(display["status"], "idle")
+        self.assertEqual(display["elapsed"], "")
+
+    def test_wall_clock_z_matches_naive(self) -> None:
+        """Z / offset must not shift elapsed (dashboard parseLocalStartMs parity)."""
+        now = datetime(2026, 5, 28, 10, 15, 0)
+        naive = tray.clock_display(
+            {"client": "Acme Co", "started_at": "2026-05-28T09:00:00"},
+            now,
+        )
+        with_z = tray.clock_display(
+            {"client": "Acme Co", "started_at": "2026-05-28T09:00:00Z"},
+            now,
+        )
+        with_offset = tray.clock_display(
+            {"client": "Acme Co", "started_at": "2026-05-28T09:00:00+00:00"},
+            now,
+        )
+        self.assertEqual(naive["elapsed"], "1:15")
+        self.assertEqual(with_z["elapsed"], naive["elapsed"])
+        self.assertEqual(with_offset["elapsed"], naive["elapsed"])
+
+    def test_wall_clock_clamps_negative_elapsed(self) -> None:
+        now = datetime(2026, 5, 28, 8, 0, 0)
+        display = tray.clock_display(
+            {"client": "Acme Co", "started_at": "2026-05-28T09:00:00"},
+            now,
+        )
+        self.assertEqual(display["elapsed"], "0:00")
+
 
 class TrayFetchTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -108,6 +158,7 @@ class TrayFetchTests(unittest.TestCase):
         with patch("timeassist.tray.request_json", return_value=[]):
             snap = tray.snapshot(self.db, now=datetime(2026, 5, 28, 9, 20), environ=ENV)
         self.assertEqual(snap["line"], tray.IDLE_LINE)
+        self.assertFalse(snap["can_stop"])
 
     def test_stop_with_no_session_is_noop(self) -> None:
         self.assertIsNone(tray.stop_session(self.db))

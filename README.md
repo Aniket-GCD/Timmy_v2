@@ -104,7 +104,7 @@ python scripts/timeassist.py sanitize-packet --date today
 
 The current CLI creates local SQLite state, records draft entries, logs events, produces a review screen, exports approved synthetic entries, and generates an anonymized collaboration packet.
 
-Windows clock widget (this machine’s `staff_name`, polls `currently_working`): `python scripts/timeassist.py tray` — see `timeassist/TRAY.md`.
+Windows clock widget: ship **`TimmyClock.exe`** with the plugin (next to `.mcp.json`); first run creates Desktop / Start Menu shortcuts (see `plugin/timeassist/TimmyClock.txt` and `timeassist/TRAY.md`).
 
 ## Cowork / MCP plugin prototype
 
@@ -138,7 +138,7 @@ Developer MCP registration example:
 
 The current pilot bundle is Windows-only because `plugin/timeassist/.mcp.json` launches `bin/timeassist.exe`. That is intentional for the first guided Cowork pilot. See `docs/wiki/Distribution.md` for cross-platform packaging options if the workflow needs macOS or Linux support.
 
-The plugin pins its database to `${CLAUDE_PLUGIN_DATA}/timeassist.sqlite`. The official export CSV, review HTML, sanitized packets, and backups live in subfolders next to that database (`exports/`, `backups/`, …) — that internal copy is the audit source of truth. Every export also copies the exact CSV bytes to a user-visible folder so the accountant can find it: `Documents/TimeAssist Exports` by default, or the folder chosen via `config` `user_export_dir` (requires `confirm=true`).
+The plugin stores its database under `%LOCALAPPDATA%\Timmy\timeassist.sqlite` (the exe owns the path; Claude only launches the binary). The official export CSV, review HTML, sanitized packets, and backups live in subfolders next to that database (`exports/`, `backups/`, …) — that internal copy is the audit source of truth. Every export also copies the exact CSV bytes to a user-visible folder so the accountant can find it: `Documents/TimeAssist Exports` by default, or the folder chosen via `config` `user_export_dir` (requires `confirm=true`).
 
 Tools exposed include capture, review, edit, approve/approve-all, unapprove, export, sanitized packet, live `list_clients` (Supabase), reminders/check-ins, status, cleanup, and config for settings such as rounding and `user_export_dir`. Local client CSV import is disabled in the product path. The shipped assistant behavior contract lives at `plugin/timeassist/skills/timmy/SKILL.md` (invoke as `/timmy`).
 
@@ -150,12 +150,14 @@ Build a platform-native one-file executable with PyInstaller:
 python scripts/package_executable.py
 ```
 
-Then run the demo without invoking Python directly:
+Then run without invoking Python directly:
 
 ```bash
 ./dist/timeassist --help
 ./dist/timeassist demo --output demo/generated-exe
 ```
+
+On Windows this also builds **`dist/TimmyClock.exe`** (windowed desk clock). Copy it next to Timmy’s `.mcp.json` and double-click — see `plugin/timeassist/TimmyClock.txt`.
 
 Open `demo/generated-exe/stakeholder-review.html` for the branded stakeholder review. This build is platform-native: Linux creates a Linux binary, macOS creates a macOS binary, and Windows should build the `.exe` on Windows or through CI.
 

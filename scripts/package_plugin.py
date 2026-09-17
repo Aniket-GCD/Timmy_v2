@@ -35,6 +35,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Package the timeassist plugin zip.")
     parser.add_argument("--exe", required=True, help="path to the built timeassist binary")
     parser.add_argument("--out", required=True, help="output zip path")
+    parser.add_argument(
+        "--clock-exe",
+        default="",
+        help="optional path to TimmyClock.exe (placed at plugin root next to .mcp.json)",
+    )
     parser.add_argument("--binary-name", default="timeassist.exe", help="filename for the bundled binary inside engine/")
     parser.add_argument("--allow-non-windows-binary", action="store_true", help="dev-only escape hatch for packaging a non-PE binary")
     args = parser.parse_args()
@@ -49,6 +54,14 @@ def main() -> int:
         parser.error(f"built binary not found: {exe}")
     if not args.allow_non_windows_binary and not _is_windows_pe(exe):
         parser.error(f"{exe} is not a Windows PE executable (missing MZ header); build on Windows or pass --allow-non-windows-binary for a dev-only package")
+
+    clock_exe: Path | None = None
+    if args.clock_exe.strip():
+        clock_exe = Path(args.clock_exe)
+        if not clock_exe.is_file():
+            parser.error(f"TimmyClock binary not found: {clock_exe}")
+        if not args.allow_non_windows_binary and not _is_windows_pe(clock_exe):
+            parser.error(f"{clock_exe} is not a Windows PE executable")
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -65,8 +78,12 @@ def main() -> int:
             rel = path.relative_to(PLUGIN_DIR)
             if _should_skip_plugin_file(rel, args.binary_name):
                 continue
+            if rel.as_posix().lower() == "timmyclock.exe":
+                continue
             zf.write(path, f"{top}/{rel.as_posix()}")
         zf.write(exe, f"{top}/{ENGINE_DIR}/{args.binary_name}")
+        if clock_exe is not None:
+            zf.write(clock_exe, f"{top}/TimmyClock.exe")
         if supabase_config.is_file():
             zf.write(supabase_config, f"{top}/config/supabase.json")
 

@@ -2,8 +2,7 @@
   "mcpServers": {
     "timeassist": {
       "command": "${CLAUDE_PLUGIN_ROOT}/engine/timeassist.exe",
-      "args": ["--db", "${CLAUDE_PLUGIN_DATA}/timeassist.sqlite", "mcp"],
-      "cwd": "${CLAUDE_PLUGIN_DATA}",
+      "args": ["mcp"],
       "env": {
         "SUPABASE_URL": "https://skksezgzvogaxdqpmklp.supabase.co",
         "SUPABASE_KEY": "sb_publishable_4J_yxHLAgZgF0jO1VbHEYw_9AZwRHWC"

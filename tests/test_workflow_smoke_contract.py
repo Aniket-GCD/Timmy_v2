@@ -99,13 +99,13 @@ class WorkflowSmokeContractTests(unittest.TestCase):
             },
         )
         # "Client A" is not on the roster: add_missing captures it needs_info
-        # (the #34 approve/export gate). Confirm-as-is with an edit to draft.
-        self._payload(4, "edit", {"entry_id": 1, "client": "Client A"})
+        # (the #34 approve/export gate). Confirm-as-is with an edit to draft + Job Code.
+        self._payload(4, "edit", {"entry_id": 1, "client": "Client A", "job_type": "Tax"})
         review = self._payload(5, "review", {"date": "2026-05-28"})
         self._payload(
             6,
             "approve",
-            {"entry_id": 1, "review_token": review["review_token"], "at": "2026-05-28T10:35:00"},
+            {"confirm": True, "entry_id": 1, "review_token": review["review_token"], "at": "2026-05-28T10:35:00"},
         )
         post_approve_review = self._payload(7, "review", {"date": "2026-05-28"})
 

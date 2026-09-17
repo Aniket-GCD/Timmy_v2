@@ -15,8 +15,8 @@ the design.
   server into one installable unit:
   - `.claude-plugin/plugin.json` (manifest)
   - `skills/timmy/SKILL.md` (the `/timmy` skill + approval gate)
-  - `.mcp.json` → `${CLAUDE_PLUGIN_ROOT}/bin/timeassist.exe --db ${CLAUDE_PLUGIN_DATA}/timeassist.sqlite mcp`, with `cwd` set to `${CLAUDE_PLUGIN_DATA}`
-  - `bin/timeassist.exe` (dropped in by CI; gitignored, never committed)
+  - `.mcp.json` → `${CLAUDE_PLUGIN_ROOT}/engine/timeassist.exe mcp` (exe owns DB under `%LOCALAPPDATA%\Timmy\`)
+  - `engine/timeassist.exe` (dropped in by CI; gitignored, never committed)
 - **Marketplace** (`.claude-plugin/marketplace.json`) — points the plugin source
   at a **`dist` branch** via `git-subdir`. Marketplaces fetch from git (or npm),
   **not** release zips, and the binary isn't in git — so CI publishes the built
@@ -60,15 +60,16 @@ Do **not** rewrite the working Python engine just to chase universality. Treat u
 
 ## Data location
 
-Cowork/plugin installs pin durable state under `${CLAUDE_PLUGIN_DATA}`:
+Plugin installs store durable state under `%LOCALAPPDATA%\Timmy\` (the exe owns
+the path; Claude only launches `${CLAUDE_PLUGIN_ROOT}/engine/timeassist.exe`):
 
-- database: `${CLAUDE_PLUGIN_DATA}/timeassist.sqlite`
-- default exports: `${CLAUDE_PLUGIN_DATA}/quickbooks-time-YYYY-MM-DD.csv`
-- default review HTML: `${CLAUDE_PLUGIN_DATA}/review-YYYY-MM-DD.html`
-- default sanitized packets: `${CLAUDE_PLUGIN_DATA}/sanitized-collaboration-packet-YYYY-MM-DD.md`
-- backups: `${CLAUDE_PLUGIN_DATA}/backups/`
+- database: `%LOCALAPPDATA%\Timmy\timeassist.sqlite`
+- default exports / review HTML / packets / backups: next to that database
+  (`exports/`, `reviews/`, `packets/`, `backups/`)
 
-The MCP config also sets `cwd` to `${CLAUDE_PLUGIN_DATA}`. Tool results report full paths, so the helper can ask TimeAssist to show `status`, `review`, or `export` results and see where files landed. Direct CLI use still honors `--db` / `--output`; relative default artifacts resolve next to the selected database.
+An existing Claude plugin-data DB is migrated into this folder once on first
+launch. Tool results report full paths. Direct CLI use still honors `--db` /
+`--output`; relative default artifacts resolve next to the selected database.
 
 ## The big constraint: repo visibility
 

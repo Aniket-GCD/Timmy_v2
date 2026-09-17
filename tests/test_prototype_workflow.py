@@ -119,6 +119,7 @@ class PrototypeWorkflowTests(_CliHarness):
 
         approval = self.json_cli(
             "approve",
+            "--confirm",
             "--entry-id",
             "1",
             "--review-token",
@@ -264,12 +265,12 @@ class PrototypeWorkflowTests(_CliHarness):
             "2026-05-28T10:24:00",
         )
 
-        missing_approve_token = self.run_cli("approve", "--entry-id", "1")
+        missing_approve_token = self.run_cli("approve", "--confirm", "--entry-id", "1")
         self.assertNotEqual(missing_approve_token.returncode, 0)
         self.assertIn("review_token", missing_approve_token.stdout)
 
         review = self.json_cli("review", "--date", "2026-05-28")
-        self.json_cli("approve", "--entry-id", "1", "--review-token", review["details"]["review_token"])
+        self.json_cli("approve", "--confirm", "--entry-id", "1", "--review-token", review["details"]["review_token"])
 
         missing_export_token = self.run_cli("export", "--date", "2026-05-28", "--output", str(self.workdir / "qb.csv"))
         self.assertNotEqual(missing_export_token.returncode, 0)
@@ -289,7 +290,7 @@ class PrototypeWorkflowTests(_CliHarness):
             "2026-05-28T10:24:00",
         )
 
-        result = self.run_cli("approve", "--all", "--date", "2026-05-28")
+        result = self.run_cli("approve", "--confirm", "--all", "--date", "2026-05-28")
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("review_token", result.stdout)
@@ -309,7 +310,7 @@ class PrototypeWorkflowTests(_CliHarness):
         )
         review = self.json_cli("review", "--date", "2026-05-28")
 
-        result = self.run_cli("approve", "--all", "--entry-id", "1", "--date", "2026-05-28", "--review-token", review["details"]["review_token"])
+        result = self.run_cli("approve", "--confirm", "--all", "--entry-id", "1", "--date", "2026-05-28", "--review-token", review["details"]["review_token"])
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("not both", result.stdout)
@@ -494,12 +495,12 @@ class RangeCLITests(_CliHarness):
         self._seed_db_with_range_entries()
         # Approve day-1 entry with its own single-day token
         rev1 = self.json_cli("review", "--date", "2026-06-01", "--at", "2026-06-01T12:00:00")
-        self.json_cli("approve", "--all", "--date", "2026-06-01",
+        self.json_cli("approve", "--confirm", "--all", "--date", "2026-06-01",
                       "--review-token", rev1["details"]["review_token"],
                       "--at", "2026-06-01T12:00:00")
         # Approve day-30 entry with its own single-day token
         rev30 = self.json_cli("review", "--date", "2026-06-30", "--at", "2026-06-30T19:00:00")
-        self.json_cli("approve", "--all", "--date", "2026-06-30",
+        self.json_cli("approve", "--confirm", "--all", "--date", "2026-06-30",
                       "--review-token", rev30["details"]["review_token"],
                       "--at", "2026-06-30T19:00:00")
         # Now get a fresh range token covering the whole month
@@ -530,7 +531,7 @@ class RangeCLITests(_CliHarness):
         first_review = self.json_cli(
             "review", "--date", "2026-06-01", "--at", "2026-06-01T12:00:00",
         )
-        self.json_cli("approve", "--all", "--date", "2026-06-01",
+        self.json_cli("approve", "--confirm", "--all", "--date", "2026-06-01",
                       "--review-token", first_review["details"]["review_token"],
                       "--at", "2026-06-01T12:00:00")
         # Mint a FRESH single-day token after the approval, so it is genuinely
@@ -649,7 +650,7 @@ class RangeCLITests(_CliHarness):
         self.json_cli("config", "--operator-code", "AVD", "--confirm")
         # Approve
         review = self.json_cli("review", "--date", "2026-06-01", "--at", "2026-06-01T12:00:00")
-        self.json_cli("approve", "--all", "--date", "2026-06-01",
+        self.json_cli("approve", "--confirm", "--all", "--date", "2026-06-01",
                       "--review-token", review["details"]["review_token"],
                       "--at", "2026-06-01T12:00:00")
         # Export without --output

@@ -48,28 +48,31 @@ class PluginMcpConfigTests(unittest.TestCase):
         self.assertIn("claude plugin validate --strict ./plugin/timeassist", workflow)
         self.assertIn("claude plugin validate --strict ./.claude-plugin/marketplace.json", workflow)
 
-    def test_mcp_config_pins_state_to_claude_plugin_data(self) -> None:
+    def test_mcp_config_lets_exe_own_db_path(self) -> None:
         config = json.loads((ROOT / "plugin" / "timeassist" / ".mcp.json").read_text())
         server = config["mcpServers"]["timeassist"]
 
         self.assertEqual(server["command"], "${CLAUDE_PLUGIN_ROOT}/engine/timeassist.exe")
-        self.assertEqual(server["args"], ["--db", "${CLAUDE_PLUGIN_DATA}/timeassist.sqlite", "mcp"])
-        self.assertEqual(server["cwd"], "${CLAUDE_PLUGIN_DATA}")
+        self.assertEqual(server["args"], ["mcp"])
+        self.assertNotIn("cwd", server)
         env = server.get("env") or {}
         self.assertTrue((env.get("SUPABASE_URL") or "").strip())
         self.assertTrue((env.get("SUPABASE_KEY") or "").strip())
 
     def test_plugin_skill_documents_server_side_gates(self) -> None:
-        skill = (ROOT / "plugin" / "timeassist" / "skills" / "timmy" / "SKILL.md").read_text()
+        skill = (ROOT / "plugin" / "timeassist" / "skills" / "timmy" / "SKILL.md").read_text(encoding="utf-8")
 
         for required_text in [
             "review_token",
             "list_clients",
-            "Supabase",
+            'Never say "Supabase"',
+            "Want me to approve this?",
+            "firm client list",
+            "Logged and submitted for billing",
             "Unassigned",
             "confirm=true",
             "run `review` first",
-            "paths must stay under `${CLAUDE_PLUGIN_DATA}`",
+            "paths must stay under the Timmy data directory",
             "user_export_dir",
             "Documents/TimeAssist Exports",
             "do not manually recreate",
@@ -79,7 +82,7 @@ class PluginMcpConfigTests(unittest.TestCase):
             # Timmy persona + Task 9 behavior contracts
             "Timmy",
             "Never block or refuse approval over missing notes",
-            "Surface `needs_info` before approval",
+            "Surface `needs_info` / missing Job Codes before approval",
             "must match the",
             "administrative",
             "prefer the non-management near-twin",
@@ -155,12 +158,13 @@ class PluginArtifactPathTests(unittest.TestCase):
             {
                 "client": "Client A",
                 "task": "monthly cleanup",
+                "job_type": "Tax",
                 "start": "2026-05-28T09:00:00",
                 "end": "2026-05-28T09:30:00",
             },
         )
         review = self.payload("review", {"date": "2026-05-28"})
-        self.payload("approve", {"entry_id": 1, "review_token": review.get("review_token"), "at": "2026-05-28T10:00:00"})
+        self.payload("approve", {"confirm": True, "entry_id": 1, "review_token": review.get("review_token"), "at": "2026-05-28T10:00:00"})
 
     def run_from_launch_dir(self, fn):
         original = Path.cwd()

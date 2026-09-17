@@ -1,19 +1,116 @@
 """Default data and artifact locations.
 
-Data defaults to the current working directory for direct CLI use. When a caller
-pins ``--db`` to a durable data directory (as the Cowork plugin does), default
-exports/review files resolve next to that database and tool results report full
-paths so the operator can find them.
+Plugin / MCP installs use a per-Windows-user Timmy data directory
+(``%LOCALAPPDATA%\\Timmy``). Explicit ``--db`` still overrides for tests and
+CLI demos. Official exports/review files resolve next to the selected database;
+tool results report full paths so the operator can find them.
 """
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Mapping
+
+
+def is_unexpanded_plugin_var(value: str | Path | None) -> bool:
+    """True when Claude left a ${CLAUDE_PLUGIN_*} placeholder unexpanded."""
+    if value is None:
+        return False
+    return "${" in str(value)
+
+
+def _environ_map(environ: Mapping[str, str] | None) -> Mapping[str, str]:
+    return os.environ if environ is None else environ
+
+
+def timmy_data_dir(environ: Mapping[str, str] | None = None) -> Path:
+    """Per-user Timmy data directory (canonical durable home for SQLite)."""
+    env = _environ_map(environ)
+    if os.name == "nt":
+        raw = (env.get("LOCALAPPDATA") or "").strip()
+        if raw and not is_unexpanded_plugin_var(raw):
+            return Path(raw).expanduser() / "Timmy"
+        home = Path.home()
+        return home / "AppData" / "Local" / "Timmy"
+    # Non-Windows (tests / future): XDG-style under the home directory.
+    return Path.home() / ".timmy"
+
+
+def canonical_db_path(environ: Mapping[str, str] | None = None) -> Path:
+    return timmy_data_dir(environ=environ) / "timeassist.sqlite"
 
 
 def default_db_path() -> str:
-    return "timeassist.sqlite"
+    return str(canonical_db_path())
+
+
+def valid_claude_plugin_data(value: str | None) -> Path | None:
+    """Return expanded CLAUDE_PLUGIN_DATA path, or None if missing/unusable."""
+    raw = (value or "").strip()
+    if not raw or is_unexpanded_plugin_var(raw):
+        return None
+    return Path(raw).expanduser()
+
+
+def maybe_migrate_legacy_db(
+    dest_db: str | Path,
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> Path | None:
+    """Copy legacy Claude plugin-data DB into the Timmy data dir once.
+
+    Returns the source path if a migration ran, else None. Never treats a
+    literal ``${CLAUDE_PLUGIN_DATA}`` string as a filesystem path.
+    """
+    dest = Path(dest_db).expanduser()
+    if dest.is_file():
+        return None
+    env = _environ_map(environ)
+    legacy_root = valid_claude_plugin_data(env.get("CLAUDE_PLUGIN_DATA"))
+    if legacy_root is None:
+        return None
+    src = legacy_root / "timeassist.sqlite"
+    if not src.is_file():
+        return None
+    try:
+        if dest.exists() and src.resolve() == dest.resolve():
+            return None
+    except OSError:
+        pass
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    from . import db as tdb
+
+    tdb.backup(src, dest)
+    return src
+
+
+def prepare_db_path(
+    db_path: str | Path,
+    *,
+    environ: Mapping[str, str] | None = None,
+    migrate_if_canonical: bool = True,
+) -> str:
+    """Validate --db, optionally migrate into the canonical Timmy location."""
+    text = str(db_path)
+    if is_unexpanded_plugin_var(text):
+        raise ValueError(
+            "database path still contains an unexpanded Claude plugin variable "
+            f"({text!r}). Timmy owns its data under the Timmy AppData folder — "
+            "reinstall/update the plugin so .mcp.json no longer passes "
+            "${CLAUDE_PLUGIN_DATA}, or omit --db to use the default."
+        )
+    path = Path(text).expanduser()
+    if migrate_if_canonical:
+        canonical = canonical_db_path(environ=environ)
+        same = False
+        try:
+            same = path.resolve() == canonical.resolve()
+        except OSError:
+            same = path == canonical or str(path) == str(canonical)
+        if same:
+            maybe_migrate_legacy_db(path, environ=environ)
+    return str(path)
 
 
 def default_export_path(date_value: str, end_date: str | None = None, operator_code: str | None = None) -> str:

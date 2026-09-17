@@ -31,7 +31,7 @@ Then follow:
 
 ## Data and privacy notes
 
-- Plugin installs pin the database to `${CLAUDE_PLUGIN_DATA}/timeassist.sqlite`.
+- Plugin installs store the database at `%LOCALAPPDATA%\Timmy\timeassist.sqlite` (the exe chooses the path).
 - Default exports, review HTML, sanitized packets, and backups are written next to that database.
 - Firm clients and job codes come from live Supabase (`list_clients` / `list_job_codes`). Secrets stay in env (`SUPABASE_URL`, `SUPABASE_KEY`). Table names come from the plugin’s `config/supabase.json` (auto-loaded; pilot writes to `time_entries_timmy_v2`). Never put API keys in that file.
 - On first run, `init_state` returns an `export_folder` survey so Cowork can ask the operator to accept the default `Documents/TimeAssist Exports` handoff folder or choose a custom one.

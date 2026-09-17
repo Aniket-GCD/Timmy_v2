@@ -165,11 +165,24 @@ class ReceptionDraftTests(unittest.TestCase):
             to_email="front@gcd.example",
         )
         self.assertEqual(draft["to"], "front@gcd.example")
-        self.assertIn("Brand New LLC", draft["subject"])
-        self.assertIn("Brand New LLC", draft["body"])
+        self.assertEqual(draft["subject"], "New Client Setup Request: Brand New LLC")
+        self.assertIn("Hi Reception Team,", draft["body"])
+        self.assertIn("QuickBooks and Practice", draft["body"])
+        self.assertIn("Source documents are attached.", draft["body"])
+        self.assertIn("Client name: Brand New LLC", draft["body"])
         self.assertIn("Jane Doe", draft["body"])
         self.assertFalse(draft["sent"])
+        self.assertIn("attach source documents", draft["note"].lower())
         self.assertTrue(draft["mailto"].startswith("mailto:"))
+
+    def test_default_to_gcd_reception(self) -> None:
+        draft = reception_email_draft.draft_reception_email(
+            spoken_client_name="New Co",
+            staff_name="Pat",
+            office="MH",
+        )
+        self.assertEqual(draft["to"], "reception@gcd.cpa")
+        self.assertEqual(draft["subject"], "New Client Setup Request: New Co")
 
 
 class SubmitGateTests(unittest.TestCase):
@@ -437,7 +450,10 @@ class LiveClientRosterTests(unittest.TestCase):
         )
         self.assertTrue(pending.get("needs_client_confirm"))
         self.assertEqual(pending["suggested_client"], "0969 Ocean View Road")
-        self.assertIn("Did you mean", pending["ask"])
+        self.assertTrue(pending.get("choices"))
+        self.assertIn("0969 Ocean View Road", pending["choices"])
+        self.assertEqual(pending.get("other_label"), "Other")
+        self.assertIn("select the correct client", pending["ask"].lower())
         from timeassist import db as tdb
         with tdb.connect(self.db) as conn:
             n = conn.execute("SELECT COUNT(*) FROM time_entries").fetchone()[0]
@@ -520,6 +536,70 @@ class LiveClientRosterTests(unittest.TestCase):
             name, billable = actions.resolve_client(conn, "Bill's Shop", environ=ENV)
         self.assertEqual(name, "Bill's Shop")
         self.assertIsNone(billable)
+
+    def test_near_miss_person_first_name_typo(self) -> None:
+        from timeassist.supabase_ref import classify_client_remote, near_unique_match
+
+        self.assertEqual(
+            near_unique_match("Swaim, Terry", ["Swaim, Terri", "Acme Co"]),
+            "Swaim, Terri",
+        )
+        install_live_clients(self, "Swaim, Terri", "Acme Co")
+        classified = classify_client_remote("Swaim, Terry", environ=ENV, db_path=self.db)
+        self.assertEqual(classified["kind"], "soft")
+        self.assertEqual(classified["display_name"], "Swaim, Terri")
+
+    def test_near_miss_exact_garbage_stays_none(self) -> None:
+        from timeassist.supabase_ref import classify_client_remote
+
+        install_live_clients(self, "Acme Co", "Globex LLC")
+        classified = classify_client_remote("Zzz Completely Unrelated", environ=ENV, db_path=self.db)
+        self.assertEqual(classified["kind"], "none")
+        self.assertIsNone(classified["display_name"])
+
+    def test_near_miss_ambiguous_person_pair_stays_none(self) -> None:
+        from timeassist.supabase_ref import near_unique_match
+
+        hit = near_unique_match(
+            "Swaim, Terry",
+            ["Swaim, Terri", "Swaim, Kerry", "Acme Co"],
+        )
+        self.assertIsNone(hit)
+
+    def test_unassigned_known_when_missing_from_live_roster(self) -> None:
+        from timeassist import db as tdb
+
+        # Live roster has no Unassigned row — still resolves as known holding bucket.
+        rows = [{"name": "Acme Co", "office": "GCD", "active": True}]
+        with patch("timeassist.supabase_ref.get_clients", return_value=rows):
+            with tdb.connect(self.db) as conn:
+                row = actions.resolve_client_row(conn, "Unassigned", environ=ENV, db_path=self.db)
+                meta = actions.resolve_capture_with_metadata(
+                    conn, "Unassigned", "NEW CLIENT: Brand New | kickoff", "yes",
+                    environ=ENV, db_path=self.db,
+                )
+        self.assertIsNotNone(row)
+        self.assertEqual(row["display_name"], "Unassigned")
+        self.assertEqual(meta["capture_status"], "resolved")
+        self.assertIsNone(meta["capture_note"])
+        self.assertEqual(meta["client_name"], "Unassigned")
+
+    def test_client_confirm_ask_bans_substitute_roster_client(self) -> None:
+        from timeassist import db as tdb
+
+        install_live_clients(self, "Acme Co")
+        with tdb.connect(self.db) as conn:
+            pending = actions.client_confirm_gate(
+                conn, "Nobody LLC", environ=ENV, db_path=self.db,
+            )
+        self.assertTrue(pending["needs_client_confirm"])
+        ask = pending["ask"].lower()
+        self.assertIn("other", ask)
+        self.assertIn("new client", ask)
+        self.assertEqual(pending["if_new_client"]["client"], "Unassigned")
+        self.assertTrue(pending["if_new_client"]["notes_prefix"].startswith("NEW CLIENT:"))
+        self.assertEqual(pending.get("other_label"), "Other")
+        self.assertIsInstance(pending.get("choices"), list)
 
     def test_list_clients_query_filters(self) -> None:
         rows = [

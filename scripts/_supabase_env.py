@@ -39,4 +39,9 @@ def load_supabase_script_env(kit_root: Path | None = None) -> tuple[str, str]:
     # Prefer service role for writes in child modules that read SUPABASE_KEY.
     os.environ["SUPABASE_URL"] = url
     os.environ["SUPABASE_KEY"] = key
+    # Normalize legacy QBO env names if present.
+    if not (os.environ.get("QBO_CLIENT_ID") or "").strip() and (os.environ.get("Client_ID") or "").strip():
+        os.environ["QBO_CLIENT_ID"] = os.environ["Client_ID"].strip().strip('"').strip("'")
+    if not (os.environ.get("QBO_CLIENT_SECRET") or "").strip() and (os.environ.get("Client_secret") or "").strip():
+        os.environ["QBO_CLIENT_SECRET"] = os.environ["Client_secret"].strip().strip('"').strip("'")
     return url, key
