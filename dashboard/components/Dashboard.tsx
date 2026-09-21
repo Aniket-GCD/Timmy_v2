@@ -100,10 +100,18 @@ export function Dashboard() {
       try {
         const staffParam = me && !me.is_admin ? me.staff_name : staffFilter || undefined;
         const officeParam = me?.is_admin && officeFilter ? officeFilter : undefined;
+        const fetchFrom =
+          range === "today" || range === "yesterday"
+            ? resolved.chartDays[0]
+            : resolved.dateFrom;
+        const fetchTo =
+          range === "today" || range === "yesterday"
+            ? resolved.chartDays[resolved.chartDays.length - 1]
+            : resolved.dateTo;
         const [rows, liveRows] = await Promise.all([
           provider.fetchEntries({
-            dateFrom: resolved.dateFrom,
-            dateTo: resolved.dateTo,
+            dateFrom: fetchFrom,
+            dateTo: fetchTo,
             staffName: staffParam,
             office: officeParam,
           }),
@@ -118,7 +126,7 @@ export function Dashboard() {
         if (showLoading) setLoading(false);
       }
     },
-    [provider, resolved.dateFrom, resolved.dateTo, me, staffFilter, officeFilter, liveStaffName],
+    [provider, range, resolved.dateFrom, resolved.dateTo, resolved.chartDays, me, staffFilter, officeFilter, liveStaffName],
   );
 
   useEffect(() => {
@@ -161,10 +169,18 @@ export function Dashboard() {
       try {
         const staffParam = !me.is_admin ? me.staff_name : staffFilter || undefined;
         const officeParam = me.is_admin && officeFilter ? officeFilter : undefined;
+        const fetchFrom =
+          range === "today" || range === "yesterday"
+            ? resolved.chartDays[0]
+            : resolved.dateFrom;
+        const fetchTo =
+          range === "today" || range === "yesterday"
+            ? resolved.chartDays[resolved.chartDays.length - 1]
+            : resolved.dateTo;
         const [rows, liveRows] = await Promise.all([
           provider.fetchEntries({
-            dateFrom: resolved.dateFrom,
-            dateTo: resolved.dateTo,
+            dateFrom: fetchFrom,
+            dateTo: fetchTo,
             staffName: staffParam,
             office: officeParam,
           }),
@@ -177,7 +193,7 @@ export function Dashboard() {
         setLoading(false);
       }
     })();
-  }, [provider, resolved.dateFrom, resolved.dateTo, me, staffFilter, officeFilter, liveStaffName]);
+  }, [provider, range, resolved.dateFrom, resolved.dateTo, resolved.chartDays, me, staffFilter, officeFilter, liveStaffName]);
 
   useEffect(() => {
     const id = window.setInterval(() => setTick((t) => t + 1), 30_000);
@@ -237,21 +253,18 @@ export function Dashboard() {
 
   const chartEntries = useMemo(() => {
     if (range === "today" || range === "yesterday") {
-      return filterEntriesByRange(scopedEntries, resolveRange("week"));
+      const days = new Set(resolved.chartDays);
+      return scopedEntries.filter((e) => days.has(e.entry_date));
     }
     return rangeEntries;
-  }, [scopedEntries, range, rangeEntries]);
+  }, [scopedEntries, range, rangeEntries, resolved.chartDays]);
 
   const weekBars = useMemo(
     () => dailyTotals(resolved.chartDays, chartEntries),
     [resolved.chartDays, chartEntries],
   );
 
-  const metrics = useMemo(() => computeMetrics(rangeEntries), [rangeEntries]);
-  const byClient = useMemo(() => aggregateByClient(rangeEntries), [rangeEntries]);
-  const byJob = useMemo(() => aggregateByJob(rangeEntries), [rangeEntries]);
-
-  const tableEntries = useMemo(
+  const filteredEntries = useMemo(
     () =>
       applyChartFilters(rangeEntries, {
         day: dayFilter,
@@ -260,6 +273,18 @@ export function Dashboard() {
       }),
     [rangeEntries, dayFilter, clientFilter, jobFilter],
   );
+
+  const metrics = useMemo(() => computeMetrics(filteredEntries), [filteredEntries]);
+  const byClient = useMemo(() => aggregateByClient(filteredEntries), [filteredEntries]);
+  const byJob = useMemo(() => aggregateByJob(filteredEntries), [filteredEntries]);
+
+  const tableEntries = filteredEntries;
+
+  const highlightDates = useMemo(() => {
+    if (dayFilter) return [dayFilter];
+    if (range === "today" || range === "yesterday") return [resolved.dateFrom];
+    return [] as string[];
+  }, [dayFilter, range, resolved.dateFrom]);
 
   const calendarEntries = useMemo(() => {
     const staff = staffFilter || me?.staff_name || "";
@@ -478,13 +503,12 @@ export function Dashboard() {
           </section>
 
           <section className="section" aria-label="Charts">
-            <h2 className="section-title">
-              {range === "week" ? "This week" : range.includes("Pay") ? resolved.label : "This week so far"}
-            </h2>
+            <h2 className="section-title">Hours Breakdown</h2>
             <div className="charts-grid">
               <WeekChart
                 data={weekBars}
                 selectedDate={dayFilter}
+                highlightDates={highlightDates}
                 onSelectDate={(d) => {
                   setDayFilter(d);
                   setSelectedDay(d);

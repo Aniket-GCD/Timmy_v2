@@ -4,6 +4,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -12,13 +13,33 @@ import {
 import { formatHoursHM } from "@/lib/hours-format";
 import type { DailyTotal } from "@/lib/aggregations";
 
+const FILL_CLIENT = "#0e5727";
+const FILL_ADMIN = "#5f8b55";
+const FILL_GREY_CLIENT = "#c5c0ba";
+const FILL_GREY_ADMIN = "#a8a29e";
+
 type Props = {
   data: DailyTotal[];
   selectedDate: string | null;
+  /** Days painted in green; empty = all days green. Others with hours use muted grey. */
+  highlightDates: string[];
   onSelectDate: (date: string) => void;
 };
 
-export function WeekChart({ data, selectedDate, onSelectDate }: Props) {
+export function WeekChart({ data, selectedDate, highlightDates, onSelectDate }: Props) {
+  const highlight = new Set(highlightDates);
+  const useGrey = highlight.size > 0;
+
+  function clientFill(date: string): string {
+    if (!useGrey || highlight.has(date)) return FILL_CLIENT;
+    return FILL_GREY_CLIENT;
+  }
+
+  function adminFill(date: string): string {
+    if (!useGrey || highlight.has(date)) return FILL_ADMIN;
+    return FILL_GREY_ADMIN;
+  }
+
   return (
     <div className="panel">
       <h3>Hours by day</h3>
@@ -55,31 +76,37 @@ export function WeekChart({ data, selectedDate, onSelectDate }: Props) {
             <Bar
               dataKey="nonAdmin"
               stackId="h"
-              fill="#0e5727"
               style={{ cursor: "pointer" }}
               onClick={(d) => {
                 const row = d as unknown as DailyTotal;
                 if (row?.date) onSelectDate(row.date);
               }}
-            />
+            >
+              {data.map((row) => (
+                <Cell key={`na-${row.date}`} fill={clientFill(row.date)} />
+              ))}
+            </Bar>
             <Bar
               dataKey="admin"
               stackId="h"
-              fill="#5f8b55"
               radius={[4, 4, 0, 0]}
               style={{ cursor: "pointer" }}
               onClick={(d) => {
                 const row = d as unknown as DailyTotal;
                 if (row?.date) onSelectDate(row.date);
               }}
-            />
+            >
+              {data.map((row) => (
+                <Cell key={`ad-${row.date}`} fill={adminFill(row.date)} />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
       <p className="muted" style={{ margin: "0.5rem 0 0", fontSize: "0.85rem" }}>
         {selectedDate
           ? `Day filter: ${selectedDate} — click a bar to change; clear chip above table to reset.`
-          : "Click a bar to filter Time Entry Detail by day."}
+          : "Click a bar to filter the dashboard by day."}
       </p>
     </div>
   );
