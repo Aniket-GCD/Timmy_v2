@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .actions import capture_note_text, format_hhmm
+from .actions import capture_note_text, format_hhmm, format_local_ampm
 
 
 def drop_nones(value: Any) -> Any:
@@ -96,8 +96,12 @@ def slim_session(session: dict[str, Any] | None) -> dict[str, Any] | None:
         "job_code": job,
         "started_at": session.get("started_at"),
     }
+    if session.get("started_at"):
+        # Local AM/PM for chat confirmations — do not treat started_at as UTC.
+        slim["started_display"] = format_local_ampm(session.get("started_at"))
     if session.get("planned_end_at"):
         slim["planned_end_at"] = session["planned_end_at"]
+        slim["planned_end_display"] = format_local_ampm(session.get("planned_end_at"))
     if session.get("suggested_job_type"):
         slim["suggested_job_type"] = session["suggested_job_type"]
     if session.get("raw_client_name"):

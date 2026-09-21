@@ -56,6 +56,26 @@ class PlannedDurationTests(unittest.TestCase):
                 planned_end_at="2026-05-28T10:00:00",
             )
 
+    def test_default_start_gets_eight_hour_cap(self) -> None:
+        session = actions.start_session(
+            self.db, "Acme Co", "books", "yes", "2026-05-28T09:00:00",
+        )
+        self.assertEqual(session["planned_end_at"], "2026-05-28T17:00:00")
+
+    def test_short_duration_below_cap_kept(self) -> None:
+        session = actions.start_session(
+            self.db, "Acme Co", "books", "yes", "2026-05-28T09:00:00",
+            duration_minutes=3,
+        )
+        self.assertEqual(session["planned_end_at"], "2026-05-28T09:03:00")
+
+    def test_long_duration_clamped_to_eight_hours(self) -> None:
+        session = actions.start_session(
+            self.db, "Acme Co", "books", "yes", "2026-05-28T09:00:00",
+            duration_minutes=600,
+        )
+        self.assertEqual(session["planned_end_at"], "2026-05-28T17:00:00")
+
     def test_heartbeat_closes_at_planned_end_as_local_draft(self) -> None:
         actions.start_session(
             self.db, "Acme Co", "books", "yes", "2026-05-28T09:00:00",

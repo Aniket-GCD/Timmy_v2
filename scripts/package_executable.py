@@ -20,6 +20,8 @@ TIMEASSIST_ENTRY = ROOT / "packaging" / "timeassist_entry.py"
 CLOCK_ENTRY = ROOT / "packaging" / "timmy_clock_entry.py"
 TIMEASSIST_NAME = "timeassist"
 CLOCK_NAME = "TimmyClock"
+CLOCK_TASKBAR_ICON = ROOT / "assets" / "1-timmyclock-taskbar-icon.ico"
+CLOCK_TITLE_ICON = ROOT / "assets" / "2-timmyclock-title-bar-icon-32-green-on-transparent.ico"
 
 
 def venv_python() -> Path:
@@ -80,6 +82,13 @@ def _build_one(
     ]
     if windowed and os.name == "nt":
         cmd.append("--windowed")
+        if name == CLOCK_NAME:
+            if CLOCK_TASKBAR_ICON.is_file():
+                cmd.extend(["--icon", CLOCK_TASKBAR_ICON])
+            if CLOCK_TITLE_ICON.is_file():
+                # Bundle title-bar .ico for root.iconbitmap at runtime.
+                sep = ";" if os.name == "nt" else ":"
+                cmd.extend(["--add-data", f"{CLOCK_TITLE_ICON}{sep}assets"])
     cmd.append(entry)
     run(cmd)
 

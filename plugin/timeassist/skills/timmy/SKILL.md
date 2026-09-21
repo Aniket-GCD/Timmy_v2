@@ -142,7 +142,9 @@ more before approval. Never block or refuse approval over missing notes.
    - Then ask briefly for notes, with **Skip for now**.
    - Then a **single** `start`/`switch`/`clarify_active` with confirmed client +
      Job Code + notes. Confirm once: **“Timer started for {CLIENT} at {TIME}.”**
-     Do not ask more questions before they work.
+     For `{TIME}`, use tool field **`started_display`** (local machine AM/PM).
+     Do not reinterpret `started_at` as UTC. Do not ask more questions before
+     they work.
    - If `suggested_job_type` is present and Job Code is blank, fold it into the
      job-code MCQ — never auto-pick.
    - When the operator says they are starting (or switching) for N hours/minutes,

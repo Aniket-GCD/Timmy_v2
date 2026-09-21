@@ -604,6 +604,19 @@ class McpServerTests(unittest.TestCase):
         self.assertFalse(now.endswith("Z"), "timestamps must be local wall-clock, not UTC 'Z'")
         self.assertEqual(now[:10], actions.iso(actions.parse_at(None))[:10])
 
+    def test_format_local_ampm_converts_utc_z_to_machine_local(self) -> None:
+        from timeassist import actions
+
+        # Offset/Z timestamps are folded to local wall clock before AM/PM display.
+        z_value = "2026-05-28T05:43:00Z"
+        local_naive = actions.parse_at(z_value)
+        self.assertEqual(
+            actions.format_local_ampm(z_value),
+            actions.format_local_ampm(local_naive.isoformat()),
+        )
+        self.assertEqual(actions.format_local_ampm("2026-05-28T10:00:00"), "10:00 AM")
+        self.assertEqual(actions.format_local_ampm("2026-05-28T17:05:00"), "5:05 PM")
+
     def test_cancel_drops_active_session(self) -> None:
         self.payload("init_state", {"at": "2026-05-28T08:55:00"})
         self.payload("start", {"client": "Acme Co", "task": "x", "at": "2026-05-28T09:00:00"})

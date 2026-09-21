@@ -326,18 +326,25 @@ def ensure_stable_clock_install(
 
 
 def _write_timmy_clock_shortcuts(target: Path, *, environ: dict[str, str]) -> None:
-    """Create/refresh Desktop + Start Menu shortcuts (Windows). Idempotent."""
+    """Create/refresh Desktop + Start Menu + Startup shortcuts (Windows). Idempotent."""
     if os.name != "nt":
         return
     desktop = (environ.get("USERPROFILE") or "").strip()
     desktop_dir = Path(desktop) / "Desktop" if desktop else None
     appdata = (environ.get("APPDATA") or "").strip()
     start_dir = Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" if appdata else None
+    startup_dir = (
+        Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+        if appdata
+        else None
+    )
     links: list[Path] = []
     if desktop_dir is not None:
         links.append(desktop_dir / "Timmy Clock.lnk")
     if start_dir is not None:
         links.append(start_dir / "Timmy Clock.lnk")
+    if startup_dir is not None:
+        links.append(startup_dir / "Timmy Clock.lnk")
     target_s = str(target)
     work_s = str(target.parent)
     for link in links:

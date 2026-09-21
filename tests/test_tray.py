@@ -67,14 +67,72 @@ class FormatClockLineTests(unittest.TestCase):
         self.assertEqual(display["client"], "Acme Co")
         self.assertEqual(display["elapsed"], "1:15")
         self.assertEqual(display["status"], "live")
-        self.assertIn("0:45 left", display["secondary"])
-        self.assertIn("books", display["secondary"])
+        self.assertEqual(display["job"], "books")
 
     def test_clock_display_idle(self) -> None:
         display = tray.clock_display(None, datetime(2026, 5, 28, 10, 0))
         self.assertEqual(display["client"], tray.IDLE_LINE)
         self.assertEqual(display["status"], "idle")
         self.assertEqual(display["elapsed"], "")
+        self.assertEqual(display["job"], "")
+
+    def test_clock_display_overdue_status(self) -> None:
+        now = datetime(2026, 5, 28, 11, 10, 0)
+        display = tray.clock_display(
+            {
+                "client": "Acme Co",
+                "job_code": "1040",
+                "started_at": "2026-05-28T09:00:00",
+                "planned_end_at": "2026-05-28T11:00:00",
+            },
+            now,
+        )
+        self.assertEqual(display["status"], "overdue")
+        self.assertEqual(display["job"], "1040")
+        self.assertEqual(display["elapsed"], "2:10")
+
+    def test_idle_dot_color_is_red(self) -> None:
+        self.assertEqual(tray._COLOR_DOT_IDLE, "#c62828")
+
+    def test_session_elapsed_seconds(self) -> None:
+        now = datetime(2026, 5, 28, 9, 2, 0)
+        self.assertIsNone(tray.session_elapsed_seconds(None, now))
+        self.assertEqual(
+            tray.session_elapsed_seconds(
+                {"started_at": "2026-05-28T09:00:00"},
+                now,
+            ),
+            120,
+        )
+
+    def test_idle_check_action_thresholds(self) -> None:
+        self.assertEqual(tray.idle_check_action(None, prompted=False), "none")
+        self.assertEqual(tray.idle_check_action(7199, prompted=False), "none")
+        self.assertEqual(tray.idle_check_action(7200, prompted=False), "prompt")
+        self.assertEqual(tray.idle_check_action(28799, prompted=True), "none")
+        self.assertEqual(tray.idle_check_action(28800, prompted=True), "force_stop")
+        self.assertEqual(tray.idle_check_action(28800, prompted=False), "force_stop")
+
+    def test_prompt_job_label(self) -> None:
+        self.assertEqual(tray.prompt_job_label({"job_code": "books"}), "books")
+        self.assertEqual(tray.prompt_job_label({"client": "Acme Co"}), "Acme Co")
+        self.assertEqual(tray.prompt_job_label({}), "this task")
+
+    def test_clock_display_empty_job_placeholder(self) -> None:
+        now = datetime(2026, 5, 28, 10, 0, 0)
+        display = tray.clock_display(
+            {"client": "Admin", "started_at": "2026-05-28T09:58:00"},
+            now,
+        )
+        self.assertEqual(display["job"], "—")
+        self.assertEqual(display["client"], "Admin")
+
+    def test_should_ignore_live_row(self) -> None:
+        row = {"started_at": "2026-05-28T09:00:00", "client": "Acme"}
+        self.assertTrue(tray.should_ignore_live_row(row, "2026-05-28T09:00:00"))
+        self.assertFalse(tray.should_ignore_live_row(row, "2026-05-28T10:00:00"))
+        self.assertFalse(tray.should_ignore_live_row(row, None))
+        self.assertFalse(tray.should_ignore_live_row(None, "2026-05-28T09:00:00"))
 
     def test_wall_clock_z_matches_naive(self) -> None:
         """Z / offset must not shift elapsed (dashboard parseLocalStartMs parity)."""

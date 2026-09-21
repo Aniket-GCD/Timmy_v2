@@ -15,17 +15,24 @@ from typing import Any
 from . import paths
 from .db import backup as backup_db, connect, initialize, slugify_client_key, vacuum as vacuum_db
 
+# Hard session cap (Timmy plugin auto-end). 8 hours.
+TEST_MAX_SESSION_MINUTES = 8 * 60
+
 
 def now_iso() -> str:
-    # Local wall-clock time. A billing day is "the operator's day"; keeping
-    # capture, "today", and review on the same local clock avoids entries
-    # landing on the wrong date near midnight.
-    return datetime.now().replace(microsecond=0).isoformat()
+    # Always the local machine wall clock (never UTC stamped as naive).
+    # astimezone() resolves the OS timezone, then we store naive local ISO.
+    return (
+        datetime.now()
+        .astimezone()
+        .replace(tzinfo=None, microsecond=0)
+        .isoformat()
+    )
 
 
 def parse_at(value: str | None) -> datetime:
     if not value:
-        return datetime.now().replace(microsecond=0)
+        return datetime.now().astimezone().replace(tzinfo=None, microsecond=0)
     normalized = value.strip()
     if normalized.endswith("Z"):
         normalized = normalized[:-1] + "+00:00"
@@ -39,7 +46,26 @@ def parse_at(value: str | None) -> datetime:
 
 
 def iso(value: datetime) -> str:
+    if value.tzinfo is not None:
+        value = value.astimezone().replace(tzinfo=None)
     return value.replace(microsecond=0).isoformat()
+
+
+def format_local_ampm(value: str | datetime | None = None) -> str:
+    """12-hour AM/PM on the local machine clock (for Timmy start confirmations)."""
+    if value is None:
+        dt = datetime.now().astimezone().replace(tzinfo=None, microsecond=0)
+    elif isinstance(value, datetime):
+        dt = value
+        if dt.tzinfo is not None:
+            dt = dt.astimezone().replace(tzinfo=None)
+        dt = dt.replace(microsecond=0)
+    else:
+        dt = parse_at(value)
+    hour = dt.hour
+    ampm = "AM" if hour < 12 else "PM"
+    hour12 = hour % 12 or 12
+    return f"{hour12}:{dt.minute:02d} {ampm}"
 
 
 def normalize_date(value: str | None) -> str:
@@ -1472,17 +1498,23 @@ def resolve_planned_end(
     has_stamp = bool((planned_end_at or "").strip())
     if has_minutes and has_stamp:
         raise ValueError("pass duration_minutes or planned_end_at, not both")
+    started = parse_at(started_at)
+    cap = iso(started + timedelta(minutes=TEST_MAX_SESSION_MINUTES))
+    result: str | None = None
     if has_minutes:
         minutes = int(duration_minutes)
         if minutes <= 0:
             raise ValueError("duration_minutes must be greater than zero")
-        return iso(parse_at(started_at) + timedelta(minutes=minutes))
-    if has_stamp:
+        result = iso(started + timedelta(minutes=minutes))
+    elif has_stamp:
         ended = iso(parse_at(planned_end_at))
-        if parse_at(ended) <= parse_at(started_at):
+        if parse_at(ended) <= started:
             raise ValueError("planned_end_at must be after the session start")
-        return ended
-    return None
+        result = ended
+    # Hard cap: always enforce start + TEST_MAX_SESSION_MINUTES ceiling.
+    if result is None or parse_at(result) > parse_at(cap):
+        return cap
+    return result
 
 
 def _insert_active_session(
