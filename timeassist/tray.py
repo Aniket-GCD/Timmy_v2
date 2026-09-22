@@ -21,7 +21,7 @@ from .supabase_ref import request_json
 POLL_SECONDS = 20
 IDLE_LINE = "Not on the clock"
 _TITLE_ICON_NAME = "2-timmyclock-title-bar-icon-32-green-on-transparent.ico"
-_CLIENT_WRAP_PX = 280
+_CLIENT_WRAP_PX = 250
 
 # Prompt at 2h; hard stop backup at 8h (plugin planned_end is the authority).
 PROMPT_AFTER_SECONDS = 2 * 60 * 60
@@ -304,7 +304,7 @@ def run_widget(
     root.attributes("-topmost", True)
     root.resizable(False, False)
     root.configure(bg=_COLOR_BG)
-    root.geometry("360x130")
+    root.geometry("330x130")
     icon = _title_icon_path()
     if icon is not None:
         try:
@@ -486,8 +486,8 @@ def run_widget(
             pady=14,
         ).pack(fill="x")
 
-        btns = tk.Frame(dlg, bg=_COLOR_BG, padx=16, pady=(0, 14))
-        btns.pack(fill="x")
+        btns = tk.Frame(dlg, bg=_COLOR_BG, padx=16)
+        btns.pack(fill="x", pady=(0, 14))
 
         def mark_prompted() -> None:
             idle_state["prompted_started_at"] = started
