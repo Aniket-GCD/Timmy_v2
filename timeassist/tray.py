@@ -21,7 +21,7 @@ from .supabase_ref import request_json
 POLL_SECONDS = 20
 IDLE_LINE = "Not on the clock"
 _TITLE_ICON_NAME = "2-timmyclock-title-bar-icon-32-green-on-transparent.ico"
-_CLIENT_WRAP_PX = 250
+_CLIENT_WRAP_PX = 280
 
 # Prompt at 2h; hard stop backup at 8h (plugin planned_end is the authority).
 PROMPT_AFTER_SECONDS = 2 * 60 * 60
@@ -304,7 +304,7 @@ def run_widget(
     root.attributes("-topmost", True)
     root.resizable(False, False)
     root.configure(bg=_COLOR_BG)
-    root.geometry("330x130")
+    root.geometry("360x110")
     icon = _title_icon_path()
     if icon is not None:
         try:
@@ -321,7 +321,7 @@ def run_widget(
     def on_drag(event: Any) -> None:
         root.geometry(f"+{event.x_root - _drag['x']}+{event.y_root - _drag['y']}")
 
-    frame = tk.Frame(root, bg=_COLOR_BG, padx=14, pady=10)
+    frame = tk.Frame(root, bg=_COLOR_BG, padx=14, pady=6)
     frame.pack(fill="both", expand=True)
     for widget in (root, frame):
         widget.bind("<Button-1>", start_drag)
@@ -389,7 +389,7 @@ def run_widget(
     elapsed_lbl.bind("<B1-Motion>", on_drag)
 
     footer = tk.Frame(frame, bg=_COLOR_BG)
-    footer.pack(fill="x", pady=(6, 0))
+    footer.pack(fill="x", pady=(4, 0))
 
     banner_var = tk.StringVar(value="")
     banner_lbl = tk.Label(
