@@ -87,6 +87,7 @@ export async function upsertQboTokenRow(params: {
   await supabaseFetch("qbo_tokens", {
     method: "POST",
     prefer: "resolution=merge-duplicates,return=minimal",
+    purpose: "service",
     body: JSON.stringify({
       office: params.office,
       realm_id: params.realmId,

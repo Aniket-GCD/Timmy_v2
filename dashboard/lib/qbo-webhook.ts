@@ -128,6 +128,7 @@ export async function loadTokenByRealmId(realmId: string): Promise<QboTokenRow |
   if (!rid) return null;
   const rows = await supabaseFetch<Array<Record<string, unknown>>>(
     `qbo_tokens?select=office,realm_id,refresh_token&realm_id=eq.${encodeURIComponent(rid)}&limit=1`,
+    { purpose: "service" },
   );
   if (!Array.isArray(rows) || !rows[0]) return null;
   const office = parseQboOffice(String(rows[0].office ?? ""));
@@ -189,6 +190,7 @@ export async function deactivateClient(office: QboOffice, qboId: string): Promis
     {
       method: "PATCH",
       prefer: "return=minimal",
+      purpose: "service",
       body: JSON.stringify({ active: false }),
     },
   );
@@ -212,11 +214,13 @@ export async function upsertClientFromCustomer(
 
   const byQbo = await supabaseFetch<Array<{ id: number | string }>>(
     `${CLIENTS_TABLE}?select=id&qbo_customer_id=eq.${encodeURIComponent(qboId)}&office=eq.${encodeURIComponent(office)}&limit=1`,
+    { purpose: "service" },
   );
   if (Array.isArray(byQbo) && byQbo[0]?.id != null) {
     await supabaseFetch(`${CLIENTS_TABLE}?id=eq.${encodeURIComponent(String(byQbo[0].id))}`, {
       method: "PATCH",
       prefer: "return=minimal",
+      purpose: "service",
       body: JSON.stringify(body),
     });
     return "update";
@@ -224,11 +228,13 @@ export async function upsertClientFromCustomer(
 
   const byName = await supabaseFetch<Array<{ id: number | string }>>(
     `${CLIENTS_TABLE}?select=id&name=eq.${encodeURIComponent(name)}&office=eq.${encodeURIComponent(office)}&limit=1`,
+    { purpose: "service" },
   );
   if (Array.isArray(byName) && byName[0]?.id != null) {
     await supabaseFetch(`${CLIENTS_TABLE}?id=eq.${encodeURIComponent(String(byName[0].id))}`, {
       method: "PATCH",
       prefer: "return=minimal",
+      purpose: "service",
       body: JSON.stringify(body),
     });
     return "update";
@@ -237,6 +243,7 @@ export async function upsertClientFromCustomer(
   await supabaseFetch(CLIENTS_TABLE, {
     method: "POST",
     prefer: "return=minimal",
+    purpose: "service",
     body: JSON.stringify(body),
   });
   return "insert";

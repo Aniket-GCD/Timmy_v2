@@ -65,6 +65,13 @@ describe("getSupabaseConfig key selection", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "sb_publishable_test");
     expect(getSupabaseConfig("write").key).toBe("eyJhbGciOiServiceRoleTest");
   });
+
+  it("forces service_role JWT for purpose service (not anon)", () => {
+    vi.stubEnv("SUPABASE_URL", "https://example.supabase.co");
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "eyJhbGciOiServiceRoleTest");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "sb_publishable_test");
+    expect(getSupabaseConfig("service").key).toBe("eyJhbGciOiServiceRoleTest");
+  });
 });
 
 describe("supabaseFetch secret key headers", () => {

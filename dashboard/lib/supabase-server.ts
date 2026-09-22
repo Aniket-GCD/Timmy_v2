@@ -42,7 +42,7 @@ export function getElevatedKey(): string {
   return firstNonEmpty(process.env.SUPABASE_SERVICE_ROLE_KEY, process.env.SUPABASE_KEY);
 }
 
-export type SupabaseKeyPurpose = "read" | "write";
+export type SupabaseKeyPurpose = "read" | "write" | "service";
 
 export function getSupabaseConfig(purpose: SupabaseKeyPurpose = "read") {
   const url = (process.env.SUPABASE_URL ?? "").trim().replace(/\/$/, "");
@@ -51,7 +51,10 @@ export function getSupabaseConfig(purpose: SupabaseKeyPurpose = "read") {
   const serviceRole = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
 
   let key = "";
-  if (purpose === "read") {
+  if (purpose === "service") {
+    // Force elevated key (qbo_tokens / webhooks). Prefer classic service_role JWT.
+    key = serviceRole.startsWith("eyJ") ? serviceRole : elevated || serviceRole;
+  } else if (purpose === "read") {
     // Prefer publishable for SELECT — sb_secret_ often has no table GRANTs (blank UI / 500s).
     key = publishable || elevated;
   } else if (serviceRole.startsWith("eyJ")) {
@@ -73,7 +76,7 @@ export function getSupabaseConfig(purpose: SupabaseKeyPurpose = "read") {
     key = elevated || publishable;
   }
 
-  if (!warnedWeakKey && key && isPublishableOnlyKey(key) && purpose === "write") {
+  if (!warnedWeakKey && key && isPublishableOnlyKey(key) && purpose !== "read") {
     warnedWeakKey = true;
     console.warn(
       "[timmy-dashboard] PostgREST writes are using a publishable key. " +
@@ -108,17 +111,23 @@ function headersForKey(key: string, init?: RequestInit & { prefer?: string }): R
 
 export async function supabaseFetch<T>(
   path: string,
-  init?: RequestInit & { prefer?: string },
+  init?: RequestInit & { prefer?: string; purpose?: SupabaseKeyPurpose },
 ): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase();
   const purpose: SupabaseKeyPurpose =
-    method === "GET" || method === "HEAD" ? "read" : "write";
+    init?.purpose ?? (method === "GET" || method === "HEAD" ? "read" : "write");
+  const { prefer, purpose: _purpose, ...fetchInit } = init ?? {};
   const { url, key } = getSupabaseConfig(purpose);
   if (!url || !key) throw new Error("Supabase is not configured");
+  if (purpose === "service" && isPublishableOnlyKey(key)) {
+    throw new Error(
+      "SUPABASE_SERVICE_ROLE_KEY is required for service-role PostgREST calls (qbo_tokens / webhooks).",
+    );
+  }
 
   const res = await fetch(`${url}/rest/v1/${path}`, {
-    ...init,
-    headers: headersForKey(key, init),
+    ...fetchInit,
+    headers: headersForKey(key, { ...fetchInit, prefer }),
   });
   if (!res.ok) {
     const text = await res.text();
