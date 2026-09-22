@@ -944,13 +944,14 @@ def resolve_client_row(conn, name: str, *, environ: dict[str, str] | None = None
     even when the live Supabase row is briefly missing — seed it in Supabase only
     (not QuickBooks); replace later via ``edit`` once the real client exists.
     """
+    # Capture looks up the full firm roster (both offices). Submit still stamps
+    # settings.office onto Supabase — lookup must not hide cross-office clients.
     live_env = _supabase_environ(environ)
     if live_env is not None:
         from .supabase_ref import resolve_client_remote, roster_row_from_display
-        office = get_setting(conn, "office")
         resolved_db = db_path or _sqlite_file_from_conn(conn)
         display = resolve_client_remote(
-            name, environ=live_env, office=office or None, db_path=resolved_db,
+            name, environ=live_env, office=None, db_path=resolved_db,
         )
         if display is None:
             return _unassigned_known_row(name, db_path=resolved_db, environ=live_env)
@@ -962,10 +963,9 @@ def resolve_client_row(conn, name: str, *, environ: dict[str, str] | None = None
         resolved_db = db_path or _sqlite_file_from_conn(conn)
         return _unassigned_known_row(name, db_path=resolved_db, environ=environ)
     from .supabase_ref import resolve_client_remote, roster_row_from_display
-    office = get_setting(conn, "office")
     resolved_db = db_path or _sqlite_file_from_conn(conn)
     display = resolve_client_remote(
-        name, environ=environ, office=office or None, db_path=resolved_db,
+        name, environ=environ, office=None, db_path=resolved_db,
     )
     if display is None:
         return _unassigned_known_row(name, db_path=resolved_db, environ=environ)
@@ -993,10 +993,9 @@ def client_confirm_gate(
     from .supabase_config import unassigned_client_name
     from .supabase_ref import classify_client_remote, list_clients_remote, top_client_choices
 
-    office = get_setting(conn, "office")
     resolved_db = db_path or _sqlite_file_from_conn(conn)
     classified = classify_client_remote(
-        client, environ=live_env, office=office or None, db_path=resolved_db,
+        client, environ=live_env, office=None, db_path=resolved_db,
     )
     spoken = classified["spoken"] or client.strip()
     kind = classified["kind"]
@@ -1009,7 +1008,7 @@ def client_confirm_gate(
     roster_names = [
         row["display_name"]
         for row in list_clients_remote(
-            environ=live_env, office=office or None, db_path=resolved_db,
+            environ=live_env, office=None, db_path=resolved_db,
         )
         if row.get("display_name")
         and str(row["display_name"]).casefold() != unassigned.casefold()
@@ -1104,10 +1103,9 @@ def list_clients(
 
     q = (query or "").strip()
     want_full = bool(confirm_full_list)
-    with connect(db_path) as conn:
-        office = get_setting(conn, "office")
+    # Full firm roster (both offices) — operators bounce between GCD and MH clients.
     if not q and not want_full:
-        count = len(list_clients_remote(environ=live_env, office=office or None, db_path=db_path))
+        count = len(list_clients_remote(environ=live_env, office=None, db_path=db_path))
         return {
             "clients": [],
             "client_count": count,
@@ -1121,7 +1119,7 @@ def list_clients(
         }
     clients = list_clients_remote(
         environ=live_env,
-        office=office or None,
+        office=None,
         db_path=db_path,
         query=None if want_full and not q else q,
     )
@@ -2772,11 +2770,11 @@ def write_sanitized_packet(db_path: str | Path, date_value: str, output: str | P
     if not safe_entries:
         lines.append("No entries for this date.")
     else:
-        lines.append("| Date | Client | Job Code | Notes | Duration | Status |")
-        lines.append("|---|---|---|---|---:|---|")
+        lines.append("| Date | Client | Job Code | Notes | Duration | Office | Status |")
+        lines.append("|---|---|---|---|---:|---|---|")
         for entry in safe_entries:
             lines.append(
-                f"| {entry['start_at'][:10]} | {entry['client_name']} | {entry.get('job_type') or ''} | {entry['task_text']} | {format_hhmm(int(entry['rounded_minutes']))} | {entry['review_status']} |"
+                f"| {entry['start_at'][:10]} | {entry['client_name']} | {entry.get('job_type') or ''} | {entry['task_text']} | {format_hhmm(int(entry['rounded_minutes']))} | {entry.get('office') or ''} | {entry['review_status']} |"
             )
     lines.extend([
         "",
@@ -2941,6 +2939,10 @@ def render_review_html(review: dict[str, Any], output: str | Path, db_path: str 
     date_value = review["date"]
     event_count = review["event_count"]
     active = review.get("active_session")
+    office_label = ""
+    if db_path is not None:
+        with connect(db_path) as conn:
+            office_label = (get_setting(conn, "office") or "").strip()
 
     total_minutes = sum(int(entry["rounded_minutes"]) for entry in entries)
     cleared_minutes = int(totals["approved_minutes"]) + int(totals["exported_minutes"])
@@ -2959,6 +2961,7 @@ def render_review_html(review: dict[str, Any], output: str | Path, db_path: str 
         status_html = status_pill(entry['review_status'])
         if reason:
             status_html += f"<div class='sub'>Needs review: {html.escape(reason)}</div>"
+        entry_office = html.escape(str(entry.get("office") or office_label or "—"))
         rows.append(
             "<tr>"
             f"<td class='date'>{html.escape(entry['start_at'][:10])}</td>"
@@ -2967,7 +2970,7 @@ def render_review_html(review: dict[str, Any], output: str | Path, db_path: str 
             f"<td class='task'>{html.escape(entry['task_text'])}</td>"
             f"<td class='window'>{window}</td>"
             f"<td class='mins'>{html.escape(format_hhmm(int(entry['rounded_minutes'])))}</td>"
-            f"<td>{billable_pill(entry['billable'])}</td>"
+            f"<td class='office'>{entry_office}</td>"
             f"<td>{status_html}</td>"
             "</tr>"
         )
@@ -3023,7 +3026,7 @@ def render_review_html(review: dict[str, Any], output: str | Path, db_path: str 
     </div>
 {active_note}    <div class="table-wrap">
       <table>
-        <thead><tr><th>Date</th><th>Client</th><th>Job Code</th><th>Notes</th><th>Window</th><th>Duration</th><th>Billable</th><th>Status</th></tr></thead>
+        <thead><tr><th>Date</th><th>Client</th><th>Job Code</th><th>Notes</th><th>Window</th><th>Duration</th><th>Office</th><th>Status</th></tr></thead>
         <tbody>{body_rows}</tbody>
       </table>
     </div>

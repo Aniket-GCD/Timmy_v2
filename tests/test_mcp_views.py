@@ -29,13 +29,20 @@ class SlimEntryTests(unittest.TestCase):
         self.assertEqual(slim["client"], "Client A")
         self.assertEqual(slim["notes"], "monthly cleanup")
         self.assertNotIn("task", slim)  # renamed to notes
-        self.assertEqual(slim["billable"], "yes")
+        self.assertNotIn("billable", slim)
         self.assertEqual(slim["minutes"], 30)
         self.assertEqual(slim["entry_date"], "2026-05-28")
         self.assertEqual(slim["status"], "draft")
         self.assertEqual(slim["raw_minutes"], 23)  # differs from rounded -> included
         for dropped in ("created_at", "updated_at", "raw_client_name", "export_path", "capture_status"):
             self.assertNotIn(dropped, slim)
+
+    def test_office_from_entry_or_shape_context(self) -> None:
+        slim = mcp_views.slim_entry(dict(FULL_ENTRY, office="MH"))
+        self.assertEqual(slim["office"], "MH")
+        shaped = mcp_views.shape("edit", dict(FULL_ENTRY), office="GCD")
+        self.assertEqual(shaped["office"], "GCD")
+        self.assertNotIn("billable", shaped)
 
     def test_job_type_present_when_non_empty(self) -> None:
         slim = mcp_views.slim_entry(dict(FULL_ENTRY, job_type="Accounts"))
@@ -79,6 +86,20 @@ class SlimSessionTests(unittest.TestCase):
         slim = mcp_views.slim_session(dict(FULL_SESSION, planned_end_at="2026-05-28T12:00:00"))
         self.assertEqual(slim["planned_end_at"], "2026-05-28T12:00:00")
         self.assertEqual(slim["planned_end_display"], "12:00 PM")
+
+    def test_hard_cap_planned_end_omitted_from_slim_session(self) -> None:
+        # Default engine cap is start + 8h — do not surface it to the model.
+        slim = mcp_views.slim_session(
+            dict(FULL_SESSION, planned_end_at="2026-05-28T18:00:00", capture_status="resolved")
+        )
+        self.assertNotIn("planned_end_at", slim)
+        self.assertNotIn("planned_end_display", slim)
+
+    def test_operator_planned_end_still_surfaced(self) -> None:
+        slim = mcp_views.slim_session(
+            dict(FULL_SESSION, planned_end_at="2026-05-28T11:30:00", capture_status="resolved")
+        )
+        self.assertEqual(slim["planned_end_display"], "11:30 AM")
 
     def test_session_job_type_present_when_non_empty(self) -> None:
         slim = mcp_views.slim_session(dict(FULL_SESSION, job_type="Payroll"))
@@ -243,7 +264,7 @@ class ShapeTests(unittest.TestCase):
             "client_count": 7,
         })
         self.assertEqual(shaped, {
-            "client": {"client_key": "acme", "display_name": "Acme Co", "default_billable": 0},
+            "client": {"client_key": "acme", "display_name": "Acme Co"},
             "client_count": 7,
         })
 

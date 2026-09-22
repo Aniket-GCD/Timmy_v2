@@ -238,13 +238,12 @@ export function EntryEditorModal({
 
   return (
     <>
-      <div className={styles.backdrop} role="presentation" onClick={onClose}>
+      <div className={styles.backdrop} role="presentation">
         <div
           className={styles.dialog}
           role="dialog"
           aria-modal="true"
           aria-labelledby="entry-editor-title"
-          onClick={(e) => e.stopPropagation()}
         >
           <h3 id="entry-editor-title" className={styles.title}>
             {mode === "create" ? "Add time entry" : "Edit time entry"}

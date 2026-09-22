@@ -10,9 +10,14 @@ remove or rename fields for the model — never alter the engine's stored state.
 
 from __future__ import annotations
 
+from contextvars import ContextVar
+from datetime import timedelta
 from typing import Any
 
-from .actions import capture_note_text, format_hhmm, format_local_ampm
+from .actions import TEST_MAX_SESSION_MINUTES, capture_note_text, format_hhmm, format_local_ampm, parse_at
+
+# Staff office from settings, stamped onto slim entry/session during shape().
+_shape_office: ContextVar[str | None] = ContextVar("shape_office", default=None)
 
 
 def drop_nones(value: Any) -> Any:
@@ -21,6 +26,25 @@ def drop_nones(value: Any) -> Any:
     if isinstance(value, list):
         return [drop_nones(item) for item in value]
     return value
+
+
+def _resolved_office(entry_or_session: dict[str, Any]) -> str | None:
+    raw = entry_or_session.get("office") or _shape_office.get()
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    return text or None
+
+
+def _is_hard_cap_planned_end(started_at: str | None, planned_end_at: str | None) -> bool:
+    """True when planned_end is only the engine's default start+8h ceiling."""
+    if not started_at or not planned_end_at:
+        return False
+    try:
+        cap = parse_at(started_at) + timedelta(minutes=TEST_MAX_SESSION_MINUTES)
+        return parse_at(planned_end_at) == cap
+    except (TypeError, ValueError):
+        return False
 
 
 def slim_entry(entry: dict[str, Any]) -> dict[str, Any]:
@@ -47,6 +71,9 @@ def slim_entry(entry: dict[str, Any]) -> dict[str, Any]:
         "minutes": minutes,
         "status": entry.get("review_status"),
     }
+    office = _resolved_office(entry)
+    if office:
+        slim["office"] = office
     if minutes is not None:
         slim["hours"] = int(minutes) / 60
         slim["duration"] = format_hhmm(int(minutes))
@@ -96,12 +123,17 @@ def slim_session(session: dict[str, Any] | None) -> dict[str, Any] | None:
         "job_code": job,
         "started_at": session.get("started_at"),
     }
+    office = _resolved_office(session)
+    if office:
+        slim["office"] = office
     if session.get("started_at"):
         # Local AM/PM for chat confirmations — do not treat started_at as UTC.
         slim["started_display"] = format_local_ampm(session.get("started_at"))
-    if session.get("planned_end_at"):
-        slim["planned_end_at"] = session["planned_end_at"]
-        slim["planned_end_display"] = format_local_ampm(session.get("planned_end_at"))
+    planned = session.get("planned_end_at")
+    # Omit hard-cap-only planned end so Timmy does not narrate the default 8h stop.
+    if planned and not _is_hard_cap_planned_end(session.get("started_at"), planned):
+        slim["planned_end_at"] = planned
+        slim["planned_end_display"] = format_local_ampm(planned)
     if session.get("suggested_job_type"):
         slim["suggested_job_type"] = session["suggested_job_type"]
     if session.get("raw_client_name"):
@@ -290,7 +322,11 @@ def _view_switch(result: dict[str, Any]) -> dict[str, Any]:
 def _view_list_clients(result: dict[str, Any]) -> dict[str, Any]:
     shaped: dict[str, Any] = {
         "clients": [
-            {key: client[key] for key in ("client_key", "display_name", "aliases") if key in client}
+            {
+                key: client[key]
+                for key in ("client_key", "display_name", "aliases", "office")
+                if key in client
+            }
             for client in result.get("clients", [])
         ]
     }
@@ -406,12 +442,19 @@ _VIEWS = {
 }
 
 
-def shape(tool_name: str, result: dict[str, Any]) -> dict[str, Any]:
+def shape(tool_name: str, result: dict[str, Any], *, office: str | None = None) -> dict[str, Any]:
     """Return the compact model-facing view of a tool result.
 
     job_type/job_code blank strings must survive so review snapshots keep the
     Job Code column — strip only true Nones.
+
+    Optional ``office`` (staff settings) is stamped onto slim entry/session rows
+    so review tables can show Office without a local time_entries.office column.
     """
-    view = _VIEWS.get(tool_name)
-    shaped = view(result) if view else result
-    return drop_nones(shaped)
+    token = _shape_office.set((office or "").strip() or None)
+    try:
+        view = _VIEWS.get(tool_name)
+        shaped = view(result) if view else result
+        return drop_nones(shaped)
+    finally:
+        _shape_office.reset(token)

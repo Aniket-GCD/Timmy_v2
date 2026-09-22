@@ -53,11 +53,11 @@ TOOLS: list[dict[str, Any]] = [
                 "duration_minutes": {
                     "type": "integer",
                     "minimum": 1,
-                    "description": "Optional planned duration. Auto-stops to a local draft at start+this many minutes. Do not also pass planned_end_at.",
+                    "description": "Optional planned duration in minutes (only when the operator stated one). Stops to a local draft at start+this many minutes. Do not also pass planned_end_at.",
                 },
                 "planned_end_at": {
                     "type": "string",
-                    "description": "Optional ISO planned stop. Auto-stops to a local draft at this time. Do not also pass duration_minutes.",
+                    "description": "Optional ISO planned stop (only when the operator stated one). Stops to a local draft at this time. Do not also pass duration_minutes.",
                 },
                 "confirm_client": {
                     "type": "boolean",
@@ -84,11 +84,11 @@ TOOLS: list[dict[str, Any]] = [
                 "duration_minutes": {
                     "type": "integer",
                     "minimum": 1,
-                    "description": "Optional planned duration for the NEW session. Auto-stops to a local draft. Do not also pass planned_end_at.",
+                    "description": "Optional planned duration for the NEW session (only when the operator stated one). Stops to a local draft. Do not also pass planned_end_at.",
                 },
                 "planned_end_at": {
                     "type": "string",
-                    "description": "Optional ISO planned stop for the NEW session. Auto-stops to a local draft. Do not also pass duration_minutes.",
+                    "description": "Optional ISO planned stop for the NEW session (only when the operator stated one). Stops to a local draft. Do not also pass duration_minutes.",
                 },
                 "confirm_client": {"type": "boolean", "description": "True after the operator confirmed the client match."},
             },
@@ -929,7 +929,13 @@ def handle_message(msg: dict[str, Any], db_path: str | Path) -> dict[str, Any] |
             return _ok(msg_id, {"content": [{"type": "text", "text": text}], "isError": True})
         try:
             result = call_tool(name, arguments, db_path)
-            result = mcp_views.shape(name, result)
+            office = None
+            try:
+                with connect(db_path) as conn:
+                    office = actions.get_setting(conn, "office")
+            except Exception:
+                office = None
+            result = mcp_views.shape(name, result, office=office or None)
             text = json.dumps(result, separators=(",", ":"), sort_keys=True)
             return _ok(msg_id, {"content": [{"type": "text", "text": text}]})
         except Exception as exc:  # surface tool errors to the model, not as protocol failures

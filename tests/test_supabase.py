@@ -407,7 +407,8 @@ class LiveClientRosterTests(unittest.TestCase):
         else:
             os.environ["TIMEASSIST_ALLOW_LOCAL_ROSTER"] = "1"
 
-    def test_list_clients_remote_filters_office(self) -> None:
+    def test_list_clients_includes_all_offices(self) -> None:
+        """Capture searches the full firm roster so cross-office clients resolve."""
         rows = [
             {"name": "Unassigned", "office": "GCD", "active": True},
             {"name": "Acme Co", "office": "GCD", "active": True},
@@ -417,7 +418,9 @@ class LiveClientRosterTests(unittest.TestCase):
         with patch("timeassist.supabase_ref.get_clients", return_value=rows):
             listed = actions.list_clients(self.db, environ=ENV, confirm_full_list=True)["clients"]
         names = {c["display_name"] for c in listed}
-        self.assertEqual(names, {"Acme Co", "Unassigned"})
+        self.assertEqual(names, {"Acme Co", "Unassigned", "Other Office LLC"})
+        offices = {c["display_name"]: c.get("office") for c in listed}
+        self.assertEqual(offices.get("Other Office LLC"), "MH")
 
     def test_list_clients_requires_query_or_confirm(self) -> None:
         rows = [
