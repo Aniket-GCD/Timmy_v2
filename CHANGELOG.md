@@ -20,6 +20,8 @@ This project is still pre-1.0. Treat each `v0.1.x-prototype` release as a guided
   for one-time Intuit authorize per office (GCD/MH).
 - Dashboard Production OAuth: `/qbo-connect`, `/api/qbo/start`, `/api/qbo/callback`
   (HTTPS redirect on Vercel; writes `qbo_tokens`).
+- QBO Customer webhooks: `/api/qbo/webhook` (HMAC verifier → upsert/deactivate
+  live `clients`); 6h GH Action remains catch-up.
 - Pilot checklist: `docs/pilot-mcq-checklist.md`.
 
 ### Changed

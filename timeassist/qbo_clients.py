@@ -29,7 +29,7 @@ from timeassist.supabase_ref import _fetch_table_rows, request_json
 
 TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
 QBO_BASE = "https://quickbooks.api.intuit.com/v3/company"
-CLIENTS_TABLE = "clients_qbo_preview"
+CLIENTS_TABLE = "clients"
 TOKENS_TABLE = "qbo_tokens"
 USER_AGENT = "curl/8.5.0"
 REQUIRED_OFFICES = frozenset({"GCD", "MH"})

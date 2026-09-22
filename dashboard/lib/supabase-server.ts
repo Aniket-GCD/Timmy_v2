@@ -125,7 +125,9 @@ export async function supabaseFetch<T>(
     throw new Error(text || res.statusText);
   }
   if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  const text = await res.text();
+  if (!text.trim()) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 /** PostgREST return=representation must include at least one row after INSERT/UPDATE. */

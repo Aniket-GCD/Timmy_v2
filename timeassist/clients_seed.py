@@ -6,7 +6,7 @@ from typing import Any
 
 from timeassist.supabase_ref import _fetch_table_rows, request_json
 
-CLIENTS_TABLE = "clients_qbo_preview"
+CLIENTS_TABLE = "clients"
 
 UNASSIGNED_ROWS: list[dict[str, Any]] = [
     {"name": "Unassigned", "office": "GCD", "qbo_customer_id": "UNASSIGNED", "active": True},
