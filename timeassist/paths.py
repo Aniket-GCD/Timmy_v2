@@ -231,9 +231,14 @@ def _is_windows() -> bool:
     return os.name == "nt"
 
 
+# FOLDERID_Documents / FOLDERID_Desktop — SHGetKnownFolderPath follows OneDrive Known Folder Move.
+_FOLDERID_DOCUMENTS = (0xFDD39AD0, 0x238F, 0x46AF, (0xAD, 0xB4, 0x6C, 0x85, 0x48, 0x03, 0x69, 0xC7))
+_FOLDERID_DESKTOP = (0xB4BFCC3A, 0xDB2C, 0x424C, (0xB0, 0x29, 0x7F, 0xE9, 0x9A, 0x87, 0xC6, 0x41))
+
+
 def _documents_dir() -> Path:
     if _is_windows():
-        known_documents = _windows_known_documents_dir()
+        known_documents = _windows_known_folder(_FOLDERID_DOCUMENTS)
         if known_documents is not None:
             return known_documents
     home = os.environ.get("USERPROFILE") or os.environ.get("HOME")
@@ -241,7 +246,19 @@ def _documents_dir() -> Path:
     return base / "Documents"
 
 
-def _windows_known_documents_dir() -> Path | None:
+def desktop_dir(*, environ: dict[str, str] | None = None) -> Path:
+    """Visible Windows Desktop (OneDrive-redirected when applicable)."""
+    env = environ if environ is not None else os.environ
+    if _is_windows():
+        known = _windows_known_folder(_FOLDERID_DESKTOP)
+        if known is not None:
+            return known
+    home = (env.get("USERPROFILE") or env.get("HOME") or "").strip()
+    base = Path(home).expanduser() if home else Path.home()
+    return base / "Desktop"
+
+
+def _windows_known_folder(folder_id: tuple[int, int, int, tuple[int, ...]]) -> Path | None:
     if not _is_windows():
         return None
     try:
@@ -256,12 +273,8 @@ def _windows_known_documents_dir() -> Path | None:
                 ("Data4", ctypes.c_ubyte * 8),
             ]
 
-        folderid_documents = GUID(
-            0xFDD39AD0,
-            0x238F,
-            0x46AF,
-            (ctypes.c_ubyte * 8)(0xAD, 0xB4, 0x6C, 0x85, 0x48, 0x03, 0x69, 0xC7),
-        )
+        data1, data2, data3, data4 = folder_id
+        guid = GUID(data1, data2, data3, (ctypes.c_ubyte * 8)(*data4))
         path_ptr = ctypes.c_wchar_p()
         shell32 = ctypes.windll.shell32
         ole32 = ctypes.windll.ole32
@@ -275,7 +288,7 @@ def _windows_known_documents_dir() -> Path | None:
         ole32.CoTaskMemFree.argtypes = [ctypes.c_void_p]
         ole32.CoTaskMemFree.restype = None
 
-        result = shell32.SHGetKnownFolderPath(ctypes.byref(folderid_documents), 0, None, ctypes.byref(path_ptr))
+        result = shell32.SHGetKnownFolderPath(ctypes.byref(guid), 0, None, ctypes.byref(path_ptr))
         try:
             if result != 0 or not path_ptr.value:
                 return None

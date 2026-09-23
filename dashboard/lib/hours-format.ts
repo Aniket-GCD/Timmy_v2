@@ -1,6 +1,11 @@
+/** Decimal hours → nearest displayed minute. */
+export function hoursToMinutes(hours: number): number {
+  return Math.round(Math.max(0, hours) * 60);
+}
+
 /** Decimal hours → H:MM (nearest minute). */
 export function decimalHoursToHM(hours: number): string {
-  const totalMinutes = Math.round(Math.max(0, hours) * 60);
+  const totalMinutes = hoursToMinutes(hours);
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
   return `${h}:${String(m).padStart(2, "0")}`;
@@ -42,6 +47,13 @@ export function parseTimeInput(raw: string): string | null {
   const ampm = match[4]?.toLowerCase();
   if (ampm === "pm" && h < 12) h += 12;
   if (ampm === "am" && h === 12) h = 0;
+  // Typed H:MM with no AM/PM: 7–11 AM, 1–6 / 12 PM. Zero-padded 01–06 stays 24-hour
+  // so overnight 01:00 and stored clocks are not flipped to afternoon.
+  if (!ampm && !match[3] && h >= 1 && h <= 12) {
+    if (h === 12 || (h <= 6 && match[1].length === 1)) {
+      h = h === 12 ? 12 : h + 12;
+    }
+  }
   if (h > 23 || m > 59 || s > 59) return null;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }

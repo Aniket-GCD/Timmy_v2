@@ -1,5 +1,10 @@
 import { weekdayShort } from "./dates";
+import { hoursToMinutes } from "./hours-format";
 import { isAdminEntry, type TimeEntry } from "./types/time-entry";
+
+function minuteHours(rows: TimeEntry[]): number {
+  return rows.reduce((s, r) => s + hoursToMinutes(r.hours), 0) / 60;
+}
 
 export type Metrics = {
   totalHours: number;
@@ -9,17 +14,13 @@ export type Metrics = {
 };
 
 export function computeMetrics(entries: TimeEntry[]): Metrics {
-  let totalHours = 0;
-  let adminHours = 0;
-  const clients = new Set<string>();
-  for (const e of entries) {
-    totalHours += e.hours;
-    if (isAdminEntry(e)) adminHours += e.hours;
-    clients.add(e.client);
-  }
+  const adminRows = entries.filter((e) => isAdminEntry(e));
+  const totalHours = minuteHours(entries);
+  const adminHours = minuteHours(adminRows);
+  const clients = new Set(entries.map((e) => e.client));
   return {
-    totalHours: round2(totalHours),
-    adminHours: round2(adminHours),
+    totalHours,
+    adminHours,
     adminPercent: totalHours > 0 ? Math.round((adminHours / totalHours) * 100) : 0,
     clientCount: clients.size,
   };
@@ -36,18 +37,14 @@ export type DailyTotal = {
 export function dailyTotals(chartDays: string[], entries: TimeEntry[]): DailyTotal[] {
   return chartDays.map((date) => {
     const dayEntries = entries.filter((e) => e.entry_date === date);
-    let admin = 0;
-    let nonAdmin = 0;
-    for (const e of dayEntries) {
-      if (isAdminEntry(e)) admin += e.hours;
-      else nonAdmin += e.hours;
-    }
+    const adminRows = dayEntries.filter((e) => isAdminEntry(e));
+    const clientRows = dayEntries.filter((e) => !isAdminEntry(e));
     return {
       date,
       label: `${weekdayShort(date)} ${Number(date.slice(5, 7))}/${Number(date.slice(8))}`,
-      admin: round2(admin),
-      nonAdmin: round2(nonAdmin),
-      total: round2(admin + nonAdmin),
+      admin: minuteHours(adminRows),
+      nonAdmin: minuteHours(clientRows),
+      total: minuteHours(dayEntries),
     };
   });
 }
@@ -79,7 +76,7 @@ export function groupByClient(entries: TimeEntry[]): ClientGroup[] {
     .map(([client, rows]) => ({
       client,
       entries: rows,
-      subtotal: round2(rows.reduce((s, r) => s + r.hours, 0)),
+      subtotal: minuteHours(rows),
     }))
     .sort((a, b) => a.client.localeCompare(b.client));
 }
@@ -101,7 +98,7 @@ export function groupByStaff(entries: TimeEntry[]): StaffGroup[] {
     .map(([staff_name, rows]) => ({
       staff_name,
       entries: rows,
-      subtotal: round2(rows.reduce((s, r) => s + r.hours, 0)),
+      subtotal: minuteHours(rows),
     }))
     .sort((a, b) => a.staff_name.localeCompare(b.staff_name));
 }
@@ -111,21 +108,19 @@ function topNamed(
   keyFn: (e: TimeEntry) => string,
   limit: number,
 ): NamedHours[] {
-  const map = new Map<string, number>();
+  const map = new Map<string, TimeEntry[]>();
   for (const e of entries) {
     const k = keyFn(e);
-    map.set(k, (map.get(k) ?? 0) + e.hours);
+    const list = map.get(k) ?? [];
+    list.push(e);
+    map.set(k, list);
   }
   return Array.from(map.entries())
-    .map(([name, hours], i) => ({
+    .map(([name, rows], i) => ({
       name,
-      hours: round2(hours),
+      hours: minuteHours(rows),
       key: `${name}-${i}`,
     }))
     .sort((a, b) => b.hours - a.hours)
     .slice(0, limit);
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
 }

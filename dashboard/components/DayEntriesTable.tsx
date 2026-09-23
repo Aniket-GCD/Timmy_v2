@@ -8,6 +8,8 @@ import {
   displayHm,
   durationHoursFromTimes,
   formatHoursHM,
+  formatTime12,
+  hoursToMinutes,
   parseHoursInput,
   parseTimeInput,
 } from "@/lib/hours-format";
@@ -32,7 +34,8 @@ type Props = {
 };
 
 function displayTime(value: string | null): string {
-  return value ? value.slice(0, 5) : "—";
+  if (!value) return "—";
+  return formatTime12(value) || "—";
 }
 
 function draftFromEntry(entry: TimeEntry): EntryWritePayload {
@@ -62,7 +65,7 @@ export function DayEntriesTable({
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const groups = useMemo(() => groupByClient(entries), [entries]);
   const dailyTotal = useMemo(
-    () => formatHoursHM(entries.reduce((s, e) => s + e.hours, 0)),
+    () => formatHoursHM(entries.reduce((s, e) => s + hoursToMinutes(e.hours), 0) / 60),
     [entries],
   );
 
@@ -224,8 +227,10 @@ function ClientGroupBlock({
           <td colSpan={(showDate ? 1 : 0) + 3} className={styles.indent}>
             Subtotal — {group.client}
           </td>
+          <td />
+          <td />
           <td className={styles.num}>{formatHoursHM(group.subtotal)}</td>
-          <td colSpan={2} />
+          <td />
         </tr>
       )}
       {!collapsed && !showDetail && (

@@ -329,8 +329,9 @@ def _write_timmy_clock_shortcuts(target: Path, *, environ: dict[str, str]) -> No
     """Create/refresh Desktop + Start Menu + Startup shortcuts (Windows). Idempotent."""
     if os.name != "nt":
         return
-    desktop = (environ.get("USERPROFILE") or "").strip()
-    desktop_dir = Path(desktop) / "Desktop" if desktop else None
+    from .paths import desktop_dir as resolved_desktop_dir
+
+    desktop_dir = resolved_desktop_dir(environ=environ)
     appdata = (environ.get("APPDATA") or "").strip()
     start_dir = Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" if appdata else None
     startup_dir = (
