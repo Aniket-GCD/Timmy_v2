@@ -1,12 +1,13 @@
-"""Read-only QuickBooks Online Customer sync into Supabase ``clients``.
+"""Read-only QuickBooks Online Customer sync into Supabase.
 
-Never writes to QBO. Upserts by ``qbo_customer_id`` when present, else
-``(name, office)``.
+Never writes to QBO. Upserts by ``(office, qbo_customer_id)`` when present, else
+``(name, office)``. GCD and MH reuse QBO Ids; do not match on Id alone.
 
 Company credentials come from Supabase ``qbo_tokens`` (filled by
 ``qbo_oauth_setup.py``). Rotated refresh tokens are written back immediately
-after every Intuit refresh — including ``--dry-run`` (only ``clients`` writes
-are skipped on dry-run).
+after every Intuit refresh — including ``--dry-run`` (only roster writes
+are skipped on dry-run). Snapshot table ``qbo_sept24_pull`` skips the 5-min
+guard and does not seed Unassigned into live ``clients``.
 
 Env:
   QBO_CLIENT_ID
@@ -29,7 +30,7 @@ from timeassist.supabase_ref import _fetch_table_rows, request_json
 
 TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
 QBO_BASE = "https://quickbooks.api.intuit.com/v3/company"
-CLIENTS_TABLE = "clients"
+CLIENTS_TABLE = "qbo_sept24_pull"
 TOKENS_TABLE = "qbo_tokens"
 USER_AGENT = "curl/8.5.0"
 REQUIRED_OFFICES = frozenset({"GCD", "MH"})
@@ -39,6 +40,10 @@ REFRESH_FAIL_HINT = (
     "Re-run: python qbo_oauth_setup.py for this office "
     "(revoke, password/security change, or 100-day connection expiry)."
 )
+
+
+def _log(msg: str) -> None:
+    print(f"[qbo] {msg}", file=sys.stderr, flush=True)
 
 
 def parse_companies(environ: dict[str, str] | None = None) -> list[dict[str, str]]:
@@ -222,6 +227,10 @@ def fetch_customers(realm_id: str, access_token: str) -> list[dict[str, Any]]:
         if not isinstance(customers, list):
             customers = [customers] if customers else []
         all_rows.extend(customers)
+        _log(
+            f"SUCCESS QBO page start={start}: {len(customers)} row(s), "
+            f"running total={len(all_rows)}"
+        )
         if len(customers) < page_size:
             break
         start += page_size
@@ -237,15 +246,21 @@ def _customer_display_name(row: dict[str, Any]) -> str:
     ).strip()
 
 
+def _is_refresh_error(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return "token refresh" in text or "invalid_grant" in text
+
+
 def upsert_client_row(
     *,
     name: str,
     office: str,
     qbo_id: str,
     active: bool,
-    existing_by_qbo: dict[str, dict],
+    existing_by_qbo: dict[tuple[str, str], dict],
     existing_by_name_office: dict[tuple[str, str], dict],
     dry_run: bool,
+    environ: dict[str, str] | None = None,
 ) -> str:
     """Upsert one client. Existing hit → always ``update`` (even if fields match)."""
     body = {
@@ -254,7 +269,10 @@ def upsert_client_row(
         "qbo_customer_id": qbo_id,
         "active": active,
     }
-    hit = existing_by_qbo.get(qbo_id) or existing_by_name_office.get((name.casefold(), office))
+    office_u = office.strip().upper()
+    hit = existing_by_qbo.get((office_u, qbo_id)) or existing_by_name_office.get(
+        (name.casefold(), office_u)
+    )
     if hit and hit.get("id") is not None:
         if dry_run:
             return "update"
@@ -264,11 +282,18 @@ def upsert_client_row(
             body=body,
             query={"id": f"eq.{hit['id']}"},
             prefer="return=minimal",
+            environ=environ,
         )
         return "update"
     if dry_run:
         return "insert"
-    request_json("POST", CLIENTS_TABLE, body=body, prefer="return=minimal")
+    request_json(
+        "POST",
+        CLIENTS_TABLE,
+        body=body,
+        prefer="return=minimal",
+        environ=environ,
+    )
     return "insert"
 
 
@@ -285,10 +310,9 @@ def sync_office_customers(
     skip_recent: bool = True,
 ) -> dict[str, Any]:
     if skip_recent and recently_refreshed(updated_at):
-        print(
-            f"[qbo] {office}: skipped_recent_refresh "
-            f"(updated_at within {RECENT_REFRESH_SECONDS // 60} min)",
-            file=sys.stderr,
+        _log(
+            f"{office}: skipped_recent_refresh "
+            f"(updated_at within {RECENT_REFRESH_SECONDS // 60} min)"
         )
         return {
             "office": office,
@@ -299,6 +323,7 @@ def sync_office_customers(
             "skip": 0,
         }
 
+    _log(f"{office}: refreshing token realm={realm_id}")
     access_token, new_refresh = refresh_access_token(
         client_id=client_id,
         client_secret=client_secret,
@@ -306,41 +331,70 @@ def sync_office_customers(
     )
     # Always persist rotated refresh before any clients work (incl. dry-run).
     save_refresh_token(office, new_refresh, environ=environ, realm_id=realm_id)
+    _log(f"{office}: SUCCESS token refresh saved")
+    _log(f"{office}: pulling QBO Customers")
 
     customers = fetch_customers(realm_id, access_token)
     existing = _fetch_table_rows(CLIENTS_TABLE, environ=environ)
-    by_qbo: dict[str, dict] = {}
+    _log(
+        f"{office}: SUCCESS QBO pull {len(customers)} customer(s); "
+        f"{len(existing)} existing row(s) in {CLIENTS_TABLE}"
+    )
+    by_qbo: dict[tuple[str, str], dict] = {}
     by_name: dict[tuple[str, str], dict] = {}
     for row in existing:
         qid = str(row.get("qbo_customer_id") or "").strip()
-        if qid:
-            by_qbo[qid] = row
-        name = str(row.get("name") or "").strip()
         off = str(row.get("office") or "").strip().upper()
+        if qid and off:
+            by_qbo[(off, qid)] = row
+        name = str(row.get("name") or "").strip()
         if name and off:
             by_name[(name.casefold(), off)] = row
 
-    counts = {"insert": 0, "update": 0, "skip": 0}
+    counts = {"insert": 0, "update": 0, "skip": 0, "fail": 0}
     for cust in customers:
         name = _customer_display_name(cust)
         qbo_id = str(cust.get("Id") or "").strip()
         if not name or not qbo_id:
             counts["skip"] += 1
+            _log(f"{office}: SKIP missing name or id name={name!r} qbo_id={qbo_id!r}")
             continue
         active = cust.get("Active", True) is not False
-        action = upsert_client_row(
-            name=name,
-            office=office,
-            qbo_id=qbo_id,
-            active=active,
-            existing_by_qbo=by_qbo,
-            existing_by_name_office=by_name,
-            dry_run=dry_run,
-        )
+        try:
+            action = upsert_client_row(
+                name=name,
+                office=office,
+                qbo_id=qbo_id,
+                active=active,
+                existing_by_qbo=by_qbo,
+                existing_by_name_office=by_name,
+                dry_run=dry_run,
+                environ=environ,
+            )
+        except Exception as exc:  # noqa: BLE001 — keep pulling remaining rows
+            counts["fail"] += 1
+            _log(
+                f"{office}: FAILED name={name!r} qbo_id={qbo_id} "
+                f"active={active} error={exc}"
+            )
+            continue
         counts[action] = counts.get(action, 0) + 1
+        suffix = " (dry-run)" if dry_run else ""
+        _log(
+            f"{office}: SUCCESS {action}{suffix} name={name!r} "
+            f"qbo_id={qbo_id} active={active}"
+        )
         if action == "insert":
-            by_qbo[qbo_id] = {"qbo_customer_id": qbo_id, "name": name, "office": office}
-            by_name[(name.casefold(), office)] = by_qbo[qbo_id]
+            office_u = office.strip().upper()
+            cached = {"qbo_customer_id": qbo_id, "name": name, "office": office_u}
+            by_qbo[(office_u, qbo_id)] = cached
+            by_name[(name.casefold(), office_u)] = cached
+    office_ok = counts["fail"] == 0
+    _log(
+        f"{office}: {'SUCCESS' if office_ok else 'FAILED'} "
+        f"insert={counts['insert']} update={counts['update']} "
+        f"skip={counts['skip']} fail={counts['fail']} → {CLIENTS_TABLE}"
+    )
     return {"office": office, "realm_id": realm_id, **counts}
 
 
@@ -356,6 +410,9 @@ def sync_all_companies(
         raise ValueError("Set QBO_CLIENT_ID and QBO_CLIENT_SECRET")
 
     companies = load_companies_from_qbo_tokens(env)
+    offices = ", ".join(c["office"] for c in companies)
+    snapshot = CLIENTS_TABLE != "clients"
+    _log(f"start table={CLIENTS_TABLE} dry_run={dry_run} offices={offices}")
     results: list[dict[str, Any]] = []
     any_failed = False
 
@@ -371,32 +428,35 @@ def sync_all_companies(
                 dry_run=dry_run,
                 environ=env,
                 updated_at=company.get("updated_at"),
+                skip_recent=not snapshot,
             )
+            if counts.get("fail"):
+                any_failed = True
             results.append(counts)
         except Exception as exc:  # noqa: BLE001 — per-office isolation
             any_failed = True
-            msg = (
-                f"[qbo] REFRESH/SYNC FAILED for office={office}: {exc}\n"
-                f"[qbo] {REFRESH_FAIL_HINT}"
-            )
-            print(msg, file=sys.stderr)
+            refresh_fail = _is_refresh_error(exc)
+            _log(f"{office}: FAILED {'token' if refresh_fail else 'QBO/supabase'} pull error={exc}")
+            if refresh_fail:
+                _log(REFRESH_FAIL_HINT)
             results.append(
                 {
                     "office": office,
                     "realm_id": company.get("realm_id"),
                     "error": str(exc),
-                    "reauth_required": True,
+                    "reauth_required": refresh_fail,
                 }
             )
 
-    from timeassist.clients_seed import ensure_unassigned
+    if snapshot:
+        _log(f"skip unassigned seed (snapshot table={CLIENTS_TABLE}; live clients untouched)")
+    else:
+        from timeassist.clients_seed import ensure_unassigned
 
-    seed = ensure_unassigned(dry_run=dry_run, environ=env)
-    results.append({"seed": "unassigned", **seed})
+        seed = ensure_unassigned(dry_run=dry_run, environ=env)
+        _log(f"unassigned seed: {seed}")
+        results.append({"seed": "unassigned", **seed})
 
     if any_failed:
-        raise RuntimeError(
-            "One or more offices failed QBO sync. "
-            "See stderr; re-run qbo_oauth_setup.py for offices with reauth_required."
-        )
+        raise RuntimeError("One or more offices failed QBO sync. See stderr.")
     return results

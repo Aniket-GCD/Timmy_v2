@@ -137,7 +137,7 @@ def test_upsert_update_same_qbo_changed_name():
             office="GCD",
             qbo_id="99",
             active=True,
-            existing_by_qbo={"99": existing},
+            existing_by_qbo={("GCD", "99"): existing},
             existing_by_name_office={},
             dry_run=False,
         )
@@ -159,7 +159,7 @@ def test_upsert_unchanged_still_update():
         office="GCD",
         qbo_id="1",
         active=True,
-        existing_by_qbo={"1": existing},
+        existing_by_qbo={("GCD", "1"): existing},
         existing_by_name_office={},
         dry_run=True,
     )
@@ -174,7 +174,7 @@ def test_upsert_inactive_flag():
             office="MH",
             qbo_id="5",
             active=False,
-            existing_by_qbo={"5": existing},
+            existing_by_qbo={("MH", "5"): existing},
             existing_by_name_office={},
             dry_run=False,
         )
@@ -191,6 +191,20 @@ def test_duplicate_names_different_offices():
         active=True,
         existing_by_qbo={},
         existing_by_name_office=by_name,
+        dry_run=True,
+    )
+    assert action == "insert"
+
+
+def test_same_qbo_id_different_offices_inserts():
+    existing = {"id": 1, "qbo_customer_id": "5", "name": "MH Co", "office": "MH"}
+    action = qc.upsert_client_row(
+        name="GCD Co",
+        office="GCD",
+        qbo_id="5",
+        active=True,
+        existing_by_qbo={("MH", "5"): existing},
+        existing_by_name_office={("mh co", "MH"): existing},
         dry_run=True,
     )
     assert action == "insert"
@@ -244,8 +258,8 @@ def test_sync_office_dry_run_saves_token_not_clients():
     save.assert_called_once()
     assert save.call_args[0][0] == "GCD"
     assert save.call_args[0][1] == "rt-rotated"
-    # dry-run: upsert_client_row must not hit request_json for clients
-    assert not any(t == "clients" for _, t, _ in clients_calls)
+    # dry-run: upsert_client_row must not write the roster table
+    assert not any(t in {"clients", qc.CLIENTS_TABLE} for _, t, _ in clients_calls)
     assert counts["insert"] == 1
     assert counts["update"] == 1
 

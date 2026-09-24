@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pull QBO Customers (read-only) into Supabase clients.
+"""Pull QBO Customers (read-only) into Supabase (see CLIENTS_TABLE).
 
 Requires:
   - Rows in Supabase ``qbo_tokens`` (GCD + MH) from ``qbo_oauth_setup.py``
@@ -35,6 +35,7 @@ def main() -> int:
     )
     args = parser.parse_args()
     load_supabase_script_env(ROOT)
+    print("[qbo] script start — progress logs go to stderr", file=sys.stderr, flush=True)
     try:
         results = sync_all_companies(dry_run=args.dry_run)
     except RuntimeError as exc:
