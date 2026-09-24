@@ -1,13 +1,17 @@
 """Read-only QuickBooks Online Customer sync into Supabase.
 
-Never writes to QBO. Upserts by ``(office, qbo_customer_id)`` when present, else
-``(name, office)``. GCD and MH reuse QBO Ids; do not match on Id alone.
+Never writes to QBO.
+
+1. Pull QBO Customers into snapshot ``qbo_sept24_pull`` (upsert by
+   ``(office, qbo_customer_id)``, else ``(name, office)``).
+2. Apply that snapshot onto live ``clients``: same unique name → update
+   ``qbo_customer_id`` / office / active; missing unique names → insert.
+   Never delete. Skip rows that would collide on ``(office, qbo_customer_id)``.
 
 Company credentials come from Supabase ``qbo_tokens`` (filled by
 ``qbo_oauth_setup.py``). Rotated refresh tokens are written back immediately
 after every Intuit refresh — including ``--dry-run`` (only roster writes
-are skipped on dry-run). Snapshot table ``qbo_sept24_pull`` skips the 5-min
-guard and does not seed Unassigned into live ``clients``.
+are skipped on dry-run). Snapshot pull skips the 5-min guard.
 
 Env:
   QBO_CLIENT_ID
@@ -31,6 +35,7 @@ from timeassist.supabase_ref import _fetch_table_rows, request_json
 TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
 QBO_BASE = "https://quickbooks.api.intuit.com/v3/company"
 CLIENTS_TABLE = "qbo_sept24_pull"
+LIVE_CLIENTS_TABLE = "clients"
 TOKENS_TABLE = "qbo_tokens"
 USER_AGENT = "curl/8.5.0"
 REQUIRED_OFFICES = frozenset({"GCD", "MH"})
@@ -297,6 +302,155 @@ def upsert_client_row(
     return "insert"
 
 
+def apply_qbo_pull_to_clients(
+    *,
+    dry_run: bool = False,
+    environ: dict[str, str] | None = None,
+    pull_table: str | None = None,
+    live_table: str | None = None,
+) -> dict[str, int]:
+    """Copy unique names from the QBO snapshot onto live ``clients``.
+
+    - Unique name in both tables → update ``qbo_customer_id``, office, active
+      unless that ``(office, qbo_customer_id)`` already belongs to another row.
+    - Name only in the pull → insert if that key is free.
+    - Never delete. Duplicate names on either side are left alone.
+    """
+    src = pull_table or CLIENTS_TABLE
+    dest = live_table or LIVE_CLIENTS_TABLE
+    pull_rows = _fetch_table_rows(src, environ=environ)
+    live_rows = _fetch_table_rows(dest, environ=environ)
+
+    pull_by_name: dict[str, list[dict[str, Any]]] = {}
+    live_by_name: dict[str, list[dict[str, Any]]] = {}
+    key_owner: dict[tuple[str, str], Any] = {}
+    for row in pull_rows:
+        name = str(row.get("name") or "").strip()
+        if name:
+            pull_by_name.setdefault(name, []).append(row)
+    for row in live_rows:
+        name = str(row.get("name") or "").strip()
+        if name:
+            live_by_name.setdefault(name, []).append(row)
+        qid = str(row.get("qbo_customer_id") or "").strip()
+        off = str(row.get("office") or "").strip().upper()
+        if qid and off:
+            key_owner[(off, qid)] = row.get("id")
+
+    updates: list[tuple[Any, dict[str, Any], tuple[str, str], tuple[str, str]]] = []
+    skipped_dup = 0
+    skipped_taken = 0
+    already_same = 0
+    for name, lives in live_by_name.items():
+        pulls = pull_by_name.get(name)
+        if not pulls:
+            continue
+        if len(lives) != 1 or len(pulls) != 1:
+            skipped_dup += 1
+            continue
+        live, pull = lives[0], pulls[0]
+        new_off = str(pull.get("office") or "").strip().upper()
+        new_qid = str(pull.get("qbo_customer_id") or "").strip()
+        if not new_off or not new_qid:
+            continue
+        old_off = str(live.get("office") or "").strip().upper()
+        old_qid = str(live.get("qbo_customer_id") or "").strip()
+        if old_off == new_off and old_qid == new_qid:
+            already_same += 1
+            continue
+        owner = key_owner.get((new_off, new_qid))
+        if owner is not None and owner != live.get("id"):
+            skipped_taken += 1
+            continue
+        body = {
+            "qbo_customer_id": new_qid,
+            "office": new_off,
+            "active": pull.get("active", True) is not False,
+        }
+        updates.append((live.get("id"), body, (old_off, old_qid), (new_off, new_qid)))
+
+    seen_target: set[tuple[str, str]] = set()
+    applied_updates: list[tuple[Any, dict[str, Any], tuple[str, str], tuple[str, str]]] = []
+    for item in updates:
+        _id, body, old_key, new_key = item
+        if new_key in seen_target:
+            skipped_taken += 1
+            continue
+        seen_target.add(new_key)
+        applied_updates.append(item)
+
+    future_keys = set(key_owner)
+    for _id, _body, old_key, new_key in applied_updates:
+        if old_key in future_keys:
+            future_keys.discard(old_key)
+        future_keys.add(new_key)
+    future_names = set(live_by_name)
+
+    inserts: list[dict[str, Any]] = []
+    insert_skipped_taken = 0
+    for name, pulls in pull_by_name.items():
+        if name in future_names:
+            continue
+        if len(pulls) != 1:
+            skipped_dup += 1
+            continue
+        pull = pulls[0]
+        new_off = str(pull.get("office") or "").strip().upper()
+        new_qid = str(pull.get("qbo_customer_id") or "").strip()
+        if not new_off or not new_qid:
+            continue
+        key = (new_off, new_qid)
+        if key in future_keys:
+            insert_skipped_taken += 1
+            continue
+        inserts.append(
+            {
+                "name": name,
+                "office": new_off,
+                "qbo_customer_id": new_qid,
+                "active": pull.get("active", True) is not False,
+            }
+        )
+        future_keys.add(key)
+        future_names.add(name)
+
+    if not dry_run:
+        for row_id, body, _old, _new in applied_updates:
+            if row_id is None:
+                continue
+            request_json(
+                "PATCH",
+                dest,
+                body=body,
+                query={"id": f"eq.{row_id}"},
+                prefer="return=minimal",
+                environ=environ,
+            )
+        for body in inserts:
+            request_json(
+                "POST",
+                dest,
+                body=body,
+                prefer="return=minimal",
+                environ=environ,
+            )
+
+    counts = {
+        "update": len(applied_updates),
+        "insert": len(inserts),
+        "already_same": already_same,
+        "skipped_dup_name": skipped_dup,
+        "skipped_key_taken": skipped_taken + insert_skipped_taken,
+    }
+    _log(
+        f"apply {src} → {dest}: update={counts['update']} insert={counts['insert']} "
+        f"already_same={already_same} skipped_dup={skipped_dup} "
+        f"skipped_key_taken={counts['skipped_key_taken']}"
+        + (" (dry-run)" if dry_run else "")
+    )
+    return counts
+
+
 def sync_office_customers(
     *,
     office: str,
@@ -448,14 +602,14 @@ def sync_all_companies(
                 }
             )
 
-    if snapshot:
-        _log(f"skip unassigned seed (snapshot table={CLIENTS_TABLE}; live clients untouched)")
-    else:
-        from timeassist.clients_seed import ensure_unassigned
+    apply = apply_qbo_pull_to_clients(dry_run=dry_run, environ=env)
+    results.append({"apply_pull_to_clients": apply})
 
-        seed = ensure_unassigned(dry_run=dry_run, environ=env)
-        _log(f"unassigned seed: {seed}")
-        results.append({"seed": "unassigned", **seed})
+    from timeassist.clients_seed import ensure_unassigned
+
+    seed = ensure_unassigned(dry_run=dry_run, environ=env)
+    _log(f"unassigned seed: {seed}")
+    results.append({"seed": "unassigned", **seed})
 
     if any_failed:
         raise RuntimeError("One or more offices failed QBO sync. See stderr.")

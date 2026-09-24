@@ -212,26 +212,32 @@ export async function upsertClientFromCustomer(
     active,
   };
 
+  const byName = await supabaseFetch<Array<{ id: number | string }>>(
+    `${CLIENTS_TABLE}?select=id&name=eq.${encodeURIComponent(name)}`,
+    { purpose: "service" },
+  );
+  if (Array.isArray(byName) && byName.length === 1 && byName[0]?.id != null) {
+    const taken = await supabaseFetch<Array<{ id: number | string }>>(
+      `${CLIENTS_TABLE}?select=id&office=eq.${encodeURIComponent(office)}&qbo_customer_id=eq.${encodeURIComponent(qboId)}&id=neq.${encodeURIComponent(String(byName[0].id))}&limit=1`,
+      { purpose: "service" },
+    );
+    if (!Array.isArray(taken) || !taken[0]) {
+      await supabaseFetch(`${CLIENTS_TABLE}?id=eq.${encodeURIComponent(String(byName[0].id))}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        purpose: "service",
+        body: JSON.stringify(body),
+      });
+      return "update";
+    }
+  }
+
   const byQbo = await supabaseFetch<Array<{ id: number | string }>>(
     `${CLIENTS_TABLE}?select=id&qbo_customer_id=eq.${encodeURIComponent(qboId)}&office=eq.${encodeURIComponent(office)}&limit=1`,
     { purpose: "service" },
   );
   if (Array.isArray(byQbo) && byQbo[0]?.id != null) {
     await supabaseFetch(`${CLIENTS_TABLE}?id=eq.${encodeURIComponent(String(byQbo[0].id))}`, {
-      method: "PATCH",
-      prefer: "return=minimal",
-      purpose: "service",
-      body: JSON.stringify(body),
-    });
-    return "update";
-  }
-
-  const byName = await supabaseFetch<Array<{ id: number | string }>>(
-    `${CLIENTS_TABLE}?select=id&name=eq.${encodeURIComponent(name)}&office=eq.${encodeURIComponent(office)}&limit=1`,
-    { purpose: "service" },
-  );
-  if (Array.isArray(byName) && byName[0]?.id != null) {
-    await supabaseFetch(`${CLIENTS_TABLE}?id=eq.${encodeURIComponent(String(byName[0].id))}`, {
       method: "PATCH",
       prefer: "return=minimal",
       purpose: "service",

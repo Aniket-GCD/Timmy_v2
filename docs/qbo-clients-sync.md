@@ -119,9 +119,11 @@ Customers returned with QBO `Active=false` still upsert `active=false`.
 
 Each successful full sync also seeds **Unassigned** for GCD and MH if missing.
 
-Upsert rules: match by `qbo_customer_id` when present, else `(name, office)`.
-An existing hit always counts as **update** (no field-diff skip). Duplicate
-display names across offices are separate rows.
+Full sync writes QBO Customers into snapshot `qbo_sept24_pull` (match
+`(office, qbo_customer_id)`, else `(name, office)`), then applies onto live
+`clients`: unique name → update `qbo_customer_id` / office / active; name
+only in the pull → insert. Never deletes. Skips `(office, qbo_customer_id)`
+collisions and duplicate display names.
 
 ## GitHub Actions
 

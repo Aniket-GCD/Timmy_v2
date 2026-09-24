@@ -294,6 +294,7 @@ def test_sync_all_one_office_refresh_fail_continues():
     with (
         patch.object(qc, "load_companies_from_qbo_tokens", return_value=companies),
         patch.object(qc, "sync_office_customers", side_effect=lambda **kw: sync_side(**kw)),
+        patch.object(qc, "apply_qbo_pull_to_clients", return_value={"update": 0, "insert": 0}),
         patch("timeassist.clients_seed.ensure_unassigned", return_value={
             "unassigned_inserted": 0,
             "unassigned_skipped": 2,
@@ -301,3 +302,57 @@ def test_sync_all_one_office_refresh_fail_continues():
     ):
         with pytest.raises(RuntimeError, match="One or more offices failed"):
             qc.sync_all_companies(dry_run=True, environ=ENV)
+
+
+def test_apply_updates_qbo_id_for_unique_name():
+    pull = [{"name": "Acme", "office": "GCD", "qbo_customer_id": "99", "active": True}]
+    live = [{"id": 1, "name": "Acme", "office": "GCD", "qbo_customer_id": "1", "active": True}]
+    with (
+        patch.object(qc, "_fetch_table_rows", side_effect=[pull, live]),
+        patch.object(qc, "request_json") as req,
+    ):
+        out = qc.apply_qbo_pull_to_clients(dry_run=False, environ=ENV)
+    assert out["update"] == 1
+    assert out["insert"] == 0
+    assert req.call_args_list[0].args[0] == "PATCH"
+    assert req.call_args_list[0].kwargs["body"]["qbo_customer_id"] == "99"
+
+
+def test_apply_inserts_missing_unique_name():
+    pull = [{"name": "NewCo", "office": "GCD", "qbo_customer_id": "10", "active": True}]
+    live = []
+    with (
+        patch.object(qc, "_fetch_table_rows", side_effect=[pull, live]),
+        patch.object(qc, "request_json") as req,
+    ):
+        out = qc.apply_qbo_pull_to_clients(dry_run=False, environ=ENV)
+    assert out["insert"] == 1
+    assert req.call_args.args[0] == "POST"
+    assert req.call_args.kwargs["body"]["name"] == "NewCo"
+
+
+def test_apply_skips_when_target_key_taken():
+    pull = [{"name": "Acme", "office": "GCD", "qbo_customer_id": "99", "active": True}]
+    live = [
+        {"id": 1, "name": "Acme", "office": "GCD", "qbo_customer_id": "1", "active": True},
+        {"id": 2, "name": "Other", "office": "GCD", "qbo_customer_id": "99", "active": True},
+    ]
+    with (
+        patch.object(qc, "_fetch_table_rows", side_effect=[pull, live]),
+        patch.object(qc, "request_json") as req,
+    ):
+        out = qc.apply_qbo_pull_to_clients(dry_run=False, environ=ENV)
+    assert out["update"] == 0
+    assert out["skipped_key_taken"] == 1
+    req.assert_not_called()
+
+
+def test_apply_dry_run_writes_nothing():
+    pull = [{"name": "NewCo", "office": "MH", "qbo_customer_id": "8", "active": True}]
+    with (
+        patch.object(qc, "_fetch_table_rows", side_effect=[pull, []]),
+        patch.object(qc, "request_json") as req,
+    ):
+        out = qc.apply_qbo_pull_to_clients(dry_run=True, environ=ENV)
+    assert out["insert"] == 1
+    req.assert_not_called()

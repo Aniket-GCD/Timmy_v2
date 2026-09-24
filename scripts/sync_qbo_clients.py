@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Pull QBO Customers (read-only) into Supabase (see CLIENTS_TABLE).
+"""Pull QBO Customers into ``qbo_sept24_pull``, then apply onto live ``clients``.
 
 Requires:
   - Rows in Supabase ``qbo_tokens`` (GCD + MH) from ``qbo_oauth_setup.py``
   - QBO_CLIENT_ID, QBO_CLIENT_SECRET
   - SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
 
-``--dry-run`` skips ``clients`` writes but still persists rotated refresh tokens
-in ``qbo_tokens`` (Intuit invalidates the old refresh on use).
+``--dry-run`` skips snapshot and ``clients`` writes but still persists rotated
+refresh tokens in ``qbo_tokens`` (Intuit invalidates the old refresh on use).
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ def main() -> int:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Skip clients upserts; still write rotated refresh tokens to qbo_tokens",
+        help="Skip qbo_sept24_pull and clients writes; still write rotated refresh tokens",
     )
     args = parser.parse_args()
     load_supabase_script_env(ROOT)
@@ -48,7 +48,7 @@ def main() -> int:
     print(
         "Done."
         + (
-            " (dry-run — no clients writes; qbo_tokens may still update)"
+            " (dry-run — no snapshot/clients writes; qbo_tokens may still update)"
             if args.dry_run
             else ""
         )
