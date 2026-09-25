@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -287,6 +288,106 @@ class TimmyDataPathTests(unittest.TestCase):
         out = paths.prepare_db_path(other, environ={"LOCALAPPDATA": str(self.local)})
         self.assertEqual(out, str(other))
         self.assertFalse(paths.canonical_db_path(environ={"LOCALAPPDATA": str(self.local)}).is_file())
+
+
+class ClockSyncTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.local = Path(self.tmp.name) / "Local"
+        self.roaming = Path(self.tmp.name) / "Roaming"
+        self.plugin = Path(self.tmp.name) / "plugin"
+        self.local.mkdir()
+        self.roaming.mkdir()
+        self.plugin.mkdir()
+        (self.plugin / ".mcp.json").write_text("{}", encoding="utf-8")
+        self.env = {
+            "LOCALAPPDATA": str(self.local),
+            "APPDATA": str(self.roaming),
+            "CLAUDE_PLUGIN_ROOT": str(self.plugin),
+        }
+        self.shortcut_patch = patch.object(cb, "_write_timmy_clock_shortcuts")
+        self.shortcut_patch.start()
+        self.addCleanup(self.shortcut_patch.stop)
+
+    def _write_clock(self, path: Path, payload: bytes, mtime: float | None = None) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+        if mtime is not None:
+            os.utime(path, (mtime, mtime))
+        return path
+
+    def test_finds_clock_via_claude_plugin_root(self) -> None:
+        src = self._write_clock(self.plugin / "TimmyClock.exe", b"NEW")
+        found = cb.find_plugin_clock_exe(environ=self.env)
+        self.assertEqual(found, src.resolve())
+
+    def test_finds_clock_beside_engine(self) -> None:
+        env = {"LOCALAPPDATA": str(self.local), "APPDATA": str(self.roaming)}
+        engine = self.plugin / "engine" / "timeassist.exe"
+        engine.parent.mkdir(parents=True)
+        engine.write_bytes(b"eng")
+        src = self._write_clock(self.plugin / "TimmyClock.exe", b"NEW")
+        found = cb.find_plugin_clock_exe(environ=env, executable=engine)
+        self.assertEqual(found, src.resolve())
+
+    def test_missing_plugin_clock_is_noop(self) -> None:
+        self.assertIsNone(cb.find_plugin_clock_exe(environ=self.env))
+        self.assertIsNone(cb.sync_stable_clock_from_plugin(environ=self.env))
+        dest = self.local / "Timmy" / "TimmyClock.exe"
+        self.assertFalse(dest.is_file())
+
+    def test_newer_plugin_clock_is_copied(self) -> None:
+        src = self._write_clock(self.plugin / "TimmyClock.exe", b"NEW-CLOCK", mtime=2_000)
+        dest = self._write_clock(self.local / "Timmy" / "TimmyClock.exe", b"OLD", mtime=1_000)
+        with patch.object(cb, "_is_clock_running", return_value=False):
+            out = cb.sync_stable_clock_from_plugin(environ=self.env)
+        self.assertIsNotNone(out)
+        self.assertEqual(Path(out).name, "TimmyClock.exe")
+        self.assertEqual(dest.read_bytes(), b"NEW-CLOCK")
+
+    def test_same_mtime_size_is_noop(self) -> None:
+        payload = b"SAME-BYTES"
+        src = self._write_clock(self.plugin / "TimmyClock.exe", payload, mtime=1_500)
+        dest = self._write_clock(self.local / "Timmy" / "TimmyClock.exe", payload, mtime=1_500)
+        with patch.object(cb, "_is_clock_running", return_value=False):
+            with patch.object(cb, "_stop_running_clock") as stop:
+                cb.sync_stable_clock_from_plugin(environ=self.env)
+        stop.assert_not_called()
+        self.assertEqual(dest.read_bytes(), payload)
+
+    def test_running_dest_is_stopped_then_replaced(self) -> None:
+        src = self._write_clock(self.plugin / "TimmyClock.exe", b"NEWER", mtime=3_000)
+        dest = self._write_clock(self.local / "Timmy" / "TimmyClock.exe", b"OLDER", mtime=1_000)
+        started: list[Path] = []
+        with patch.object(cb, "_is_clock_running", return_value=True):
+            with patch.object(cb, "_stop_running_clock") as stop:
+                with patch.object(cb, "_launch_clock", side_effect=lambda p: started.append(p)):
+                    out = cb.sync_stable_clock_from_plugin(environ=self.env)
+        stop.assert_called_once()
+        self.assertIsNotNone(out)
+        self.assertEqual(Path(out).name, "TimmyClock.exe")
+        self.assertEqual(dest.read_bytes(), b"NEWER")
+        self.assertEqual(len(started), 1)
+        self.assertEqual(started[0].name, "TimmyClock.exe")
+
+    def test_rejects_timeassist_exe_as_source(self) -> None:
+        engine = self.plugin / "engine" / "timeassist.exe"
+        engine.parent.mkdir(parents=True)
+        engine.write_bytes(b"not-clock")
+        self.assertIsNone(cb.install_stable_clock(engine, self.plugin, environ=self.env))
+        self.assertFalse((self.local / "Timmy" / "TimmyClock.exe").is_file())
+
+    def test_mcp_starts_if_sync_raises(self) -> None:
+        from timeassist import cli
+
+        db = Path(self.tmp.name) / "mcp.sqlite"
+        actions.init_state(db, "2026-05-28T09:00:00")
+        with patch("timeassist.clock_bootstrap.sync_stable_clock_from_plugin", side_effect=RuntimeError("boom")):
+            with patch("timeassist.mcp_server.serve") as serve:
+                rc = cli.main(["--db", str(db), "mcp"])
+        self.assertEqual(rc, 0)
+        serve.assert_called_once()
 
 
 if __name__ == "__main__":

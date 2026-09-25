@@ -276,10 +276,199 @@ def find_org_timeassist_plugin(environ: dict[str, str] | None = None) -> Path | 
     return newest
 
 
+CLOCK_EXE_NAME = "TimmyClock.exe"
+
+
 def stable_clock_dir(environ: dict[str, str] | None = None) -> Path:
     from .paths import timmy_data_dir
 
     return timmy_data_dir(environ=environ)
+
+
+def _needs_clock_update(src: Path, dest: Path) -> bool:
+    if not dest.is_file():
+        return True
+    try:
+        if src.resolve() == dest.resolve():
+            return False
+        src_stat = src.stat()
+        dest_stat = dest.stat()
+        if src_stat.st_size != dest_stat.st_size:
+            return True
+        return src_stat.st_mtime > dest_stat.st_mtime + 0.5
+    except OSError:
+        return True
+
+
+def _is_clock_running() -> bool:
+    if os.name != "nt":
+        return False
+    try:
+        import subprocess
+
+        proc = subprocess.run(
+            ["tasklist", "/FI", f"IMAGENAME eq {CLOCK_EXE_NAME}", "/NH"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, Exception):
+        return False
+    return CLOCK_EXE_NAME.lower() in (proc.stdout or "").lower()
+
+
+def _stop_running_clock() -> None:
+    if os.name != "nt":
+        return
+    try:
+        import subprocess
+
+        subprocess.run(
+            ["taskkill", "/IM", CLOCK_EXE_NAME, "/F"],
+            check=False,
+            capture_output=True,
+            timeout=15,
+        )
+    except (OSError, Exception):
+        return
+
+
+def _launch_clock(dest: Path) -> None:
+    import subprocess
+
+    kwargs: dict[str, Any] = {"close_fds": True}
+    if os.name == "nt":
+        flags = 0
+        flags |= int(getattr(subprocess, "DETACHED_PROCESS", 0))
+        flags |= int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+        if flags:
+            kwargs["creationflags"] = flags
+    subprocess.Popen([str(dest)], **kwargs)
+
+
+def _copy_mcp_sidecar(plugin_root: Path | None, dest_dir: Path) -> None:
+    if plugin_root is None or not looks_like_plugin_root(plugin_root):
+        return
+    mcp_src = plugin_root / ".mcp.json"
+    if not mcp_src.is_file():
+        return
+    try:
+        import shutil
+
+        shutil.copy2(mcp_src, dest_dir / ".mcp.json")
+    except OSError:
+        return
+
+
+def install_stable_clock(
+    src: Path,
+    plugin_root: Path | None = None,
+    *,
+    environ: dict[str, str] | None = None,
+    restart_if_running: bool = False,
+) -> Path | None:
+    """Copy plugin TimmyClock.exe to %LOCALAPPDATA%\\Timmy and refresh shortcuts.
+
+    Never copies timeassist.exe. Best-effort: returns dest or None.
+    """
+    env = os.environ if environ is None else environ
+    try:
+        src = Path(src).resolve()
+    except OSError:
+        return None
+    if not src.is_file() or src.name.lower() != CLOCK_EXE_NAME.lower():
+        return None
+    dest_dir = stable_clock_dir(environ=env)
+    try:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    dest = dest_dir / CLOCK_EXE_NAME
+    try:
+        same = src.resolve() == dest.resolve()
+    except OSError:
+        same = False
+    if same:
+        _write_timmy_clock_shortcuts(dest, environ=env)
+        _copy_mcp_sidecar(plugin_root, dest_dir)
+        return dest
+    if not _needs_clock_update(src, dest):
+        _write_timmy_clock_shortcuts(dest, environ=env)
+        _copy_mcp_sidecar(plugin_root, dest_dir)
+        return dest
+
+    import shutil
+
+    was_running = bool(restart_if_running and _is_clock_running())
+    if was_running:
+        _stop_running_clock()
+    try:
+        shutil.copy2(src, dest)
+    except OSError:
+        if restart_if_running and not was_running:
+            _stop_running_clock()
+            try:
+                shutil.copy2(src, dest)
+                was_running = True
+            except OSError:
+                _write_timmy_clock_shortcuts(src if src.is_file() else dest, environ=env)
+                return None
+        else:
+            _write_timmy_clock_shortcuts(src if src.is_file() else dest, environ=env)
+            return None
+    _write_timmy_clock_shortcuts(dest, environ=env)
+    _copy_mcp_sidecar(plugin_root, dest_dir)
+    if was_running:
+        try:
+            _launch_clock(dest)
+        except OSError:
+            pass
+    return dest
+
+
+def find_plugin_clock_exe(
+    environ: dict[str, str] | None = None,
+    *,
+    executable: Path | None = None,
+) -> Path | None:
+    """Locate TimmyClock.exe in the Claude plugin folder (not LocalAppData)."""
+    env = os.environ if environ is None else environ
+    candidates: list[Path] = []
+    root = (env.get("CLAUDE_PLUGIN_ROOT") or "").strip()
+    if root:
+        candidates.append(Path(root) / CLOCK_EXE_NAME)
+    exe = executable
+    if exe is None and getattr(sys, "frozen", False):
+        exe = Path(sys.executable).resolve()
+    if exe is not None:
+        here = Path(exe).resolve()
+        candidates.append(here.parent.parent / CLOCK_EXE_NAME)
+        candidates.append(here.parent / CLOCK_EXE_NAME)
+    org = find_org_timeassist_plugin(environ=env)
+    if org is not None:
+        candidates.append(org / CLOCK_EXE_NAME)
+    dest_dir = stable_clock_dir(environ=env)
+    for cand in candidates:
+        try:
+            if not cand.is_file() or cand.name.lower() != CLOCK_EXE_NAME.lower():
+                continue
+            resolved = cand.resolve()
+            if dest_dir in resolved.parents or resolved.parent == dest_dir:
+                continue
+            return resolved
+        except OSError:
+            continue
+    return None
+
+
+def sync_stable_clock_from_plugin(*, environ: dict[str, str] | None = None) -> Path | None:
+    """MCP entry: if the plugin Clock is newer, overwrite the stable copy."""
+    env = os.environ if environ is None else environ
+    src = find_plugin_clock_exe(environ=env)
+    if src is None:
+        return None
+    return install_stable_clock(src, src.parent, environ=env, restart_if_running=True)
 
 
 def ensure_stable_clock_install(
@@ -287,42 +476,11 @@ def ensure_stable_clock_install(
     *,
     environ: dict[str, str] | None = None,
 ) -> Path | None:
-    """Copy TimmyClock into %LOCALAPPDATA%\\Timmy and refresh Desktop/Start Menu shortcuts.
-
-    Returns the stable exe path when install ran (frozen builds), else None.
-    """
-    env = os.environ if environ is None else environ
+    """Clock launch: copy this TimmyClock.exe into LocalAppData if needed."""
     if not getattr(sys, "frozen", False):
         return None
     src = Path(sys.executable).resolve()
-    if not src.is_file():
-        return None
-    dest_dir = stable_clock_dir(environ=env)
-    try:
-        dest_dir.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        return None
-    dest = dest_dir / "TimmyClock.exe"
-    try:
-        if src.resolve() != dest.resolve():
-            import shutil
-
-            shutil.copy2(src, dest)
-    except OSError:
-        # Still try shortcuts pointing at the running exe.
-        dest = src
-    _write_timmy_clock_shortcuts(dest, environ=env)
-    # Refresh sibling .mcp.json next to stable copy when we know the plugin root.
-    if looks_like_plugin_root(plugin_root):
-        mcp_src = plugin_root / ".mcp.json"
-        if mcp_src.is_file():
-            try:
-                import shutil
-
-                shutil.copy2(mcp_src, dest_dir / ".mcp.json")
-            except OSError:
-                pass
-    return dest
+    return install_stable_clock(src, plugin_root, environ=environ, restart_if_running=False)
 
 
 def _write_timmy_clock_shortcuts(target: Path, *, environ: dict[str, str]) -> None:

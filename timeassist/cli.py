@@ -542,6 +542,12 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         return error_result(args.command, exc).emit()
     if args.command == "mcp":
+        try:
+            from .clock_bootstrap import sync_stable_clock_from_plugin
+
+            sync_stable_clock_from_plugin()
+        except Exception:
+            pass
         from .mcp_server import serve
 
         serve(args.db)
