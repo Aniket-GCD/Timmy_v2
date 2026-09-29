@@ -3,7 +3,7 @@ import { computeMetrics, aggregateByClient, groupByStaff } from "./aggregations"
 import type { TimeEntry } from "./types/time-entry";
 
 const sample: TimeEntry[] = [
-  { id: 1, staff_name: "A", office: "GCD", client: "C1", job_code: "Admin", notes: "", entry_date: "2026-08-01", start_time: null, end_time: null, hours: 1, billable: false },
+  { id: 1, staff_name: "A", office: "GCD", client: "Admin", job_code: "Administrative", notes: "", entry_date: "2026-08-01", start_time: null, end_time: null, hours: 1, billable: false },
   { id: 2, staff_name: "A", office: "GCD", client: "C2", job_code: "Bookkeeping", notes: "", entry_date: "2026-08-01", start_time: null, end_time: null, hours: 2, billable: true },
 ];
 
@@ -15,7 +15,7 @@ describe("aggregations", () => {
     expect(m.adminPercent).toBe(33);
   });
 
-  it("counts Administrative job code as admin", () => {
+  it("counts only Admin client for admin metrics", () => {
     const rows: TimeEntry[] = [
       {
         id: 1,
@@ -47,6 +47,40 @@ describe("aggregations", () => {
     const m = computeMetrics(rows);
     expect(m.adminHours).toBe(0.5);
     expect(m.adminPercent).toBe(75);
+  });
+
+  it("excludes Staff Meeting with Administrative job code from admin metrics", () => {
+    const rows: TimeEntry[] = [
+      {
+        id: 1,
+        staff_name: "N",
+        office: "GCD",
+        client: "Staff Meeting",
+        job_code: "Administrative",
+        notes: "Timmy Time demo",
+        entry_date: "2026-09-29",
+        start_time: null,
+        end_time: null,
+        hours: 0.67,
+        billable: false,
+      },
+      {
+        id: 2,
+        staff_name: "N",
+        office: "GCD",
+        client: "MCGUIRE, CHARLES T",
+        job_code: "1040",
+        notes: "",
+        entry_date: "2026-09-29",
+        start_time: null,
+        end_time: null,
+        hours: 2,
+        billable: true,
+      },
+    ];
+    const m = computeMetrics(rows);
+    expect(m.adminHours).toBe(0);
+    expect(m.adminPercent).toBe(0);
   });
 
   it("caps client chart at 8", () => {

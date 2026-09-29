@@ -11,16 +11,14 @@ describe("isAdminJobCode", () => {
 });
 
 describe("isAdminEntry", () => {
-  it("matches job code Admin", () => {
-    expect(isAdminEntry({ job_code: "Admin", client: "Acme" })).toBe(true);
-  });
-
-  it("matches job code Administrative", () => {
+  it("matches client named Admin regardless of job code", () => {
     expect(isAdminEntry({ job_code: "Administrative", client: "Admin" })).toBe(true);
+    expect(isAdminEntry({ job_code: "Consulting", client: "Admin" })).toBe(true);
   });
 
-  it("matches client named Admin", () => {
-    expect(isAdminEntry({ job_code: "Consulting", client: "Admin" })).toBe(true);
+  it("does not match Administrative job code on other clients", () => {
+    expect(isAdminEntry({ job_code: "Administrative", client: "Staff Meeting" })).toBe(false);
+    expect(isAdminEntry({ job_code: "Admin", client: "Acme" })).toBe(false);
   });
 
   it("does not match unrelated billable work", () => {

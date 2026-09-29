@@ -38,8 +38,7 @@ export function isAdminJobCode(jobCode: string): boolean {
   return j === "admin" || j === "administrative";
 }
 
-/** True when the entry is admin time — by job code or client named Admin. */
+/** True when client is the Timmy Admin bucket (top-card Admin % uses this only). */
 export function isAdminEntry(entry: Pick<TimeEntry, "job_code" | "client">): boolean {
-  if (isAdminJobCode(entry.job_code)) return true;
   return entry.client.trim().toLowerCase() === "admin";
 }
