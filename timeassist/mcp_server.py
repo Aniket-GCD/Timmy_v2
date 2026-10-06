@@ -119,9 +119,9 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "add_missing",
         "description": (
-            "Add an explicit missing time block as a draft entry. Prefer date + "
-            "duration_minutes when the operator gives how long (not clock times); "
-            "or pass start+end when they give a window. Soft nickname matches and "
+            "Add an explicit missing time block as a draft entry. Pass start and end "
+            "when a window is given (spreadsheet or spoken clocks); use date + "
+            "duration_minutes only when clock times are absent. Soft nickname matches and "
             "unknown names return needs_client_confirm with an ask string — relay it to the "
             "operator; on yes retry with suggested_client (or confirm_client=true); on new "
             "client use Unassigned + NEW CLIENT notes + draft_reception_email."
@@ -146,6 +146,37 @@ TOOLS: list[dict[str, Any]] = [
                 },
             },
             "required": ["client", "task"],
+        },
+    },
+    {
+        "name": "add_missing_batch",
+        "description": (
+            "Save a spreadsheet of time blocks in one call. Each row needs client, "
+            "notes (task), job_type, start, and end. Exact firm-list matches that have "
+            "a job code are saved as drafts. Other rows are listed in needs_attention "
+            "and are not saved. Returns added_count and one review_token for the day. "
+            "Use this instead of calling add_missing once per row."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "description": "Rows from the spreadsheet.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "client": {"type": "string"},
+                            "task": {"type": "string", "description": "notes: what was done."},
+                            "job_type": {"type": "string", "description": "Job Code. Required to save the row."},
+                            "start": {"type": "string", "description": "Local ISO start."},
+                            "end": {"type": "string", "description": "Local ISO end."},
+                        },
+                        "required": ["client", "start", "end"],
+                    },
+                },
+            },
+            "required": ["entries"],
         },
     },
     {
@@ -202,10 +233,11 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "approve_all",
         "description": (
-            "Approve ALL draft entries for a date that have a Job Code, then post each "
-            "to the firm time system. Skips needs_info and missing Job Code (reported). "
+            "Approve ALL draft entries for a date that have a Job Code, then post them "
+            "to the firm time system in one request. Skips needs_info and missing Job Code "
+            "(listed, still drafts). Returns counts only. "
             "Only when the operator explicitly asks to approve everything; pass confirm=true. "
-            "Never on your own. Do not offer CSV afterward."
+            "Never on your own. Do not approve in slices. Do not offer CSV afterward."
         ),
         "inputSchema": {
             "type": "object",
@@ -638,6 +670,11 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
             duration_minutes=int(arguments["duration_minutes"]) if arguments.get("duration_minutes") is not None else None,
             confirm_client=bool(arguments.get("confirm_client")),
         )
+    if name == "add_missing_batch":
+        rows = arguments.get("entries")
+        if rows is None:
+            raise ValueError("entries is required")
+        return actions.add_missing_batch(db_path, rows)
     if name == "edit":
         return actions.edit_entry(
             db_path,
@@ -696,23 +733,13 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
         result = actions.approve_all(db_path, date_value, arguments.get("at"))
         from . import supabase_submit
 
-        submit_results: list[dict] = []
-        submitted_count = 0
-        submit_failed_count = 0
-        for entry in result.get("entries") or []:
-            eid = int(entry["entry_id"])
-            try:
-                sr = supabase_submit.submit_entry(db_path, eid, at=arguments.get("at"))
-                submit_results.append({"entry_id": eid, "ok": True, **{k: sr.get(k) for k in ("submitted", "skipped", "reason", "supabase_id")}})
-                if sr.get("submitted") or sr.get("skipped"):
-                    submitted_count += 1
-            except Exception as exc:
-                submit_failed_count += 1
-                submit_results.append({"entry_id": eid, "ok": False, "error": str(exc)})
+        posted = supabase_submit.submit_approved_batch(
+            db_path,
+            list(result.get("entries") or []),
+            at=arguments.get("at"),
+        )
         result = dict(result)
-        result["submitted_count"] = submitted_count
-        result["submit_failed_count"] = submit_failed_count
-        result["submit_results"] = submit_results
+        result.update(posted)
         return result
     if name == "unapprove":
         return actions.set_approval(db_path, int(arguments["entry_id"]), False, arguments.get("at"))

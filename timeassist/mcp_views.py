@@ -14,7 +14,14 @@ from contextvars import ContextVar
 from datetime import timedelta
 from typing import Any
 
-from .actions import TEST_MAX_SESSION_MINUTES, capture_note_text, format_hhmm, format_local_ampm, parse_at
+from .actions import (
+    REVIEW_FULL_BODY_LIMIT,
+    TEST_MAX_SESSION_MINUTES,
+    capture_note_text,
+    format_hhmm,
+    format_local_ampm,
+    parse_at,
+)
 
 # Staff office from settings, stamped onto slim entry/session during shape().
 _shape_office: ContextVar[str | None] = ContextVar("shape_office", default=None)
@@ -154,6 +161,12 @@ def slim_session(session: dict[str, Any] | None) -> dict[str, Any] | None:
     return slim
 
 
+def _problem_review_row(entry: dict[str, Any]) -> bool:
+    if not str(entry.get("job_type") or "").strip():
+        return True
+    return entry.get("capture_status") == "needs_info" or entry.get("review_status") == "needs_info"
+
+
 def _view_review(result: dict[str, Any]) -> dict[str, Any]:
     ranged = result.get("end_date") is not None
     if ranged:
@@ -166,13 +179,19 @@ def _view_review(result: dict[str, Any]) -> dict[str, Any]:
             "review_token": result["review_token"],
         }
     else:
+        entries = result["entries"]
+        show = entries
+        if len(entries) > REVIEW_FULL_BODY_LIMIT:
+            show = [entry for entry in entries if _problem_review_row(entry)]
         shaped = {
             "date": result["date"],
-            "entries": [slim_entry(entry) for entry in result["entries"]],
+            "entries": [slim_entry(entry) for entry in show],
             "totals": result["totals"],
             "skipped_needs_info_count": result["skipped_needs_info_count"],
             "review_token": result["review_token"],
         }
+        if len(entries) > REVIEW_FULL_BODY_LIMIT:
+            shaped["entry_count"] = len(entries)
     if result.get("missing_notes_count"):
         shaped["missing_notes_count"] = result["missing_notes_count"]
     warning = result.get("active_timer_warning") or {}
@@ -205,10 +224,14 @@ def _view_approve_all(result: dict[str, Any]) -> dict[str, Any]:
         shaped["submitted_count"] = result["submitted_count"]
     if result.get("submit_failed_count"):
         shaped["submit_failed_count"] = result["submit_failed_count"]
-    if result.get("submit_results"):
-        shaped["submit_results"] = result["submit_results"]
-    if result.get("entries"):
-        shaped["entries"] = [slim_entry(e) for e in result["entries"]]
+    if result.get("submit_error"):
+        shaped["submit_error"] = result["submit_error"]
+    if result.get("skipped_missing_job_code"):
+        shaped["skipped_missing_job_code"] = result["skipped_missing_job_code"]
+    if result.get("skipped_duplicates"):
+        shaped["skipped_duplicates"] = result["skipped_duplicates"]
+    if result.get("submit_failures"):
+        shaped["submit_failures"] = result["submit_failures"]
     return shaped
 
 
@@ -435,6 +458,13 @@ _VIEWS = {
     "snooze_checkin": _view_session,
     "end": _view_entry,
     "add_missing": _view_entry,
+    "add_missing_batch": lambda result: {
+        "added_count": result.get("added_count", 0),
+        "needs_attention": result.get("needs_attention") or [],
+        "date": result.get("date"),
+        "review_token": result.get("review_token"),
+        "dates": result.get("dates"),
+    },
     "edit": _view_entry,
     "approve": _view_entry,
     "unapprove": _view_entry,

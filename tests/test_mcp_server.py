@@ -82,7 +82,7 @@ class McpServerTests(unittest.TestCase):
         names = {tool["name"] for tool in tools}
         self.assertEqual(
             names,
-            {"init_state", "start", "switch", "clarify_active", "end", "add_missing", "edit", "review", "approve", "approve_all", "unapprove", "export", "sanitize_packet", "config", "reround", "import_clients", "add_client", "list_clients", "list_employees", "list_job_codes", "refresh_clients", "submit", "update_submitted", "draft_reception_email", "cancel", "checkin_status", "checkin", "snooze_checkin", "status", "cleanup", "discard_entry"},
+            {"init_state", "start", "switch", "clarify_active", "end", "add_missing", "add_missing_batch", "edit", "review", "approve", "approve_all", "unapprove", "export", "sanitize_packet", "config", "reround", "import_clients", "add_client", "list_clients", "list_employees", "list_job_codes", "refresh_clients", "submit", "update_submitted", "draft_reception_email", "cancel", "checkin_status", "checkin", "snooze_checkin", "status", "cleanup", "discard_entry"},
         )
         switch_tool = next(tool for tool in tools if tool["name"] == "switch")
         minutes_ago_schema = switch_tool["inputSchema"]["properties"]["minutes_ago"]
@@ -727,7 +727,7 @@ class McpServerTests(unittest.TestCase):
             {
                 "init_state", "start", "switch", "clarify_active", "cancel",
                 "checkin", "snooze_checkin", "checkin_status", "end",
-                "add_missing", "edit", "review", "approve", "approve_all",
+                "add_missing", "add_missing_batch", "edit", "review", "approve", "approve_all",
                 "unapprove", "export", "sanitize_packet", "config", "reround",
                 "cleanup", "status", "list_clients", "list_employees", "list_job_codes",
                 "refresh_clients", "submit", "update_submitted", "draft_reception_email",
@@ -985,11 +985,8 @@ class McpServerTests(unittest.TestCase):
         })
         review = self.payload("review", {"date": "2026-05-28"})
         with unittest.mock.patch(
-            "timeassist.supabase_submit.submit_entry",
-            side_effect=[
-                {"submitted": True, "supabase_id": "sb-a"},
-                {"submitted": True, "supabase_id": "sb-b"},
-            ],
+            "timeassist.supabase_submit.submit_approved_batch",
+            return_value={"submitted_count": 2, "submit_failed_count": 0, "skipped_duplicates": []},
         ) as submit:
             result = self.payload("approve_all", {"confirm": True, 
                 "date": "2026-05-28",
@@ -997,9 +994,10 @@ class McpServerTests(unittest.TestCase):
                 "at": "2026-05-28T17:00:00",
             })
         self.assertEqual(result["approved_count"], 2)
-        self.assertEqual(submit.call_count, 2)
+        self.assertEqual(submit.call_count, 1)
         self.assertEqual(result["submitted_count"], 2)
-        self.assertEqual(len(result["submit_results"]), 2)
+        self.assertNotIn("entries", result)
+        self.assertNotIn("submit_results", result)
 
     def test_add_missing_duration_path_via_mcp(self) -> None:
         self.payload("init_state", {"at": "2026-05-28T08:55:00"})

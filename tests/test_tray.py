@@ -204,6 +204,18 @@ class TrayFetchTests(unittest.TestCase):
         with patch("timeassist.tray.request_json", return_value=[]):
             self.assertIsNone(tray.fetch_live_row(self.db, environ=ENV))
 
+    def test_fetch_shows_local_session_when_live_row_missing(self) -> None:
+        started = actions.now_iso()
+        with patch("timeassist.currently_working.request_json", return_value=[]):
+            actions.start_session(self.db, "Acme Co", "books", "yes", started)
+            currently_working.cancel_auto_end()
+        with patch("timeassist.tray.request_json", return_value=[]):
+            row = tray.fetch_live_row(self.db, environ=ENV)
+            snap = tray.snapshot(self.db, now=datetime.now().replace(microsecond=0), environ=ENV)
+        self.assertEqual(row["client"], "Acme Co")
+        self.assertNotEqual(snap["display"]["status"], "idle")
+        self.assertNotEqual(snap["line"], tray.IDLE_LINE)
+
     def test_stop_ends_local_draft(self) -> None:
         with patch("timeassist.currently_working.request_json", return_value=[]):
             actions.start_session(self.db, "Acme Co", "books", "yes", "2026-05-28T09:00:00")

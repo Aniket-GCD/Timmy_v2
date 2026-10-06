@@ -9,7 +9,12 @@ from . import actions
 from .db import connect
 from .pay_period import can_edit_entry, entry_work_date, refuse_edit_message
 from .supabase_config import time_entries_table, unassigned_client_name
-from .supabase_ref import account_for_job_code, get_job_codes, request_json
+from .supabase_ref import (
+    DuplicateTimeEntryError,
+    account_for_job_code,
+    get_job_codes,
+    request_json,
+)
 
 NEW_CLIENT_NOTES_PREFIX = "NEW CLIENT:"
 # Default label; prefer unassigned_client_name(db_path=...) at call sites.
@@ -203,6 +208,194 @@ def submit_entry(
             "notes": payload["notes"],
         },
     }
+
+
+def _dup_brief(entry: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "entry_id": entry.get("entry_id"),
+        "client": entry.get("client_name") or "",
+        "notes": entry.get("task_text") or "",
+    }
+
+
+def _payload_in_detail(payload: dict[str, Any], detail: str) -> bool:
+    if not detail:
+        return False
+    return (
+        str(payload.get("entry_date") or "") in detail
+        and str(payload.get("start_time") or "") in detail
+        and str(payload.get("end_time") or "") in detail
+    )
+
+
+def _mark_submitted_rows(
+    conn,
+    rows: list[tuple[dict[str, Any], dict[str, Any]]],
+    response: Any,
+    changed_at: str,
+) -> None:
+    ids: list[str | None] = []
+    if isinstance(response, list):
+        for item in response:
+            ids.append(_extract_supabase_id(item if isinstance(item, dict) else [item]))
+    for index, (entry, _payload) in enumerate(rows):
+        supabase_id = ids[index] if index < len(ids) else None
+        entry_id = int(entry["entry_id"])
+        conn.execute(
+            "UPDATE time_entries SET submitted_at = ?, supabase_id = COALESCE(?, supabase_id), updated_at = ? WHERE entry_id = ?",
+            (changed_at, supabase_id, changed_at, entry_id),
+        )
+        actions.log_event(
+            conn,
+            "submit",
+            f"submitted entry {entry_id} to Supabase",
+            "time_entry",
+            entry_id,
+            before={"review_status": "approved", "submitted_at": None},
+            after={"submitted_at": changed_at, "supabase_id": supabase_id},
+            at=changed_at,
+        )
+
+
+def submit_approved_batch(
+    db_path: str | Path,
+    entries: list[dict[str, Any]],
+    *,
+    environ: dict[str, str] | None = None,
+    at: str | None = None,
+) -> dict[str, Any]:
+    """POST approved rows in one request. Job codes are fetched once.
+
+    A duplicate-key error drops the conflicting row and retries the rest once.
+    """
+    skipped_duplicates: list[dict[str, Any]] = []
+    submit_failures: list[dict[str, Any]] = []
+    if not entries:
+        return {
+            "submitted_count": 0,
+            "submit_failed_count": 0,
+            "skipped_duplicates": skipped_duplicates,
+        }
+    actions.ensure_initialized(db_path)
+    changed_at = actions.iso(actions.parse_at(at)) if at else actions.now_iso()
+    try:
+        codes = get_job_codes(environ=environ, db_path=db_path)
+    except Exception as exc:
+        return {
+            "submitted_count": 0,
+            "submit_failed_count": len(entries),
+            "skipped_duplicates": skipped_duplicates,
+            "submit_error": str(exc),
+        }
+    with connect(db_path) as conn:
+        settings = {
+            row["setting_key"]: row["setting_value"]
+            for row in conn.execute("SELECT setting_key, setting_value FROM settings")
+        }
+        staff_name = actions.normalize_staff_name(settings.get("staff_name") or "")
+        office = actions.normalize_office(settings.get("office") or "")
+        ready: list[tuple[dict[str, Any], dict[str, Any]]] = []
+        seen: set[tuple[str, str, str, str, str]] = set()
+        for entry in entries:
+            if entry.get("submitted_at"):
+                continue
+            try:
+                job_code = (entry.get("job_type") or "").strip()
+                account = account_for_job_code(job_code, codes)
+                payload = time_entry_payload(
+                    entry, staff_name=staff_name, office=office, account=account,
+                    db_path=db_path, environ=environ,
+                )
+            except ValueError as exc:
+                submit_failures.append({**_dup_brief(entry), "error": str(exc)})
+                continue
+            key = (
+                payload["staff_name"],
+                payload["office"],
+                payload["entry_date"],
+                payload["start_time"],
+                payload["end_time"],
+            )
+            if key in seen:
+                skipped_duplicates.append(_dup_brief(entry))
+                continue
+            seen.add(key)
+            ready.append((entry, payload))
+        if not ready:
+            conn.commit()
+            return {
+                "submitted_count": 0,
+                "submit_failed_count": len(submit_failures),
+                "skipped_duplicates": skipped_duplicates,
+                "submit_failures": submit_failures,
+            }
+        table = time_entries_table(db_path=db_path, environ=environ)
+
+        def _post(rows: list[tuple[dict[str, Any], dict[str, Any]]]) -> Any:
+            return request_json(
+                "POST",
+                table,
+                body=[payload for _entry, payload in rows],
+                environ=environ,
+                prefer="return=representation",
+            )
+
+        def _finish(rows: list[tuple[dict[str, Any], dict[str, Any]]], response: Any) -> dict[str, Any]:
+            _mark_submitted_rows(conn, rows, response, changed_at)
+            conn.commit()
+            return {
+                "submitted_count": len(rows),
+                "submit_failed_count": len(submit_failures),
+                "skipped_duplicates": skipped_duplicates,
+                "submit_failures": submit_failures,
+            }
+
+        try:
+            return _finish(ready, _post(ready))
+        except DuplicateTimeEntryError as exc:
+            detail = exc.detail or ""
+            dropped = False
+            kept: list[tuple[dict[str, Any], dict[str, Any]]] = []
+            for entry, payload in ready:
+                if not dropped and _payload_in_detail(payload, detail):
+                    skipped_duplicates.append(_dup_brief(entry))
+                    dropped = True
+                    continue
+                kept.append((entry, payload))
+            if not dropped:
+                return {
+                    "submitted_count": 0,
+                    "submit_failed_count": len(ready) + len(submit_failures),
+                    "skipped_duplicates": skipped_duplicates,
+                    "submit_failures": submit_failures,
+                    "submit_error": str(exc),
+                }
+            if not kept:
+                conn.commit()
+                return {
+                    "submitted_count": 0,
+                    "submit_failed_count": len(submit_failures),
+                    "skipped_duplicates": skipped_duplicates,
+                    "submit_failures": submit_failures,
+                }
+            try:
+                return _finish(kept, _post(kept))
+            except Exception as retry_exc:
+                return {
+                    "submitted_count": 0,
+                    "submit_failed_count": len(kept) + len(submit_failures),
+                    "skipped_duplicates": skipped_duplicates,
+                    "submit_failures": submit_failures,
+                    "submit_error": str(retry_exc),
+                }
+        except Exception as exc:
+            return {
+                "submitted_count": 0,
+                "submit_failed_count": len(ready) + len(submit_failures),
+                "skipped_duplicates": skipped_duplicates,
+                "submit_failures": submit_failures,
+                "submit_error": str(exc),
+            }
 
 
 def update_submitted_entry(

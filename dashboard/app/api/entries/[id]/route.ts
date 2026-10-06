@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireDashboardUser } from "@/lib/auth/session";
 import { normalizeSupabaseRow, toSupabasePayload } from "@/lib/normalize-entry";
-import { isWithinEditWindow } from "@/lib/pay-period";
+import { canDashboardMutateEntry, isWithinEditWindow } from "@/lib/pay-period";
 import {
   entriesTable,
   fetchClientsFromSupabase,
@@ -84,6 +84,41 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       }
       throw e;
     }
+  } catch (e) {
+    return NextResponse.json({ error: String(e) }, { status: 500 });
+  }
+}
+
+export async function DELETE(_req: NextRequest, { params }: RouteParams) {
+  try {
+    const auth = await requireDashboardUser();
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+    const { id } = await params;
+    const table = entriesTable();
+    const existing = await supabaseFetch<Array<Record<string, unknown>>>(
+      `${table}?id=eq.${id}&select=*`,
+    );
+    if (!existing.length) {
+      return NextResponse.json({ error: ENTRY_ERRORS.notFound }, { status: 404 });
+    }
+    const current = normalizeSupabaseRow(existing[0]);
+    const allowed = canDashboardMutateEntry({
+      entryDate: current.entry_date,
+      actorIsAdmin: auth.user.is_admin,
+      actorStaffName: auth.user.staff_name,
+      entryStaffName: current.staff_name,
+    });
+    if (!allowed) {
+      const own = current.staff_name === auth.user.staff_name;
+      return NextResponse.json(
+        { error: own ? ENTRY_ERRORS.lockedDate : ENTRY_ERRORS.ownOnly },
+        { status: 403 },
+      );
+    }
+
+    await supabaseFetch(`${table}?id=eq.${id}`, { method: "DELETE", prefer: "return=minimal" });
+    return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }

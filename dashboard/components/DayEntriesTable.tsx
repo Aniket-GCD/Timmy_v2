@@ -31,6 +31,7 @@ type Props = {
   clients: ClientOption[];
   jobCodes: JobCodeOption[];
   onSave: (id: number, payload: EntryWritePayload) => Promise<void>;
+  onDelete: (id: number) => Promise<void>;
 };
 
 function displayTime(value: string | null): string {
@@ -60,6 +61,7 @@ export function DayEntriesTable({
   clients,
   jobCodes,
   onSave,
+  onDelete,
 }: Props) {
   const [showDetail, setShowDetail] = useState(true);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -145,6 +147,7 @@ export function DayEntriesTable({
                     clients={clients}
                     jobCodes={jobCodes}
                     onSave={onSave}
+                    onDelete={onDelete}
                     onToggle={() =>
                       setCollapsed((p) => ({ ...p, [group.client]: !p[group.client] }))
                     }
@@ -181,6 +184,7 @@ function ClientGroupBlock({
   clients,
   jobCodes,
   onSave,
+  onDelete,
   onToggle,
 }: {
   group: ReturnType<typeof groupByClient>[0];
@@ -193,6 +197,7 @@ function ClientGroupBlock({
   clients: ClientOption[];
   jobCodes: JobCodeOption[];
   onSave: (id: number, payload: EntryWritePayload) => Promise<void>;
+  onDelete: (id: number) => Promise<void>;
   onToggle: () => void;
 }) {
   return (
@@ -220,6 +225,7 @@ function ClientGroupBlock({
             clients={clients}
             jobCodes={jobCodes}
             onSave={onSave}
+            onDelete={onDelete}
           />
         ))}
       {!collapsed && showDetail && (
@@ -256,6 +262,7 @@ function EntryRow({
   clients,
   jobCodes,
   onSave,
+  onDelete,
 }: {
   entry: TimeEntry;
   showDetail: boolean;
@@ -265,6 +272,7 @@ function EntryRow({
   clients: ClientOption[];
   jobCodes: JobCodeOption[];
   onSave: (id: number, payload: EntryWritePayload) => Promise<void>;
+  onDelete: (id: number) => Promise<void>;
 }) {
   const editable = canDashboardMutateEntry({
     entryDate: entry.entry_date,
@@ -431,6 +439,23 @@ function EntryRow({
                 Edit
               </button>
             )}
+            {editable ? (
+              <button
+                type="button"
+                className={styles.toggle}
+                style={{ marginLeft: 8, padding: "0.15rem 0.5rem", fontSize: "0.75rem" }}
+                onClick={() => {
+                  const label = `${entry.client}${entry.notes ? ` — ${entry.notes}` : ""}`;
+                  if (!window.confirm(`Delete this time entry?\n${label}`)) return;
+                  void onDelete(entry.id).catch((err: unknown) => {
+                    setError(err instanceof Error ? err.message : "Delete failed");
+                  });
+                }}
+              >
+                Delete
+              </button>
+            ) : null}
+            {error ? <div className={styles.error}>{error}</div> : null}
           </td>
           <td>{entry.job_code}</td>
           <td>{entry.notes}</td>

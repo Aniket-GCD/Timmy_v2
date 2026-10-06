@@ -1241,7 +1241,7 @@ def resolve_capture_with_metadata(
     return result
 
 
-def _attach_suggested_job_type(conn, payload: dict[str, Any]) -> dict[str, Any]:
+def _attach_suggested_job_type(conn, payload: dict[str, Any], *, remote: bool = True) -> dict[str, Any]:
     """Add suggested_job_type when stored job_type is blank (suggestion only)."""
     if (payload.get("job_type") or "").strip():
         return payload
@@ -1253,6 +1253,8 @@ def _attach_suggested_job_type(conn, payload: dict[str, Any]) -> dict[str, Any]:
     special = special_client_policy(client_name)
     if special and not special["auto_job"]:
         payload["suggested_job_type"] = str(special["job_code"])
+        return payload
+    if not remote:
         return payload
     row = resolve_client_row(conn, client_name)
     if row is None or int(row["billable_locked"]):
@@ -1999,6 +2001,40 @@ def checkin(db_path: str | Path, at: str | None = None) -> dict[str, Any]:
     return after
 
 
+# Days larger than this stay out of the model reply and skip per-row roster downloads.
+REVIEW_FULL_BODY_LIMIT = 20
+
+
+def overlapping_block_message(row: dict[str, Any]) -> str:
+    return (
+        f"This block overlaps entry {row['entry_id']} "
+        f"({row['client_name']} {row['start_at']}–{row['end_at']}). "
+        "Split the stretch into the time before, the exception, and the time after. "
+        "Touching endpoints (end equal to the next start) are allowed."
+    )
+
+
+def find_overlapping_entry(conn, start_iso: str, end_iso: str) -> dict[str, Any] | None:
+    """Return a same-day block that overlaps [start, end). Touching ends do not overlap."""
+    day = start_iso[:10]
+    rows = conn.execute(
+        """
+        SELECT entry_id, client_name, start_at, end_at FROM time_entries
+        WHERE substr(start_at, 1, 10) = ? AND review_status != 'discarded'
+        ORDER BY start_at, entry_id
+        """,
+        (day,),
+    ).fetchall()
+    start = parse_at(start_iso)
+    end = parse_at(end_iso)
+    for row in rows:
+        other_start = parse_at(row["start_at"])
+        other_end = parse_at(row["end_at"])
+        if start < other_end and end > other_start:
+            return row_to_dict(row)
+    return None
+
+
 def add_missing_entry(
     db_path: str | Path,
     client: str,
@@ -2050,6 +2086,9 @@ def add_missing_entry(
             note = capture.get("capture_note")
             capture["capture_note"] = "duration_only" if not note else f"{note};duration_only"
         rounded = round_minutes(duration, *get_rounding(conn))
+        overlap = find_overlapping_entry(conn, start_iso, end_iso)
+        if overlap:
+            raise ValueError(overlapping_block_message(overlap))
         review_status = "needs_info" if capture["capture_status"] == "needs_info" else "draft"
         cur = conn.execute(
             """
@@ -2076,6 +2115,115 @@ def add_missing_entry(
         log_event(conn, "add_missing", f"added missing time for {capture['client_name']}: {capture['task_text']}", "time_entry", entry["entry_id"], after=entry, at=end_iso)
         conn.commit()
     return entry
+
+
+def _batch_roster_names(conn, db_path: str | Path) -> list[str]:
+    """One roster read for a whole spreadsheet. Never once per row."""
+    from .supabase_ref import list_clients_remote
+
+    live = _supabase_environ(None)
+    if live is not None or not _local_roster_allowed():
+        rows = list_clients_remote(environ=live, office=None, db_path=db_path)
+        return [str(row["display_name"]) for row in rows if row.get("display_name")]
+    fetched = conn.execute("SELECT display_name FROM clients").fetchall()
+    return [str(row["display_name"]) for row in fetched if row["display_name"]]
+
+
+def add_missing_batch(db_path: str | Path, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Save many clock rows in one transaction. Exact matches with a job code only.
+
+    Unmatched names, missing job codes, and overlapping blocks are listed in
+    needs_attention and are not saved. Returns counts plus a review token.
+    """
+    from .supabase_ref import classify_client_name
+
+    if not isinstance(rows, list):
+        raise ValueError("entries must be a list of rows")
+    ensure_initialized(db_path)
+    added_dates: dict[str, int] = {}
+    needs_attention: list[dict[str, str]] = []
+    with connect(db_path) as conn:
+        names = _batch_roster_names(conn, db_path)
+        for raw in rows:
+            if not isinstance(raw, dict):
+                needs_attention.append({"client": "", "notes": "", "reason": "row must be an object"})
+                continue
+            client = str(raw.get("client") or "").strip()
+            notes = str(raw.get("task") or raw.get("notes") or "").strip()
+            job = str(raw.get("job_type") or raw.get("job_code") or "").strip()
+            brief = {"client": client, "notes": notes}
+            start = raw.get("start")
+            end = raw.get("end")
+            if not client:
+                needs_attention.append({**brief, "reason": "missing client"})
+                continue
+            if not start or not end:
+                needs_attention.append({**brief, "reason": "missing start or end"})
+                continue
+            try:
+                start_iso = iso(parse_at(str(start)))
+                end_iso = iso(parse_at(str(end)))
+                if minutes_between(start_iso, end_iso) <= 0:
+                    raise ValueError("end must be after start")
+            except ValueError as exc:
+                needs_attention.append({**brief, "reason": str(exc)})
+                continue
+            classified = classify_client_name(client, names)
+            if classified["kind"] in {"exact", "fold"}:
+                canonical = str(classified["display_name"])
+            elif special_client_policy(client):
+                canonical = client
+            else:
+                needs_attention.append({**brief, "reason": "not an exact client match"})
+                continue
+            if not job:
+                needs_attention.append({**brief, "reason": "no job code"})
+                continue
+            overlap = find_overlapping_entry(conn, start_iso, end_iso)
+            if overlap:
+                needs_attention.append({**brief, "reason": overlapping_block_message(overlap)})
+                continue
+            duration = minutes_between(start_iso, end_iso)
+            rounded = round_minutes(duration, *get_rounding(conn))
+            conn.execute(
+                """
+                INSERT INTO time_entries(
+                    client_name, task_text, billable, job_type, start_at, end_at, duration_minutes,
+                    rounded_minutes, review_status, raw_client_name, raw_task_text,
+                    capture_status, capture_note, clarified_at, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    canonical, notes, 1, job, start_iso, end_iso, duration, rounded, "draft",
+                    None, notes, "resolved", None, None, end_iso, end_iso,
+                ),
+            )
+            added_dates[start_iso[:10]] = added_dates.get(start_iso[:10], 0) + 1
+        if added_dates:
+            log_event(
+                conn, "add_missing",
+                f"added {sum(added_dates.values())} spreadsheet rows",
+                at=now_iso(),
+            )
+        conn.commit()
+        tokens: list[dict[str, Any]] = []
+        for day in sorted(added_dates):
+            tokens.append({
+                "date": day,
+                "added_count": added_dates[day],
+                "review_token": review_token(day, list_entries_for_date(conn, day)),
+            })
+    result: dict[str, Any] = {
+        "added_count": sum(added_dates.values()),
+        "needs_attention": needs_attention,
+    }
+    if len(tokens) == 1:
+        result["date"] = tokens[0]["date"]
+        result["review_token"] = tokens[0]["review_token"]
+    elif tokens:
+        result["dates"] = tokens
+    return result
 
 
 def _pack_duration_window(conn, day: str, duration: int) -> tuple[str, str]:
@@ -2400,14 +2548,16 @@ def review_entries(db_path: str | Path, date_value: str, at: str | None = None, 
             entries = list_entries_for_range(conn, date_value, end_date)
         else:
             entries = list_entries_for_date(conn, date_value)
+        # A long day must not download the firm roster once per blank job code.
+        remote_suggest = len(entries) <= REVIEW_FULL_BODY_LIMIT
         for entry in entries:
             entry["needs_review_reason"] = needs_review_reason(entry)
-            _attach_suggested_job_type(conn, entry)
+            _attach_suggested_job_type(conn, entry, remote=remote_suggest)
             if entry.get("capture_note") and "duration_only" in str(entry["capture_note"]):
                 entry["duration_only"] = True
         active = get_active_session(conn)
         if active:
-            _attach_suggested_job_type(conn, active)
+            _attach_suggested_job_type(conn, active, remote=remote_suggest)
         stale_session_minutes = _int_setting(conn, "stale_session_minutes", 480)
         event_count = conn.execute("SELECT COUNT(*) AS c FROM event_log").fetchone()["c"]
         last_activity_at = conn.execute("SELECT MAX(created_at) AS m FROM event_log").fetchone()["m"]
@@ -2531,6 +2681,7 @@ def approve_all(db_path: str | Path, date_value: str, at: str | None = None) -> 
     skipped_locked_minutes = 0
     skipped_missing_job_code_count = 0
     skipped_missing_job_code_minutes = 0
+    skipped_missing_job_code: list[dict[str, Any]] = []
     with connect(db_path) as conn:
         skipped_rows = conn.execute(
             """
@@ -2566,6 +2717,11 @@ def approve_all(db_path: str | Path, date_value: str, at: str | None = None) -> 
             if not (before.get("job_type") or "").strip():
                 skipped_missing_job_code_count += 1
                 skipped_missing_job_code_minutes += int(before["rounded_minutes"])
+                skipped_missing_job_code.append({
+                    "entry_id": before["entry_id"],
+                    "client": before.get("client_name") or "",
+                    "notes": before.get("task_text") or "",
+                })
                 continue
             conn.execute(
                 "UPDATE time_entries SET review_status = 'approved', updated_at = ? WHERE entry_id = ?",
@@ -2584,6 +2740,7 @@ def approve_all(db_path: str | Path, date_value: str, at: str | None = None) -> 
         "skipped_locked_minutes": skipped_locked_minutes,
         "skipped_missing_job_code_count": skipped_missing_job_code_count,
         "skipped_missing_job_code_minutes": skipped_missing_job_code_minutes,
+        "skipped_missing_job_code": skipped_missing_job_code,
         "entries": approved,
     }
 

@@ -19,6 +19,7 @@ export interface EntriesProvider {
   fetchEntries(params: FetchEntriesParams): Promise<TimeEntry[]>;
   createEntry(payload: EntryWritePayload & { staff_name?: string }): Promise<TimeEntry>;
   updateEntry(id: number, payload: EntryWritePayload & { staff_name?: string }): Promise<TimeEntry>;
+  deleteEntry(id: number): Promise<void>;
   fetchClients(): Promise<ClientOption[]>;
   fetchJobCodes(): Promise<JobCodeOption[]>;
   fetchEmployees(): Promise<Employee[]>;
@@ -110,6 +111,12 @@ export const mockProvider: EntriesProvider = {
     };
     return store[idx];
   },
+  async deleteEntry(id) {
+    const store = getMockStore();
+    const idx = store.findIndex((e) => e.id === id);
+    if (idx < 0) throw new Error(ENTRY_ERRORS.notFound);
+    store.splice(idx, 1);
+  },
 };
 
 export function getEntriesProvider(): EntriesProvider {
@@ -149,6 +156,10 @@ const liveProvider: EntriesProvider = {
     });
     if (!res.ok) throw new Error(humanizeApiError(await res.text()));
     return res.json();
+  },
+  async deleteEntry(id) {
+    const res = await fetch(`/api/entries/${id}`, { method: "DELETE" });
+    if (!res.ok) throw new Error(humanizeApiError(await res.text()));
   },
   async fetchClients() {
     const res = await fetch("/api/clients");

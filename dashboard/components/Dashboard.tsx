@@ -328,6 +328,12 @@ export function Dashboard() {
     await loadPollable(false);
   }
 
+  async function handleDelete(id: number) {
+    await provider.deleteEntry(id);
+    setEditor({ open: false });
+    await loadPollable(false);
+  }
+
   const calendarStaff = staffFilter || (me && !me.is_admin ? me.staff_name : "") || "";
 
   function openCreateEditor(defaults: EntryEditorDefaults) {
@@ -592,6 +598,7 @@ export function Dashboard() {
                 clients={clients}
                 jobCodes={jobCodes}
                 onSave={handleSave}
+                onDelete={handleDelete}
               />
               )
             ) : staffFilter || (me && !me.is_admin) ? (
@@ -603,6 +610,7 @@ export function Dashboard() {
                 viewerIsAdmin={Boolean(me?.is_admin)}
                 onCreateRequest={requestCalendarCreate}
                 onEditRequest={requestCalendarEdit}
+                onDeleteRequest={(entry) => void handleDelete(entry.id)}
               />
             ) : (
               <p className="muted">Select an employee to view their calendar.</p>

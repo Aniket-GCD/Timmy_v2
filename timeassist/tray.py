@@ -165,6 +165,22 @@ def should_ignore_live_row(
     return row.get("started_at") == stopped_started_at
 
 
+def local_open_clock_row(db_path: str | Path) -> dict[str, Any] | None:
+    """Clock fields from the local active session when Supabase has no live row."""
+    with connect(db_path) as conn:
+        active = actions.get_active_session(conn)
+    if not active:
+        return None
+    return {
+        "client": active.get("client_name") or "",
+        "job_code": active.get("job_type") or "",
+        "started_at": active.get("started_at"),
+        "planned_end_at": active.get("planned_end_at"),
+        "status": "active",
+        "staff_name": local_staff_name(db_path) or "",
+    }
+
+
 def fetch_live_row(
     db_path: str | Path,
     *,
@@ -174,25 +190,31 @@ def fetch_live_row(
         actions.maybe_end_overdue_planned(db_path)
     except Exception:
         pass
+    local = local_open_clock_row(db_path)
     staff = local_staff_name(db_path)
     if not staff:
-        return None
+        return local
     table = currently_working_table(db_path=db_path, environ=environ)
-    rows = request_json(
-        "GET",
-        table,
-        query={
-            "select": "client,job_code,started_at,planned_end_at,status,staff_name",
-            "staff_name": f"eq.{staff}",
-            "status": "eq.active",
-            "limit": "1",
-        },
-        environ=environ,
-        timeout=8,
-    )
-    if not isinstance(rows, list) or not rows:
-        return None
-    return rows[0]
+    try:
+        rows = request_json(
+            "GET",
+            table,
+            query={
+                "select": "client,job_code,started_at,planned_end_at,status,staff_name",
+                "staff_name": f"eq.{staff}",
+                "status": "eq.active",
+                "limit": "1",
+            },
+            environ=environ,
+            timeout=8,
+        )
+    except Exception:
+        if local:
+            return local
+        raise
+    if isinstance(rows, list) and rows:
+        return rows[0]
+    return local
 
 
 def snapshot(

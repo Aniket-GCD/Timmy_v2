@@ -48,11 +48,12 @@ yourself, and never record anything in prose  -  every change goes through a too
 | Clarify active timer labels | `clarify_active` | any of `client`, `task` |
 | Stop tracking | `end` |  -  |
 | Log forgotten time | `add_missing` | `client`, `task`, and either `date`+`duration_minutes` **or** `start`+`end` |
+| Log a spreadsheet | `add_missing_batch` | `entries`: list of `client`, `task`, `job_type`, `start`, `end` |
 | Correct a draft/needs_info entry | `edit` | `entry_id` + fields to change |
 | Discard a mistaken capture | `discard_entry` | `entry_id`, `confirm=true` after operator confirms |
 | See a day or span | `review` |  -  (`date` defaults today; `end_date` for a span) |
 | Confirm one entry | `approve` | `entry_id`, current `review_token`, `confirm=true` (then posts to firm time system) |
-| Confirm all of a day | `approve_all` | current `review_token`, `confirm=true` (then posts each approved row) |
+| Confirm all of a day | `approve_all` | current `review_token`, `confirm=true` (one post for the day; counts only) |
 | Undo an approval | `unapprove` | `entry_id` |
 | Produce QuickBooks CSV | `export` | current `review_token` (`end_date` for a span) |
 | Anonymized packet | `sanitize_packet` |  -  |
@@ -157,17 +158,33 @@ more before approval. Never block or refuse approval over missing notes.
      approve. If the tool returns `currently_working_sync.ok=false`, say the
      local timer still started but the live ticker write failed (relay the short
      `error`). Do not invent a planned end.
-3. **After-the-fact** ("I worked 1 hour 45 on ..."): do **not** call `start`. Ask
-   for **date + duration** (and Job Code via MCQ) — start/end clock times are optional.
-   Call `add_missing` with `date` + `duration_minutes` (e.g. 105 for 1:45). If the
-   operator gives real start/end, pass those instead. Never invent spoken clock times.
+3. **After-the-fact** (one block, or "I worked 8:15–8:30 on ..."): do **not**
+   call `start`. If the row or sentence has a start and an end, call `add_missing`
+   with `start` and `end` only — do **not** also pass `date` + `duration_minutes`.
+   Use local 24-hour ISO on the work date: 8:15 AM is `T08:15:00`, 2:10 PM is
+   `T14:10:00`, 12:00 PM is `T12:00:00`, 12:00 AM is `T00:00:00`. Use `date` +
+   `duration_minutes` only when there is no clock time ("I worked 45 minutes" /
+   1:45 with no start). Never invent spoken clock times.
+   A spreadsheet or any list of rows is **one** `add_missing_batch` call, not
+   `add_missing` once per line. Pass every row's client, notes, job code, start,
+   and end. Report `added_count` and `needs_attention`. Do not re-list the saved
+   rows. The tool returns `review_token` for that day.
+   If a stretch has an exception in the middle (reception 8:30–2:30, except an
+   IRS call 10:30–11:00), save three blocks that cover the whole stretch and do
+   not overlap: the time before, the exception, and the time after. Do not save
+   one long block plus the exception on top of it, and do not drop the tail.
+   Touching endpoints are allowed (10:00 then 10:00). If `add_missing` or
+   `add_missing_batch` says a block overlaps, split it that way and retry.
 4. Report the exact tool result — use `duration` / status. Never pre-calculate.
 5. **Draft, then ask approve — stop:** show the fixed table, say it is a **draft**,
    ask once **"Want me to approve this?"**, then **stop**. Only when they clearly
    ask to **approve** (or “submit that”), run `review`, then `approve` /
-   `approve_all` with the current `review_token` **and** `confirm=true`. That
+   `approve_all` with the current `review_token` **and** `confirm=true`. A
+   spreadsheet approve is **one** `approve_all` using the batch `review_token`
+   (or the token from one `review`). Do not approve the first 5, first 20, or
+   one row at a time. Do not call `review` once per line. That
    posts to the firm time system on the same MCP — not CSV, not webhook. Report
-   `submit_result` / `submit_error` / `submitted_count`, then say **“Entry logged.”**
+   `submitted_count`, `skipped_missing_job_code`, and `skipped_duplicates`, then say **“Entry logged.”**
    Do **not** ask about CSV afterward. **Never call
    `export` unless the operator explicitly asks for a CSV/QuickBooks export.**
    **Never approve without an explicit approve ask.** Do **not** treat “put under

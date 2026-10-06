@@ -26,6 +26,10 @@ POSTGREST_PAGE_SIZE = 1000
 class DuplicateTimeEntryError(ValueError):
     """Raised when Supabase unique(staff_name, office, entry_date, start_time, end_time) fires."""
 
+    def __init__(self, message: str, *, detail: str = "") -> None:
+        super().__init__(message)
+        self.detail = detail
+
 
 def credentials_from_env(environ: dict[str, str] | None = None) -> tuple[str, str]:
     env = os.environ if environ is None else environ
@@ -122,7 +126,8 @@ def _http_error(status: int, detail: str) -> Exception:
     if unique_hit:
         return DuplicateTimeEntryError(
             "This time block is already recorded (same staff, office, date, start, and end). "
-            "Overlapping neighbors like 9-10 and 10-11 for the same client are allowed."
+            "Overlapping neighbors like 9-10 and 10-11 for the same client are allowed.",
+            detail=detail,
         )
     # Strip anything that might echo a key from a misconfigured proxy; keep short.
     snippet = detail.replace("\n", " ").strip()[:240]
@@ -577,6 +582,34 @@ def list_clients_remote(
     return out
 
 
+def classify_client_name(name: str, names: list[str]) -> dict[str, Any]:
+    """Classify a spoken name against an already-loaded display-name list.
+
+    kind:
+      - exact / fold — safe to resolve without asking
+      - soft — unique nickname/token hit; ask before writing
+      - none — no hit
+    """
+    target = name.strip()
+    if not target:
+        return {"kind": "none", "display_name": None, "spoken": ""}
+    lowered = target.casefold()
+    for display in names:
+        if display.casefold() == lowered:
+            return {"kind": "exact", "display_name": display, "spoken": target}
+    folded_target = name_fold(target)
+    fold_matches = [display for display in names if name_fold(display) == folded_target]
+    if len(fold_matches) == 1:
+        return {"kind": "fold", "display_name": fold_matches[0], "spoken": target}
+    soft = soft_unique_match(target, names)
+    if soft:
+        return {"kind": "soft", "display_name": soft, "spoken": target}
+    near = near_unique_match(target, names)
+    if near:
+        return {"kind": "soft", "display_name": near, "spoken": target}
+    return {"kind": "none", "display_name": None, "spoken": target}
+
+
 def classify_client_remote(
     name: str,
     *,
@@ -591,27 +624,9 @@ def classify_client_remote(
       - soft — unique nickname/token hit; ask "Did you mean …?" before writing
       - none — no hit; ask if new client (Unassigned + reception draft)
     """
-    target = name.strip()
-    if not target:
-        return {"kind": "none", "display_name": None, "spoken": ""}
     clients = list_clients_remote(environ=environ, office=office, db_path=db_path)
     names = [row["display_name"] for row in clients]
-    lowered = target.casefold()
-    for display in names:
-        if display.casefold() == lowered:
-            return {"kind": "exact", "display_name": display, "spoken": target}
-    folded_target = name_fold(target)
-    fold_matches = [display for display in names if name_fold(display) == folded_target]
-    if len(fold_matches) == 1:
-        return {"kind": "fold", "display_name": fold_matches[0], "spoken": target}
-    soft = soft_unique_match(target, names)
-    if soft:
-        return {"kind": "soft", "display_name": soft, "spoken": target}
-    near = near_unique_match(target, names)
-    if near:
-        # Reuse soft confirm path (needs_client_confirm) — never auto-write.
-        return {"kind": "soft", "display_name": near, "spoken": target}
-    return {"kind": "none", "display_name": None, "spoken": target}
+    return classify_client_name(name, names)
 
 
 def resolve_client_remote(

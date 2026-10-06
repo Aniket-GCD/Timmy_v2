@@ -192,6 +192,19 @@ def _search_appdata_sqlite(environ: dict[str, str]) -> Path | None:
     return newest
 
 
+def _db_has_staff_name(path: Path) -> bool:
+    """True when this sqlite file has a non-empty settings.staff_name."""
+    from .db import connect
+    from . import actions
+
+    try:
+        with connect(path) as conn:
+            name = (actions.get_setting(conn, "staff_name") or "").strip()
+    except Exception:
+        return False
+    return bool(name)
+
+
 def resolve_db_path(
     plugin_root: Path,
     *,
@@ -209,6 +222,13 @@ def resolve_db_path(
     canonical = canonical_db_path(environ=env)
     maybe_migrate_legacy_db(canonical, environ=env)
     if canonical.is_file():
+        store_db = _claude_store_package_db(env)
+        if (
+            store_db is not None
+            and not _db_has_staff_name(canonical)
+            and _db_has_staff_name(store_db)
+        ):
+            return store_db.resolve()
         return canonical.resolve()
     from_claude = _claude_plugin_data_db(env)
     if from_claude is not None:

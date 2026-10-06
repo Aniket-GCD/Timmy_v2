@@ -205,18 +205,21 @@ class ShapeTests(unittest.TestCase):
         shaped = mcp_views.shape("review", result)
         self.assertNotIn("active_timer", shaped)
 
-    def test_approve_all_view_keeps_entries_and_submit_fields(self) -> None:
+    def test_approve_all_view_returns_counts_not_row_bodies(self) -> None:
         shaped = mcp_views.shape("approve_all", {
             "date": "2026-05-28", "approved_count": 3,
             "skipped_needs_info_count": 1, "skipped_needs_info_minutes": 12,
             "skipped_missing_job_code_count": 1, "skipped_missing_job_code_minutes": 30,
+            "skipped_missing_job_code": [{"entry_id": 9, "client": "Acme", "notes": "call"}],
             "submitted_count": 2, "submit_failed_count": 1,
             "entries": [dict(FULL_ENTRY, job_type="Tax")] * 3,
             "submit_results": [{"entry_id": 7, "ok": True}],
         })
         self.assertEqual(shaped["approved_count"], 3)
-        self.assertEqual(len(shaped["entries"]), 3)
+        self.assertNotIn("entries", shaped)
+        self.assertNotIn("submit_results", shaped)
         self.assertEqual(shaped["skipped_missing_job_code_count"], 1)
+        self.assertEqual(shaped["skipped_missing_job_code"][0]["entry_id"], 9)
         self.assertEqual(shaped["submitted_count"], 2)
 
     def test_approve_all_view_surfaces_skipped_locked_counts(self) -> None:

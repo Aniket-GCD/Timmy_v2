@@ -115,6 +115,24 @@ class ClockBootstrapTests(unittest.TestCase):
         found = cb.resolve_db_path(self.root, environ=self._appdata_env())
         self.assertEqual(found, store_db.resolve())
 
+    def test_resolve_db_uses_store_when_only_that_file_has_staff_name(self) -> None:
+        self._write_mcp()
+        canonical = paths.canonical_db_path(environ=self._appdata_env())
+        self._seed_sqlite(canonical)
+        store_db = (
+            self.local
+            / "Packages"
+            / "Claude_pzs8sxrjxfjjc"
+            / "LocalCache"
+            / "Local"
+            / "Timmy"
+            / "timeassist.sqlite"
+        )
+        self._seed_sqlite(store_db)
+        actions.set_setting(store_db, "staff_name", "Jamie")
+        found = cb.resolve_db_path(self.root, environ=self._appdata_env())
+        self.assertEqual(found, store_db.resolve())
+
     def test_find_org_timeassist_plugin(self) -> None:
         rpm = (
             self.roaming
