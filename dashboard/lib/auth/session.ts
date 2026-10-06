@@ -87,6 +87,16 @@ export async function requireDashboardUser(): Promise<AuthResult> {
   }
 }
 
+/** Home office from the employees table. Used when an admin saves a firm client for someone else. */
+export async function officeForStaffName(staffName: string, fallback: string): Promise<"GCD" | "MH"> {
+  const table = employeesTable();
+  const rows = await supabaseFetch<Array<Record<string, unknown>>>(
+    `${table}?select=office&staff_name=eq.${encodeURIComponent(staffName)}&active=eq.true&limit=1`,
+  );
+  const office = String(rows[0]?.office ?? fallback).trim().toUpperCase();
+  return office === "MH" ? "MH" : "GCD";
+}
+
 /** Resolve which staff_name the request may view/edit. */
 export function resolveStaffScope(
   user: DashboardUser,

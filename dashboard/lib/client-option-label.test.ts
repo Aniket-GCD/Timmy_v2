@@ -29,4 +29,17 @@ describe("client-option-label", () => {
     ]);
     expect(labels).toEqual(["GCD - Alpha", "MH - Beta"]);
   });
+
+  it("shows only the home office for Holiday and both offices for other clients", () => {
+    const labels = clientLabels(
+      [
+        { name: "Holiday", office: "GCD" },
+        { name: "Holiday", office: "MH" },
+        { name: "Acme", office: "GCD" },
+        { name: "Acme", office: "MH" },
+      ],
+      "GCD",
+    );
+    expect(labels).toEqual(["GCD - Acme", "GCD - Holiday", "MH - Acme"]);
+  });
 });

@@ -1,3 +1,4 @@
+import { isHomeOfficeClient } from "./resolve-entry-office";
 import type { ClientOption } from "./types/reference-data";
 
 /** Display label: "GCD - Acme LLC" */
@@ -21,11 +22,15 @@ export function parseClientLabel(label: string): { office: string; name: string 
   return { office: "GCD", name: raw };
 }
 
-export function clientLabels(clients: ClientOption[]): string[] {
+export function clientLabels(clients: ClientOption[], homeOffice?: string): string[] {
+  const home = (homeOffice || "").trim().toUpperCase();
   const seen = new Set<string>();
   const out: string[] = [];
   for (const c of clients) {
     if (!c.name?.trim()) continue;
+    if (home && isHomeOfficeClient(c.name) && (c.office || "").trim().toUpperCase() !== home) {
+      continue;
+    }
     const label = formatClientLabel(c);
     if (seen.has(label)) continue;
     seen.add(label);

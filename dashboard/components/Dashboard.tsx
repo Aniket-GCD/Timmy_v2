@@ -628,6 +628,12 @@ export function Dashboard() {
         viewerIsAdmin={Boolean(me?.is_admin)}
         clients={clients}
         defaultOffice={officeFilter || me?.office || "GCD"}
+        homeOffice={
+          employees.find((employee) => editor.open && employee.staff_name === editor.staffName)?.office
+          || (editor.open && editor.staffName === me?.staff_name ? me.office : "")
+          || me?.office
+          || "GCD"
+        }
         jobCodes={jobCodes}
         onClose={() => setEditor({ open: false })}
         onSave={handleEditorSave}

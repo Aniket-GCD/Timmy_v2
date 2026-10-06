@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireDashboardUser } from "@/lib/auth/session";
+import { officeForStaffName, requireDashboardUser } from "@/lib/auth/session";
 import { normalizeSupabaseRow, toSupabasePayload } from "@/lib/normalize-entry";
+import { isHomeOfficeClient, resolveEntryOffice } from "@/lib/resolve-entry-office";
 import { canDashboardMutateEntry, isWithinEditWindow } from "@/lib/pay-period";
 import {
   entriesTable,
@@ -10,7 +11,6 @@ import {
   supabaseFetch,
 } from "@/lib/supabase-server";
 import { ENTRY_ERRORS, validateEntryWrite } from "@/lib/validate-entry";
-import { resolveEntryOffice } from "@/lib/resolve-entry-office";
 import type { EntryWritePayload } from "@/lib/types/time-entry";
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -55,11 +55,16 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     });
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
 
-    const office = resolveEntryOffice(
-      result.payload.client,
-      clients,
-      body.office || current.office || auth.user.office,
-    );
+    const labelOffice = (body.office || "").trim().toUpperCase();
+    const actorOffice = auth.user.office === "MH" ? "MH" : "GCD";
+    const hint = isHomeOfficeClient(result.payload.client)
+      ? targetStaff === auth.user.staff_name
+        ? actorOffice
+        : await officeForStaffName(targetStaff, actorOffice)
+      : labelOffice === "GCD" || labelOffice === "MH"
+        ? labelOffice
+        : current.office || actorOffice;
+    const office = resolveEntryOffice(result.payload.client, clients, hint);
     const entry = {
       id: Number(id),
       staff_name: targetStaff,

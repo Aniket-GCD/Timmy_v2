@@ -33,10 +33,12 @@ type Props = {
   defaults?: EntryEditorDefaults | null;
   staffName: string;
   viewerIsAdmin: boolean;
-  /** Full firm client list; filtered in-modal by selected office. */
+  /** Full firm client list. Office is taken from the chosen "GCD - Name" label. */
   clients: ClientOption[];
   jobCodes: JobCodeOption[];
   defaultOffice?: string;
+  /** Employee home office. Admin, Early Out, Holiday, Staff Meeting, and Vacation show only this office. */
+  homeOffice?: string;
   onClose: () => void;
   onSave: (payload: EntryWritePayload) => Promise<void>;
 };
@@ -84,6 +86,7 @@ export function EntryEditorModal({
   clients,
   jobCodes,
   defaultOffice = "GCD",
+  homeOffice,
   onClose,
   onSave,
 }: Props) {
@@ -121,7 +124,7 @@ export function EntryEditorModal({
 
   if (!open) return null;
 
-  const labeledOptions = clientLabels(clients);
+  const labeledOptions = clientLabels(clients, homeOffice || defaultOffice);
   const clientDisplay = draft.client
     ? formatClientLabelParts(office, draft.client)
     : "";
@@ -142,11 +145,6 @@ export function EntryEditorModal({
       end_time: end,
       hours: r.hours != null && r.hours > 0 ? r.hours : d.hours,
     }));
-  }
-
-  function onOfficeChange(next: "GCD" | "MH") {
-    setOffice(next);
-    setDraft((d) => ({ ...d, office: next }));
   }
 
   function onClientLabelChange(label: string) {
@@ -249,19 +247,6 @@ export function EntryEditorModal({
             {mode === "create" ? "Add time entry" : "Edit time entry"}
           </h3>
           <p className={styles.staff}>Staff: {staffName}</p>
-
-          <label className={styles.field}>
-            <span>Office</span>
-            <select
-              className={styles.input}
-              value={office}
-              onChange={(e) => onOfficeChange(e.target.value === "MH" ? "MH" : "GCD")}
-              aria-label="Office for this entry"
-            >
-              <option value="GCD">GCD</option>
-              <option value="MH">MH</option>
-            </select>
-          </label>
 
           <label className={styles.field}>
             <span>Date</span>

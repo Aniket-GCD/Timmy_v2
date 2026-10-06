@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireDashboardUser, resolveStaffScope } from "@/lib/auth/session";
+import { officeForStaffName, requireDashboardUser, resolveStaffScope } from "@/lib/auth/session";
 import { normalizeSupabaseRow } from "@/lib/normalize-entry";
 import { isWithinEditWindow } from "@/lib/pay-period";
 import {
@@ -10,7 +10,7 @@ import {
   supabaseFetch,
 } from "@/lib/supabase-server";
 import { ENTRY_ERRORS, validateEntryWrite } from "@/lib/validate-entry";
-import { resolveEntryOffice } from "@/lib/resolve-entry-office";
+import { isHomeOfficeClient, resolveEntryOffice } from "@/lib/resolve-entry-office";
 import type { EntryWritePayload } from "@/lib/types/time-entry";
 
 export async function GET(req: NextRequest) {
@@ -64,11 +64,16 @@ export async function POST(req: NextRequest) {
     });
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
 
-    const office = resolveEntryOffice(
-      result.payload.client,
-      clients,
-      body.office || auth.user.office,
-    );
+    const labelOffice = (body.office || "").trim().toUpperCase();
+    const actorOffice = auth.user.office === "MH" ? "MH" : "GCD";
+    const hint = isHomeOfficeClient(result.payload.client)
+      ? targetStaff === auth.user.staff_name
+        ? actorOffice
+        : await officeForStaffName(targetStaff, actorOffice)
+      : labelOffice === "GCD" || labelOffice === "MH"
+        ? labelOffice
+        : actorOffice;
+    const office = resolveEntryOffice(result.payload.client, clients, hint);
     const table = entriesTable();
     const rows = await supabaseFetch<Array<Record<string, unknown>>>(table, {
       method: "POST",
