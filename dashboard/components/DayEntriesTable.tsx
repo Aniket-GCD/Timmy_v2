@@ -20,7 +20,6 @@ import type { ClientOption, JobCodeOption } from "@/lib/types/reference-data";
 import type { EntryWritePayload, TimeEntry } from "@/lib/types/time-entry";
 import { ENTRY_ERRORS } from "@/lib/validate-entry";
 import { OutOfWindowConfirm } from "./OutOfWindowConfirm";
-import { StatusChip } from "./StatusChip";
 import styles from "./DayEntriesTable.module.css";
 
 type Props = {
@@ -74,7 +73,7 @@ export function DayEntriesTable({
   const showDate = multiDay;
   const colCount =
     (showDate ? 1 : 0) +
-    3 +
+    4 +
     (showDetail ? 3 : 1) +
     1;
 
@@ -117,6 +116,7 @@ export function DayEntriesTable({
             <thead>
               <tr>
                 <th className={styles.clientCol}>Client</th>
+                <th>Office</th>
                 <th>Job Code</th>
                 <th>Notes</th>
                 {showDate && <th>Date</th>}
@@ -128,7 +128,7 @@ export function DayEntriesTable({
                   </>
                 )}
                 {!showDetail && <th className={styles.num}>Hours</th>}
-                <th>Status</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -230,7 +230,7 @@ function ClientGroupBlock({
         ))}
       {!collapsed && showDetail && (
         <tr className={styles.subtotal}>
-          <td colSpan={(showDate ? 1 : 0) + 3} className={styles.indent}>
+          <td colSpan={(showDate ? 1 : 0) + 4} className={styles.indent}>
             Subtotal — {group.client}
           </td>
           <td />
@@ -241,7 +241,7 @@ function ClientGroupBlock({
       )}
       {!collapsed && !showDetail && (
         <tr className={styles.subtotal}>
-          <td colSpan={3} className={styles.indent}>
+          <td colSpan={4} className={styles.indent}>
             Subtotal — {group.client}
           </td>
           {showDate && <td />}
@@ -280,7 +280,6 @@ function EntryRow({
     actorStaffName: viewerStaffName,
     entryStaffName: entry.staff_name,
   });
-  const entryStatus = entry.status ?? "submitted";
   const [editing, setEditing] = useState(false);
   const editingRef = useRef(false);
   editingRef.current = editing;
@@ -400,14 +399,6 @@ function EntryRow({
     void save();
   }
 
-  const chipStatus = saving
-    ? "saving"
-    : error
-      ? "error"
-      : !isWithinEditWindow(entry.entry_date) && !viewerIsAdmin
-        ? "locked"
-        : entryStatus;
-
   const labeledOptions = useMemo(() => clientLabels(clients), [clients]);
   const clientDisplay = draft.client
     ? formatClientLabelParts(draft.office || entry.office || "GCD", draft.client)
@@ -417,13 +408,25 @@ function EntryRow({
     return (
       <>
         <tr className={styles.row}>
-          <td className={styles.indent}>
-            {entry.client}
+          <td className={styles.indent}>{entry.client}</td>
+          <td>{entry.office}</td>
+          <td>{entry.job_code}</td>
+          <td>{entry.notes}</td>
+          {showDate && <td>{formatDisplayDate(entry.entry_date)}</td>}
+          {showDetail && (
+            <>
+              <td className={styles.num}>{displayTime(entry.start_time)}</td>
+              <td className={styles.num}>{displayTime(entry.end_time)}</td>
+              <td className={styles.num}>{formatHoursHM(entry.hours)}</td>
+            </>
+          )}
+          {!showDetail && <td className={styles.num}>{formatHoursHM(entry.hours)}</td>}
+          <td>
             {editable ? (
               <button
                 type="button"
                 className={styles.toggle}
-                style={{ marginLeft: 8, padding: "0.15rem 0.5rem", fontSize: "0.75rem" }}
+                style={{ padding: "0.15rem 0.5rem", fontSize: "0.75rem" }}
                 onClick={requestEdit}
               >
                 Edit
@@ -432,7 +435,7 @@ function EntryRow({
               <button
                 type="button"
                 className={styles.toggle}
-                style={{ marginLeft: 8, padding: "0.15rem 0.5rem", fontSize: "0.75rem", opacity: 0.5 }}
+                style={{ padding: "0.15rem 0.5rem", fontSize: "0.75rem", opacity: 0.5 }}
                 disabled
                 title="Outside the pay-period edit window"
               >
@@ -456,20 +459,6 @@ function EntryRow({
               </button>
             ) : null}
             {error ? <div className={styles.error}>{error}</div> : null}
-          </td>
-          <td>{entry.job_code}</td>
-          <td>{entry.notes}</td>
-          {showDate && <td>{formatDisplayDate(entry.entry_date)}</td>}
-          {showDetail && (
-            <>
-              <td className={styles.num}>{displayTime(entry.start_time)}</td>
-              <td className={styles.num}>{displayTime(entry.end_time)}</td>
-              <td className={styles.num}>{formatHoursHM(entry.hours)}</td>
-            </>
-          )}
-          {!showDetail && <td className={styles.num}>{formatHoursHM(entry.hours)}</td>}
-          <td>
-            <StatusChip status={chipStatus} />
           </td>
         </tr>
         <OutOfWindowConfirm
@@ -502,6 +491,7 @@ function EntryRow({
         />
         {error ? <div className={styles.error}>{error}</div> : null}
       </td>
+      <td>{draft.office || entry.office}</td>
       <td>
         <Combobox
           value={draft.job_code}

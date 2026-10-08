@@ -22,7 +22,12 @@ from timeassist import mcp_server
 from timeassist import pay_period
 from timeassist import reception_email_draft
 from timeassist import supabase_ref
-from timeassist.supabase_submit import submit_entry, time_entry_payload, update_submitted_entry
+from timeassist.supabase_submit import (
+    AmbiguousClientOfficeError,
+    submit_entry,
+    time_entry_payload,
+    update_submitted_entry,
+)
 
 
 ENV = {
@@ -240,7 +245,7 @@ class SubmitGateTests(unittest.TestCase):
         self.assertEqual(first["supabase_id"], "sb-row-1")
         self.assertTrue(second["skipped"])
         self.assertEqual(calls.count("POST"), 1)
-        self.assertEqual(calls.count("GET"), 1)
+        self.assertEqual(calls.count("GET"), 2)
 
     def test_unassigned_seed_and_submit_payload(self) -> None:
         install_live_clients(self, "Acme Co")
@@ -276,6 +281,76 @@ class SubmitGateTests(unittest.TestCase):
         self.assertEqual(seen[0]["client"], "Unassigned")
         self.assertTrue(seen[0]["notes"].startswith("NEW CLIENT:"))
         self.assertEqual(result["supabase_id"], "sb-unassigned-1")
+
+    def test_posts_client_office_not_staff_office(self) -> None:
+        actions.set_setting(self.db, "staff_name", "Jane Doe")
+        actions.set_setting(self.db, "office", "MH")
+        actions.set_approval(self.db, 1, True, "2026-05-28T10:05:00")
+        seen: list[dict] = []
+
+        def fake_urlopen(request, timeout=30):  # noqa: ANN001
+            if request.method == "GET" and "/clients" in request.full_url:
+                return FakeResponse(json.dumps([
+                    {"name": "Acme Co", "office": "GCD", "active": True},
+                ]))
+            if request.method == "GET":
+                return FakeResponse(json.dumps(JOB_CODES))
+            seen.append(json.loads(request.data.decode("utf-8")))
+            return FakeResponse(json.dumps([{"id": "sb-client-office"}]), 201)
+
+        with patch("timeassist.supabase_ref.urlopen", side_effect=fake_urlopen):
+            submit_entry(self.db, 1, environ=ENV, at="2026-05-28T10:06:00")
+        self.assertEqual(seen[0]["office"], "GCD")
+
+    def test_same_name_in_both_offices_is_not_posted_as_staff_office(self) -> None:
+        actions.set_setting(self.db, "staff_name", "Jane Doe")
+        actions.set_setting(self.db, "office", "MH")
+        actions.set_approval(self.db, 1, True, "2026-05-28T10:05:00")
+        methods: list[str] = []
+
+        def fake_urlopen(request, timeout=30):  # noqa: ANN001
+            methods.append(request.method)
+            if request.method == "GET" and "/clients" in request.full_url:
+                return FakeResponse(json.dumps([
+                    {"name": "Acme Co", "office": "GCD", "active": True},
+                    {"name": "Acme Co", "office": "MH", "active": True},
+                ]))
+            if request.method == "GET":
+                return FakeResponse(json.dumps(JOB_CODES))
+            return FakeResponse(json.dumps([{"id": "should-not-post"}]), 201)
+
+        with patch("timeassist.supabase_ref.urlopen", side_effect=fake_urlopen):
+            with self.assertRaises(AmbiguousClientOfficeError) as caught:
+                submit_entry(self.db, 1, environ=ENV, at="2026-05-28T10:06:00")
+        self.assertIn("both GCD and MH", str(caught.exception))
+        self.assertNotIn("POST", methods)
+
+    def test_holiday_posts_staff_office_when_both_offices_exist(self) -> None:
+        actions.set_setting(self.db, "staff_name", "Jane Doe")
+        actions.set_setting(self.db, "office", "MH")
+        entry = actions.add_missing_entry(
+            self.db, "Holiday", "firm holiday",
+            "2026-05-28T11:00:00", "2026-05-28T12:00:00",
+            job_type="Email",
+        )
+        actions.set_approval(self.db, entry["entry_id"], True, "2026-05-28T12:05:00")
+        seen: list[dict] = []
+
+        def fake_urlopen(request, timeout=30):  # noqa: ANN001
+            if request.method == "GET" and "/clients" in request.full_url:
+                return FakeResponse(json.dumps([
+                    {"name": "Holiday", "office": "GCD", "active": True},
+                    {"name": "Holiday", "office": "MH", "active": True},
+                ]))
+            if request.method == "GET":
+                return FakeResponse(json.dumps(JOB_CODES))
+            seen.append(json.loads(request.data.decode("utf-8")))
+            return FakeResponse(json.dumps([{"id": "sb-holiday"}]), 201)
+
+        with patch("timeassist.supabase_ref.urlopen", side_effect=fake_urlopen):
+            submit_entry(self.db, entry["entry_id"], environ=ENV, at="2026-05-28T12:06:00")
+        self.assertEqual(seen[0]["office"], "MH")
+        self.assertEqual(seen[0]["client"], "Holiday")
 
     def test_update_submitted_uses_patch_not_post(self) -> None:
         actions.set_setting(self.db, "staff_name", "Jane Doe")

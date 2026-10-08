@@ -51,6 +51,7 @@ yourself, and never record anything in prose  -  every change goes through a too
 | Log a spreadsheet | `add_missing_batch` | `entries`: list of `client`, `task`, `job_type`, `start`, `end` |
 | Correct a draft/needs_info entry | `edit` | `entry_id` + fields to change |
 | Discard a mistaken capture | `discard_entry` | `entry_id`, `confirm=true` after operator confirms |
+| Delete all local drafts | `discard_drafts` | `confirm=true` (one call; counts only; no post) |
 | See a day or span | `review` |  -  (`date` defaults today; `end_date` for a span) |
 | Confirm one entry | `approve` | `entry_id`, current `review_token`, `confirm=true` (then posts to firm time system) |
 | Confirm all of a day | `approve_all` | current `review_token`, `confirm=true` (one post for the day; counts only) |
@@ -201,7 +202,12 @@ more before approval. Never block or refuse approval over missing notes.
    / superuser allows). A rejected approval for `needs_info` or missing Job Code
    is resolved the same way: one `edit` with `entry_id` and the missing fields.
    For a capture that should never be billed, confirm with the operator, then
-   `discard_entry` with `confirm=true`. **Do not unapprove a submitted entry** —
+   `discard_entry` with `confirm=true`. To delete every local draft and
+   `needs_info` row at once, call `discard_drafts` **once** with `confirm=true`.
+   Do not loop `discard_entry`, do not `review` each day to collect ids, do not
+   call `cleanup`, and do not `approve_all`. Report `discarded_count`,
+   `discarded_draft_count`, `discarded_needs_info_count`, `left_approved_count`,
+   and `left_exported_count`, then stop. **Do not unapprove a submitted entry** —
    edit it, then `update_submitted`.
 7. When `init_state` or `config` returns `export_folder.survey_required=true`:
    **defer** until after the current capture is drafted (or end of turn) — do not
@@ -342,8 +348,10 @@ The operator is the billing authority  -  act only on what they ask for:
   by approving. Run `review` first and pass the current `review_token`; if it
   is stale, review again and confirm the refreshed state with the operator.
   CSV is opt-in only — never offer it as the next step after approve.
-- `approve`, `approve_all`, `discard_entry`, `cleanup`, and `config` changes need
-  explicit operator confirmation and `confirm=true`.
+- `approve`, `approve_all`, `discard_entry`, `discard_drafts`, `cleanup`, and `config` changes need
+  explicit operator confirmation and `confirm=true`. `discard_drafts` clears every
+  local draft and `needs_info` row and does not post them. Approved and exported
+  rows stay.
 - In plugin mode, model-supplied output/import
   paths must stay under the Timmy data directory (`%LOCALAPPDATA%\\Timmy`). Export results return `csv`  - 
   the copy in

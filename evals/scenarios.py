@@ -287,7 +287,7 @@ SCENARIOS: list[Scenario] = [
         seed=_seed_two_drafts,
         turns=["How's my day looking so far?"],
         expects=[Expect("review")],
-        forbids=[Forbid("export"), Forbid("approve"), Forbid("approve_all"), Forbid("discard_entry")],
+        forbids=[Forbid("export"), Forbid("approve"), Forbid("approve_all"), Forbid("discard_entry"), Forbid("discard_drafts")],
         check_state=_check_still_drafts,
     ),
     Scenario(
@@ -296,7 +296,7 @@ SCENARIOS: list[Scenario] = [
         seed=_seed_zed_needs_info,
         turns=["That Zed Partners entry is correct — keep the client name exactly as it is."],
         expects=[Expect("edit", {"client": _contains("zed")})],
-        forbids=[Forbid("discard_entry")],
+        forbids=[Forbid("discard_entry"), Forbid("discard_drafts")],
         check_state=_check_zed_resolved,
     ),
     Scenario(

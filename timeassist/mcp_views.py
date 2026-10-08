@@ -469,6 +469,13 @@ _VIEWS = {
     "approve": _view_entry,
     "unapprove": _view_entry,
     "discard_entry": _view_entry,
+    "discard_drafts": lambda result: {
+        "discarded_count": result.get("discarded_count", 0),
+        "discarded_draft_count": result.get("discarded_draft_count", 0),
+        "discarded_needs_info_count": result.get("discarded_needs_info_count", 0),
+        "left_approved_count": result.get("left_approved_count", 0),
+        "left_exported_count": result.get("left_exported_count", 0),
+    },
 }
 
 

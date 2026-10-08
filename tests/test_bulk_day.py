@@ -17,6 +17,7 @@ if str(ROOT) not in sys.path:
 os.environ.setdefault("TIMEASSIST_ALLOW_LOCAL_ROSTER", "1")
 
 from timeassist import actions, mcp_views
+from timeassist.db import connect
 from timeassist.supabase_ref import DuplicateTimeEntryError
 from timeassist.supabase_submit import submit_approved_batch
 
@@ -123,9 +124,11 @@ class BulkDayTests(unittest.TestCase):
                 return [{"id": f"sb-{index}"} for index in range(len(body))]
             raise AssertionError(method)
 
+        roster = [{"name": "Acme Co", "office": "GCD", "active": True}]
         with mock.patch("timeassist.supabase_submit.get_job_codes", return_value=JOB_CODES) as codes:
-            with mock.patch("timeassist.supabase_submit.request_json", side_effect=fake_request):
-                posted = submit_approved_batch(self.db, approved["entries"], environ=ENV)
+            with mock.patch("timeassist.supabase_submit.get_clients", return_value=roster):
+                with mock.patch("timeassist.supabase_submit.request_json", side_effect=fake_request):
+                    posted = submit_approved_batch(self.db, approved["entries"], environ=ENV)
         self.assertEqual(codes.call_count, 1)
         self.assertEqual(len(posts), 1)
         self.assertEqual(len(posts[0]), 100)
@@ -152,13 +155,66 @@ class BulkDayTests(unittest.TestCase):
                 raise DuplicateTimeEntryError("already recorded", detail=detail)
             return [{"id": "sb-kept"}]
 
+        roster = [{"name": "Acme Co", "office": "GCD", "active": True}]
         with mock.patch("timeassist.supabase_submit.get_job_codes", return_value=JOB_CODES):
-            with mock.patch("timeassist.supabase_submit.request_json", side_effect=fake_request):
-                posted = submit_approved_batch(self.db, approved["entries"], environ=ENV)
+            with mock.patch("timeassist.supabase_submit.get_clients", return_value=roster):
+                with mock.patch("timeassist.supabase_submit.request_json", side_effect=fake_request):
+                    posted = submit_approved_batch(self.db, approved["entries"], environ=ENV)
         self.assertEqual(calls["n"], 2)
         self.assertEqual(posted["submitted_count"], 1)
         self.assertEqual(len(posted["skipped_duplicates"]), 1)
         self.assertEqual(posted["skipped_duplicates"][0]["entry_id"], first["entry_id"])
+
+    def test_discard_drafts_clears_the_backlog_in_one_update(self) -> None:
+        day_one = _rows(50)
+        day_two = _rows(50)
+        for row in day_two:
+            row["start"] = row["start"].replace("2026-10-01", "2026-10-02")
+            row["end"] = row["end"].replace("2026-10-01", "2026-10-02")
+        actions.add_missing_batch(self.db, day_one + day_two + [
+            {"client": "Acme Co", "task": "needs info", "job_type": "Tax", "start": "2026-10-03T08:00:00", "end": "2026-10-03T08:30:00"},
+            {"client": "Acme Co", "task": "keep approved", "job_type": "Tax", "start": "2026-10-03T09:00:00", "end": "2026-10-03T09:30:00"},
+            {"client": "Acme Co", "task": "keep exported", "job_type": "Tax", "start": "2026-10-03T10:00:00", "end": "2026-10-03T10:30:00"},
+        ])
+        with connect(self.db) as conn:
+            conn.execute("UPDATE time_entries SET review_status = 'needs_info' WHERE task_text = 'needs info'")
+            conn.execute("UPDATE time_entries SET review_status = 'approved' WHERE task_text = 'keep approved'")
+            conn.execute("UPDATE time_entries SET review_status = 'exported' WHERE task_text = 'keep exported'")
+
+        def boom(*_args, **_kwargs):
+            raise AssertionError("discard_drafts must not touch the network")
+
+        with mock.patch("timeassist.supabase_ref.get_clients", side_effect=boom):
+            with mock.patch("timeassist.supabase_ref.request_json", side_effect=boom):
+                with mock.patch("timeassist.supabase_submit.request_json", side_effect=boom):
+                    with mock.patch("timeassist.actions.review_entries", side_effect=boom):
+                        result = actions.discard_drafts(self.db, "2026-10-03T18:00:00")
+        self.assertEqual(result["discarded_draft_count"], 100)
+        self.assertEqual(result["discarded_needs_info_count"], 1)
+        self.assertEqual(result["discarded_count"], 101)
+        self.assertEqual(result["left_approved_count"], 1)
+        self.assertEqual(result["left_exported_count"], 1)
+        self.assertNotIn("entries", result)
+        shaped = mcp_views.shape("discard_drafts", {**result, "entries": [{"entry_id": 1}]})
+        self.assertNotIn("entries", shaped)
+        self.assertEqual(shaped["discarded_count"], 101)
+        with connect(self.db) as conn:
+            statuses = {
+                row["review_status"]: row["c"]
+                for row in conn.execute("SELECT review_status, COUNT(*) AS c FROM time_entries GROUP BY review_status")
+            }
+            discard_events = conn.execute(
+                "SELECT COUNT(*) AS c FROM event_log WHERE event_type = 'discard'"
+            ).fetchone()["c"]
+            kept = conn.execute("SELECT COUNT(*) AS c FROM time_entries").fetchone()["c"]
+        self.assertEqual(statuses["discarded"], 101)
+        self.assertEqual(statuses["approved"], 1)
+        self.assertEqual(statuses["exported"], 1)
+        self.assertEqual(discard_events, 1)
+        self.assertEqual(kept, 103)
+        again = actions.add_missing_batch(self.db, [day_one[0]])
+        self.assertEqual(again["added_count"], 1)
+        self.assertEqual(again["needs_attention"], [])
 
     def test_overlap_is_rejected_and_touching_endpoints_are_allowed(self) -> None:
         actions.add_missing_entry(

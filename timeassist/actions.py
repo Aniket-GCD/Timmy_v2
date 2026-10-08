@@ -944,8 +944,8 @@ def resolve_client_row(conn, name: str, *, environ: dict[str, str] | None = None
     even when the live Supabase row is briefly missing — seed it in Supabase only
     (not QuickBooks); replace later via ``edit`` once the real client exists.
     """
-    # Capture looks up the full firm roster (both offices). Submit still stamps
-    # settings.office onto Supabase — lookup must not hide cross-office clients.
+    # Capture looks up the full firm roster (both offices). Submit stamps the
+    # client's roster office, not settings.office.
     live_env = _supabase_environ(environ)
     if live_env is not None:
         from .supabase_ref import resolve_client_remote, roster_row_from_display
@@ -2440,6 +2440,53 @@ def discard_entry(db_path: str | Path, entry_id: int, at: str | None = None) -> 
         log_event(conn, "discard", f"discarded entry {entry_id} (never billed)", "time_entry", entry_id, before=before, after=after, at=changed_at)
         conn.commit()
     return after
+
+
+def discard_drafts(db_path: str | Path, at: str | None = None) -> dict[str, Any]:
+    """Soft-discard every local draft and needs_info row in one update.
+
+    Approved and exported rows stay. Counts only — no row bodies, no roster
+    download, no firm post. Discarded rows remain for audit and drop out of
+    review, approve, export, and overlap checks.
+    """
+    ensure_initialized(db_path)
+    changed_at = iso(parse_at(at)) if at else now_iso()
+    with connect(db_path) as conn:
+        counts = {"draft": 0, "needs_info": 0, "approved": 0, "exported": 0}
+        for row in conn.execute("SELECT review_status, COUNT(*) AS c FROM time_entries GROUP BY review_status"):
+            if row["review_status"] in counts:
+                counts[row["review_status"]] = row["c"]
+        conn.execute(
+            """
+            UPDATE time_entries
+            SET review_status = 'discarded', updated_at = ?
+            WHERE review_status IN ('draft', 'needs_info')
+            """,
+            (changed_at,),
+        )
+        discarded_draft = counts["draft"]
+        discarded_needs = counts["needs_info"]
+        discarded = discarded_draft + discarded_needs
+        log_event(
+            conn,
+            "discard",
+            f"discarded {discarded} local drafts",
+            "database",
+            None,
+            after={
+                "discarded_draft_count": discarded_draft,
+                "discarded_needs_info_count": discarded_needs,
+            },
+            at=changed_at,
+        )
+        conn.commit()
+    return {
+        "discarded_count": discarded,
+        "discarded_draft_count": discarded_draft,
+        "discarded_needs_info_count": discarded_needs,
+        "left_approved_count": counts["approved"],
+        "left_exported_count": counts["exported"],
+    }
 
 
 def list_entries_for_range(conn, date_value: str, end_date: str) -> list[dict[str, Any]]:

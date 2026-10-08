@@ -12,7 +12,10 @@ from .supabase_config import time_entries_table, unassigned_client_name
 from .supabase_ref import (
     DuplicateTimeEntryError,
     account_for_job_code,
+    client_display_name,
+    get_clients,
     get_job_codes,
+    name_fold,
     request_json,
 )
 
@@ -23,6 +26,64 @@ UNASSIGNED_CLIENT = "Unassigned"
 
 def _unassigned_label(db_path: str | Path | None = None, environ: dict[str, str] | None = None) -> str:
     return unassigned_client_name(db_path=db_path, environ=environ)
+
+
+class AmbiguousClientOfficeError(ValueError):
+    """Client name exists in both GCD and MH. Do not guess the employee office."""
+
+
+def _row_is_active(row: dict[str, Any]) -> bool:
+    active = row.get("active")
+    if active is None:
+        return True
+    if isinstance(active, bool):
+        return active
+    return str(active).strip().lower() in {"1", "true", "yes", "t"}
+
+
+def office_for_client(client_name: str, roster: list[dict[str, Any]], staff_office: str) -> str:
+    """Office written on a posted time entry.
+
+    Admin, Early Out, Holiday, Staff Meeting, and Vacation use the person's
+    office and ignore the client list. One roster office for any other name
+    wins, even when the person works at the other office. The same real-client
+    name in both GCD and MH is refused.
+    """
+    staff = actions.normalize_office(staff_office or "")
+    if actions.special_client_policy(client_name):
+        return staff
+    target = name_fold(client_name or "")
+    if not target:
+        return staff
+    offices: list[str] = []
+    for row in roster:
+        if not isinstance(row, dict) or not _row_is_active(row):
+            continue
+        display = client_display_name(row)
+        if not display or name_fold(display) != target:
+            continue
+        office = (row.get("office") or "").strip().upper()
+        if office not in {"GCD", "MH"} or office in offices:
+            continue
+        offices.append(office)
+    if len(offices) == 1:
+        return offices[0]
+    if len(offices) > 1:
+        shown = " and ".join(offices)
+        raise AmbiguousClientOfficeError(
+            f"{client_name.strip()} is in both {shown}. "
+            "Say which office, the way the dashboard label does."
+        )
+    return staff
+
+
+def _load_client_roster(
+    *,
+    environ: dict[str, str] | None = None,
+    db_path: str | Path | None = None,
+) -> list[dict[str, Any]]:
+    rows = get_clients(environ=environ, db_path=db_path)
+    return rows if isinstance(rows, list) else []
 
 
 def _clock_parts(iso_ts: str) -> tuple[str, str]:
@@ -139,7 +200,7 @@ def submit_entry(
     with connect(db_path) as conn:
         settings = {row["setting_key"]: row["setting_value"] for row in conn.execute("SELECT setting_key, setting_value FROM settings")}
         staff_name = actions.normalize_staff_name(settings.get("staff_name") or "")
-        office = actions.normalize_office(settings.get("office") or "")
+        staff_office = actions.normalize_office(settings.get("office") or "")
         row = conn.execute("SELECT * FROM time_entries WHERE entry_id = ?", (entry_id,)).fetchone()
         if row is None:
             raise ValueError(f"unknown entry {entry_id}")
@@ -163,6 +224,8 @@ def submit_entry(
             raise ValueError("set a Job Code before submit; account is copied from job_codes, never typed")
         codes = get_job_codes(environ=environ, db_path=db_path)
         account = account_for_job_code(job_code, codes)
+        roster = _load_client_roster(environ=environ, db_path=db_path)
+        office = office_for_client(entry.get("client_name") or "", roster, staff_office)
         payload = time_entry_payload(
             entry, staff_name=staff_name, office=office, account=account,
             db_path=db_path, environ=environ,
@@ -280,6 +343,7 @@ def submit_approved_batch(
     changed_at = actions.iso(actions.parse_at(at)) if at else actions.now_iso()
     try:
         codes = get_job_codes(environ=environ, db_path=db_path)
+        roster = _load_client_roster(environ=environ, db_path=db_path)
     except Exception as exc:
         return {
             "submitted_count": 0,
@@ -293,7 +357,7 @@ def submit_approved_batch(
             for row in conn.execute("SELECT setting_key, setting_value FROM settings")
         }
         staff_name = actions.normalize_staff_name(settings.get("staff_name") or "")
-        office = actions.normalize_office(settings.get("office") or "")
+        staff_office = actions.normalize_office(settings.get("office") or "")
         ready: list[tuple[dict[str, Any], dict[str, Any]]] = []
         seen: set[tuple[str, str, str, str, str]] = set()
         for entry in entries:
@@ -302,6 +366,7 @@ def submit_approved_batch(
             try:
                 job_code = (entry.get("job_type") or "").strip()
                 account = account_for_job_code(job_code, codes)
+                office = office_for_client(entry.get("client_name") or "", roster, staff_office)
                 payload = time_entry_payload(
                     entry, staff_name=staff_name, office=office, account=account,
                     db_path=db_path, environ=environ,
@@ -411,7 +476,7 @@ def update_submitted_entry(
     with connect(db_path) as conn:
         settings = {row["setting_key"]: row["setting_value"] for row in conn.execute("SELECT setting_key, setting_value FROM settings")}
         staff_name = actions.normalize_staff_name(settings.get("staff_name") or "")
-        office = actions.normalize_office(settings.get("office") or "")
+        staff_office = actions.normalize_office(settings.get("office") or "")
         row = conn.execute("SELECT * FROM time_entries WHERE entry_id = ?", (entry_id,)).fetchone()
         if row is None:
             raise ValueError(f"unknown entry {entry_id}")
@@ -431,6 +496,8 @@ def update_submitted_entry(
             raise ValueError("set a Job Code before update_submitted; account is copied from job_codes, never typed")
         codes = get_job_codes(environ=environ, db_path=db_path)
         account = account_for_job_code(job_code, codes)
+        roster = _load_client_roster(environ=environ, db_path=db_path)
+        office = office_for_client(entry.get("client_name") or "", roster, staff_office)
         payload = time_entry_payload(
             entry, staff_name=staff_name, office=office, account=account,
             db_path=db_path, environ=environ,

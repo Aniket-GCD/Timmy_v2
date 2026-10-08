@@ -576,6 +576,18 @@ TOOLS: list[dict[str, Any]] = [
             "required": ["entry_id"],
         },
     },
+    {
+        "name": "discard_drafts",
+        "description": "Discard every local draft and needs_info row in one step. Never posts them. Never touches approved or exported rows. Returns counts only. Requires explicit operator confirmation.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "confirm": {"type": "boolean", "description": "Required true after the operator asks to delete or discard local drafts."},
+                "at": {"type": "string", "description": "Optional ISO timestamp."},
+            },
+            "required": ["confirm"],
+        },
+    },
 ]
 
 _TOOL_NAMES = {tool["name"] for tool in TOOLS}
@@ -746,6 +758,9 @@ def call_tool(name: str, arguments: dict[str, Any], db_path: str | Path) -> dict
     if name == "discard_entry":
         _require_confirm(arguments, "discarding an entry")
         return actions.discard_entry(db_path, int(arguments["entry_id"]), arguments.get("at"))
+    if name == "discard_drafts":
+        _require_confirm(arguments, "discarding every local draft")
+        return actions.discard_drafts(db_path, arguments.get("at"))
     if name == "export":
         date_value = _date(arguments.get("date"))
         end_date = _optional_date(arguments.get("end_date"))

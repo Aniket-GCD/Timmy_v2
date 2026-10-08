@@ -82,7 +82,7 @@ class McpServerTests(unittest.TestCase):
         names = {tool["name"] for tool in tools}
         self.assertEqual(
             names,
-            {"init_state", "start", "switch", "clarify_active", "end", "add_missing", "add_missing_batch", "edit", "review", "approve", "approve_all", "unapprove", "export", "sanitize_packet", "config", "reround", "import_clients", "add_client", "list_clients", "list_employees", "list_job_codes", "refresh_clients", "submit", "update_submitted", "draft_reception_email", "cancel", "checkin_status", "checkin", "snooze_checkin", "status", "cleanup", "discard_entry"},
+            {"init_state", "start", "switch", "clarify_active", "end", "add_missing", "add_missing_batch", "edit", "review", "approve", "approve_all", "unapprove", "export", "sanitize_packet", "config", "reround", "import_clients", "add_client", "list_clients", "list_employees", "list_job_codes", "refresh_clients", "submit", "update_submitted", "draft_reception_email", "cancel", "checkin_status", "checkin", "snooze_checkin", "status", "cleanup", "discard_entry", "discard_drafts"},
         )
         switch_tool = next(tool for tool in tools if tool["name"] == "switch")
         minutes_ago_schema = switch_tool["inputSchema"]["properties"]["minutes_ago"]
@@ -683,6 +683,25 @@ class McpServerTests(unittest.TestCase):
         discarded = self.payload("discard_entry", {"entry_id": entry["entry_id"], "confirm": True})
         self.assertEqual(discarded["status"], "discarded")
 
+    def test_discard_drafts_requires_confirm_and_returns_counts_only(self) -> None:
+        self.payload("init_state", {"at": "2026-05-28T09:00:00"})
+        self.seed_roster("Client A")
+        self.payload("start", {"client": "Client A", "task": "cleanup", "at": "2026-05-28T09:00:00"})
+        self.payload("end", {"at": "2026-05-28T09:30:00"})
+        rejected = self.call("discard_drafts", {})
+        self.assertTrue(rejected.get("isError"))
+        cleared = self.payload("discard_drafts", {"confirm": True})
+        self.assertEqual(cleared["discarded_draft_count"], 1)
+        self.assertEqual(cleared["discarded_count"], 1)
+        self.assertNotIn("entries", cleared)
+        self.assertEqual(set(cleared), {
+            "discarded_count",
+            "discarded_draft_count",
+            "discarded_needs_info_count",
+            "left_approved_count",
+            "left_exported_count",
+        })
+
     def test_add_client_round_trips_slim_view(self) -> None:
         self.payload("init_state", {"at": "2026-05-28T08:55:00"})
         result = self.payload("add_client", {
@@ -732,7 +751,7 @@ class McpServerTests(unittest.TestCase):
                 "cleanup", "status", "list_clients", "list_employees", "list_job_codes",
                 "refresh_clients", "submit", "update_submitted", "draft_reception_email",
                 "import_clients",
-                "add_client", "discard_entry",
+                "add_client", "discard_entry", "discard_drafts",
             },
         )
 
