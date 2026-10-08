@@ -2,7 +2,7 @@
 
 Timmy is a local-first prototype for turning interrupt-driven work into human-reviewed draft billable-time entries.
 
-It is built for accountants, operators, and small teams who need a lightweight way to capture work as it happens, review it before billing, and export only approved entries. The goal is not surveillance or automatic writeback. The goal is a clear local workflow where the person remains the billing authority.
+It is built for accountants, operators, and small teams who need a simple, lightweight way to capture work as it happens, review it before billing, and export only approved entries. The goal is not surveillance or automatic writeback. The goal is a clear local workflow where the person remains the billing authority.
 
 ## Start here
 
