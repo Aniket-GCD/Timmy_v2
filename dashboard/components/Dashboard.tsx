@@ -470,11 +470,11 @@ export function Dashboard() {
         {me?.is_admin ? (
           <>
             <label className="staff-filter">
-              <span className="muted">Office</span>
+              <span className="muted">Client Office</span>
               <select
                 value={officeFilter}
                 onChange={(e) => setOfficeFilter(e.target.value)}
-                aria-label="Filter by office"
+                aria-label="Filter by client office"
               >
                 <option value="">All offices</option>
                 <option value="GCD">GCD</option>
