@@ -4,7 +4,7 @@ Timmy is a local-first prototype for turning interrupt-driven work into human-re
 
 It is built for accountants, operators, and small teams who need a simple, lightweight way to capture work as it happens, review it before billing, and export only approved entries. The goal is not surveillance or automatic writeback. The goal is a clear local workflow where the person remains the billing authority.
 
-## Start here
+## Start here (pick your role)
 
 - **Accountant/operator:** `docs/accountant-quick-start.md` — one-page plain-language workflow.
 - **Helper/admin:** `docs/admin-install.md` and `docs/pilot-checklist.md` — install, validation, and first guided pilot.
