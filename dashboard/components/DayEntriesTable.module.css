@@ -67,6 +67,19 @@
   color: var(--mysterious-mixture);
 }
 
+.rowActions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.rowActions .toggle {
+  margin: 0;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.75rem;
+}
+
 .tableScroll {
   overflow-x: auto;
 }

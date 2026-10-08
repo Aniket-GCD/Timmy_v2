@@ -439,6 +439,9 @@ export function Dashboard() {
     );
   }
 
+  const editingEntryId =
+    editor.open && editor.mode === "edit" ? editor.entry?.id : undefined;
+
   return (
     <div className="page">
       <header className="topbar">
@@ -610,7 +613,6 @@ export function Dashboard() {
                 viewerIsAdmin={Boolean(me?.is_admin)}
                 onCreateRequest={requestCalendarCreate}
                 onEditRequest={requestCalendarEdit}
-                onDeleteRequest={(entry) => void handleDelete(entry.id)}
               />
             ) : (
               <p className="muted">Select an employee to view their calendar.</p>
@@ -637,6 +639,7 @@ export function Dashboard() {
         jobCodes={jobCodes}
         onClose={() => setEditor({ open: false })}
         onSave={handleEditorSave}
+        onDelete={editingEntryId != null ? () => handleDelete(editingEntryId) : undefined}
       />
 
       <RemapUnassignedModal

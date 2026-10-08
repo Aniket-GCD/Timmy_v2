@@ -29,7 +29,6 @@ type Props = {
   viewerIsAdmin: boolean;
   onCreateRequest: (req: CreateRequest) => void;
   onEditRequest: (entry: TimeEntry) => void;
-  onDeleteRequest: (entry: TimeEntry) => void;
 };
 
 const HOUR_PX = 48;
@@ -47,7 +46,6 @@ export function WeekCalendar({
   viewerIsAdmin,
   onCreateRequest,
   onEditRequest,
-  onDeleteRequest,
 }: Props) {
   const { scheduled, unscheduled } = useMemo(() => splitScheduled(entries), [entries]);
   const axis = useMemo(() => calendarAxisMinutes(), []);
@@ -174,20 +172,6 @@ export function WeekCalendar({
                     >
                       <span className={styles.blockStaff}>{b.entry.client}</span>
                       <span className={styles.blockClient}>{b.entry.job_code}</span>
-                      {mutable ? (
-                        <button
-                          type="button"
-                          className={styles.blockDelete}
-                          onClick={(ev) => {
-                            ev.stopPropagation();
-                            const label = `${b.entry.client}${b.entry.notes ? ` — ${b.entry.notes}` : ""}`;
-                            if (!window.confirm(`Delete this time entry?\n${label}`)) return;
-                            onDeleteRequest(b.entry);
-                          }}
-                        >
-                          Delete
-                        </button>
-                      ) : null}
                     </div>
                   );
                 })}
@@ -219,20 +203,6 @@ export function WeekCalendar({
                           <strong>{e.client}</strong>
                           <span>{e.job_code}</span>
                           <span>{formatHoursHM(e.hours)}</span>
-                          {mutable ? (
-                            <button
-                              type="button"
-                              className={styles.blockDelete}
-                              onClick={(ev) => {
-                                ev.stopPropagation();
-                                const label = `${e.client}${e.notes ? ` — ${e.notes}` : ""}`;
-                                if (!window.confirm(`Delete this time entry?\n${label}`)) return;
-                                onDeleteRequest(e);
-                              }}
-                            >
-                              Delete
-                            </button>
-                          ) : null}
                         </div>
                       );
                     })}

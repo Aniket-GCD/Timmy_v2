@@ -98,7 +98,8 @@
 }
 
 .cancel,
-.save {
+.save,
+.delete {
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 0.4rem 0.85rem;
@@ -111,6 +112,12 @@
   background: var(--off-white);
 }
 
+.delete {
+  background: var(--off-white);
+  color: #8b2e24;
+  border-color: #e4c4c0;
+}
+
 .save {
   background: var(--mysterious-mixture);
   color: var(--white);
@@ -118,7 +125,8 @@
 }
 
 .save:disabled,
-.cancel:disabled {
+.cancel:disabled,
+.delete:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }

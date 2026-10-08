@@ -86,19 +86,6 @@
   cursor: pointer;
 }
 
-.blockDelete {
-  display: inline-block;
-  margin-top: 0.15rem;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 0.68rem;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
 .blockLocked {
   cursor: not-allowed;
   opacity: 0.75;

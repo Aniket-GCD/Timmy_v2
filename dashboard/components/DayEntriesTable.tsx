@@ -422,42 +422,38 @@ function EntryRow({
           )}
           {!showDetail && <td className={styles.num}>{formatHoursHM(entry.hours)}</td>}
           <td>
-            {editable ? (
-              <button
-                type="button"
-                className={styles.toggle}
-                style={{ padding: "0.15rem 0.5rem", fontSize: "0.75rem" }}
-                onClick={requestEdit}
-              >
-                Edit
-              </button>
-            ) : (
-              <button
-                type="button"
-                className={styles.toggle}
-                style={{ padding: "0.15rem 0.5rem", fontSize: "0.75rem", opacity: 0.5 }}
-                disabled
-                title="Outside the pay-period edit window"
-              >
-                Edit
-              </button>
-            )}
-            {editable ? (
-              <button
-                type="button"
-                className={styles.toggle}
-                style={{ marginLeft: 8, padding: "0.15rem 0.5rem", fontSize: "0.75rem" }}
-                onClick={() => {
-                  const label = `${entry.client}${entry.notes ? ` — ${entry.notes}` : ""}`;
-                  if (!window.confirm(`Delete this time entry?\n${label}`)) return;
-                  void onDelete(entry.id).catch((err: unknown) => {
-                    setError(err instanceof Error ? err.message : "Delete failed");
-                  });
-                }}
-              >
-                Delete
-              </button>
-            ) : null}
+            <div className={styles.rowActions}>
+              {editable ? (
+                <button type="button" className={styles.toggle} onClick={requestEdit}>
+                  Edit
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className={styles.toggle}
+                  style={{ opacity: 0.5 }}
+                  disabled
+                  title="Outside the pay-period edit window"
+                >
+                  Edit
+                </button>
+              )}
+              {editable ? (
+                <button
+                  type="button"
+                  className={styles.toggle}
+                  onClick={() => {
+                    const label = `${entry.client}${entry.notes ? ` — ${entry.notes}` : ""}`;
+                    if (!window.confirm(`Delete this time entry?\n${label}`)) return;
+                    void onDelete(entry.id).catch((err: unknown) => {
+                      setError(err instanceof Error ? err.message : "Delete failed");
+                    });
+                  }}
+                >
+                  Delete
+                </button>
+              ) : null}
+            </div>
             {error ? <div className={styles.error}>{error}</div> : null}
           </td>
         </tr>
@@ -575,20 +571,22 @@ function EntryRow({
         </td>
       )}
       <td>
-        <button type="button" className={styles.saveBtn} disabled={saving} onClick={requestSave}>
-          {saving ? "…" : "Save"}
-        </button>{" "}
-        <button
-          type="button"
-          className={styles.cancelBtn}
-          onClick={() => {
-            applyEntryFields(entry);
-            setEditing(false);
-            setError("");
-          }}
-        >
-          Cancel
-        </button>
+        <div className={styles.rowActions}>
+          <button type="button" className={styles.saveBtn} disabled={saving} onClick={requestSave}>
+            {saving ? "…" : "Save"}
+          </button>
+          <button
+            type="button"
+            className={styles.cancelBtn}
+            onClick={() => {
+              applyEntryFields(entry);
+              setEditing(false);
+              setError("");
+            }}
+          >
+            Cancel
+          </button>
+        </div>
         <OutOfWindowConfirm
           open={confirmOpen}
           mode="edit"

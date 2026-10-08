@@ -41,6 +41,7 @@ type Props = {
   homeOffice?: string;
   onClose: () => void;
   onSave: (payload: EntryWritePayload) => Promise<void>;
+  onDelete?: () => Promise<void>;
 };
 
 function normalizeOffice(raw: string | undefined | null, fallback = "GCD"): "GCD" | "MH" {
@@ -89,6 +90,7 @@ export function EntryEditorModal({
   homeOffice,
   onClose,
   onSave,
+  onDelete,
 }: Props) {
   const [draft, setDraft] = useState<EntryWritePayload>(emptyDraft(defaults));
   const [office, setOffice] = useState<"GCD" | "MH">(normalizeOffice(defaults?.office, defaultOffice));
@@ -96,6 +98,7 @@ export function EntryEditorModal({
   const [endHm, setEndHm] = useState("");
   const [hoursHm, setHoursHm] = useState("1:00");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -119,6 +122,7 @@ export function EntryEditorModal({
     setHoursHm(formatHoursHM(next.hours));
     setError("");
     setSaving(false);
+    setDeleting(false);
     setConfirmOpen(false);
   }, [open, mode, entry, defaults, defaultOffice]);
 
@@ -232,6 +236,20 @@ export function EntryEditorModal({
       return;
     }
     void doSave();
+  }
+
+  async function requestDelete() {
+    if (!onDelete || !entry) return;
+    const label = `${entry.client}${entry.notes ? ` — ${entry.notes}` : ""}`;
+    if (!window.confirm(`Delete this time entry?\n${label}`)) return;
+    setDeleting(true);
+    setError("");
+    try {
+      await onDelete();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setDeleting(false);
+    }
   }
 
   return (
@@ -348,14 +366,24 @@ export function EntryEditorModal({
 
           {error ? <p className={styles.error}>{error}</p> : null}
 
-          <div className={styles.actions}>
-            <button type="button" className={styles.cancel} onClick={onClose} disabled={saving}>
-              Cancel
+        <div className={styles.actions}>
+          {mode === "edit" && onDelete ? (
+            <button
+              type="button"
+              className={styles.delete}
+              onClick={() => void requestDelete()}
+              disabled={saving || deleting}
+            >
+              {deleting ? "Deleting…" : "Delete"}
             </button>
-            <button type="button" className={styles.save} onClick={requestSave} disabled={saving}>
-              {saving ? "Saving…" : "Save"}
-            </button>
-          </div>
+          ) : null}
+          <button type="button" className={styles.cancel} onClick={onClose} disabled={saving || deleting}>
+            Cancel
+          </button>
+          <button type="button" className={styles.save} onClick={requestSave} disabled={saving || deleting}>
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
         </div>
       </div>
 
