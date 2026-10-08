@@ -11,7 +11,7 @@ It is built for accountants, operators, and small teams who need a simple, light
 - **Stakeholder walkthrough:** `docs/project-brief.md` and `docs/stakeholder-walkthrough.md` — framing, demo path, and decision prompts.
 - **Technical reader:** `docs/wiki/Architecture.md`, `docs/wiki/Home.md`, `CHANGELOG.md`, `tests/`, and `plugin/timeassist/`.
 
-## Current status
+## Current status (at a glance)
 
 - **Stage:** stakeholder prototype moving toward a guided pilot.
 - **Runtime:** deterministic Python core with local SQLite state.
