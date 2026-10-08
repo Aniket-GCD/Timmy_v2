@@ -273,7 +273,8 @@ def suggest_job_codes_for_client(
     return out
 
 
-def account_for_job_code(job_code: str, rows: list[dict[str, Any]]) -> str:
+def matched_job_code(job_code: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Case-insensitive match. The returned job_code is the table's spelling."""
     wanted = job_code.strip().casefold()
     for row in rows:
         slim = slim_job_code(row)
@@ -283,10 +284,14 @@ def account_for_job_code(job_code: str, rows: list[dict[str, Any]]) -> str:
                 raise ValueError(
                     f"Job Code '{slim['job_code']}' has no account on the job_codes row; account is never typed."
                 )
-            return account
+            return slim
     raise ValueError(
         f"Job Code '{job_code}' is not in job_codes; copy account from that table, never type it."
     )
+
+
+def account_for_job_code(job_code: str, rows: list[dict[str, Any]]) -> str:
+    return str(matched_job_code(job_code, rows)["account"])
 
 
 def client_display_name(row: dict[str, Any]) -> str:

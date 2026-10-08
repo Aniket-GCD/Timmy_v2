@@ -11,7 +11,7 @@ from .pay_period import can_edit_entry, entry_work_date, refuse_edit_message
 from .supabase_config import time_entries_table, unassigned_client_name
 from .supabase_ref import (
     DuplicateTimeEntryError,
-    account_for_job_code,
+    matched_job_code,
     client_display_name,
     get_clients,
     get_job_codes,
@@ -151,11 +151,12 @@ def time_entry_payload(
     staff_name: str,
     office: str,
     account: str,
+    job_code: str | None = None,
     db_path: str | Path | None = None,
     environ: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     notes = (entry.get("task_text") or "").strip()
-    job_code = (entry.get("job_type") or "").strip()
+    job_code = (job_code if job_code is not None else (entry.get("job_type") or "")).strip()
     entry_date, start_time = _clock_parts(entry["start_at"])
     _, end_time = _clock_parts(entry["end_at"])
     minutes = int(entry["rounded_minutes"])
@@ -223,11 +224,12 @@ def submit_entry(
         if not job_code:
             raise ValueError("set a Job Code before submit; account is copied from job_codes, never typed")
         codes = get_job_codes(environ=environ, db_path=db_path)
-        account = account_for_job_code(job_code, codes)
+        matched = matched_job_code(job_code, codes)
         roster = _load_client_roster(environ=environ, db_path=db_path)
         office = office_for_client(entry.get("client_name") or "", roster, staff_office)
         payload = time_entry_payload(
-            entry, staff_name=staff_name, office=office, account=account,
+            entry, staff_name=staff_name, office=office, account=matched["account"],
+            job_code=matched["job_code"],
             db_path=db_path, environ=environ,
         )
         table = time_entries_table(db_path=db_path, environ=environ)
@@ -365,10 +367,11 @@ def submit_approved_batch(
                 continue
             try:
                 job_code = (entry.get("job_type") or "").strip()
-                account = account_for_job_code(job_code, codes)
+                matched = matched_job_code(job_code, codes)
                 office = office_for_client(entry.get("client_name") or "", roster, staff_office)
                 payload = time_entry_payload(
-                    entry, staff_name=staff_name, office=office, account=account,
+                    entry, staff_name=staff_name, office=office, account=matched["account"],
+                    job_code=matched["job_code"],
                     db_path=db_path, environ=environ,
                 )
             except ValueError as exc:
@@ -495,11 +498,12 @@ def update_submitted_entry(
         if not job_code:
             raise ValueError("set a Job Code before update_submitted; account is copied from job_codes, never typed")
         codes = get_job_codes(environ=environ, db_path=db_path)
-        account = account_for_job_code(job_code, codes)
+        matched = matched_job_code(job_code, codes)
         roster = _load_client_roster(environ=environ, db_path=db_path)
         office = office_for_client(entry.get("client_name") or "", roster, staff_office)
         payload = time_entry_payload(
-            entry, staff_name=staff_name, office=office, account=account,
+            entry, staff_name=staff_name, office=office, account=matched["account"],
+            job_code=matched["job_code"],
             db_path=db_path, environ=environ,
         )
         table = time_entries_table(db_path=db_path, environ=environ)

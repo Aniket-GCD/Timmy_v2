@@ -28,6 +28,17 @@ describe("validate-entry", () => {
     if (!r.ok) expect(r.error).toBe(ENTRY_ERRORS.client);
   });
 
+  it("saves the catalog spelling when case differs", () => {
+    const r = validateEntryWrite(
+      { ...base, job_code: "bookkeeping" },
+      { clients, jobCodes },
+      "Alex Daley",
+      { skipPayPeriodWindow: true },
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.payload.job_code).toBe("Bookkeeping");
+  });
+
   it("accepts valid entry when window skipped", () => {
     const r = validateEntryWrite(base, { clients, jobCodes }, "Alex Daley", {
       skipPayPeriodWindow: true,

@@ -38,7 +38,9 @@ export function validateEntryWrite(
   if (!clientNames.has(draft.client)) {
     return { ok: false, error: ENTRY_ERRORS.client };
   }
-  const job = refs.jobCodes.find((j) => j.job_code === draft.job_code);
+  const job = refs.jobCodes.find(
+    (j) => j.job_code.trim().toLowerCase() === draft.job_code.trim().toLowerCase(),
+  );
   if (!job) {
     return { ok: false, error: ENTRY_ERRORS.job };
   }
@@ -83,6 +85,7 @@ export function validateEntryWrite(
     account: job.account,
     payload: {
       ...draft,
+      job_code: job.job_code,
       start_time: start,
       end_time: end,
       hours: Math.round(hours * 100) / 100,

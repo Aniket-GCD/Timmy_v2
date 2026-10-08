@@ -18,6 +18,7 @@ import {
   computeMetrics,
   dailyTotals,
 } from "@/lib/aggregations";
+import { canonicalJobCode } from "@/lib/canonical-job-code";
 import { applyChartFilters } from "@/lib/chart-filters";
 import { getEntriesProvider } from "@/lib/data/entries-provider";
 import {
@@ -136,7 +137,7 @@ export function Dashboard() {
         if (res.ok) {
           const user = (await res.json()) as DashboardUser;
           setMe(user);
-          if (!user.is_admin) setStaffFilter(user.staff_name);
+          setStaffFilter(user.staff_name);
         }
       } catch {
         /* mock still works via API */
@@ -239,12 +240,21 @@ export function Dashboard() {
     return [...names].sort((a, b) => a.localeCompare(b));
   }, [employees, entries, officeFilter]);
 
+  const spelledEntries = useMemo(
+    () =>
+      entries.map((entry) => {
+        const job_code = canonicalJobCode(entry.job_code, jobCodes);
+        return job_code === entry.job_code ? entry : { ...entry, job_code };
+      }),
+    [entries, jobCodes],
+  );
+
   const scopedEntries = useMemo(() => {
-    if (!me) return entries;
-    if (!me.is_admin) return entries.filter((e) => e.staff_name === me.staff_name);
-    if (staffFilter) return entries.filter((e) => e.staff_name === staffFilter);
-    return entries;
-  }, [entries, me, staffFilter]);
+    if (!me) return spelledEntries;
+    if (!me.is_admin) return spelledEntries.filter((e) => e.staff_name === me.staff_name);
+    if (staffFilter) return spelledEntries.filter((e) => e.staff_name === staffFilter);
+    return spelledEntries;
+  }, [spelledEntries, me, staffFilter]);
 
   const rangeEntries = useMemo(
     () => filterEntriesByRange(scopedEntries, resolved),

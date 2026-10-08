@@ -247,6 +247,29 @@ class SubmitGateTests(unittest.TestCase):
         self.assertEqual(calls.count("POST"), 1)
         self.assertEqual(calls.count("GET"), 2)
 
+    def test_submit_posts_catalog_job_code_spelling(self) -> None:
+        import sqlite3
+
+        actions.set_setting(self.db, "staff_name", "Jane Doe")
+        actions.set_setting(self.db, "office", "MH")
+        conn = sqlite3.connect(self.db)
+        conn.execute("UPDATE time_entries SET job_type = ? WHERE entry_id = 1", ("email",))
+        conn.commit()
+        conn.close()
+        actions.set_approval(self.db, 1, True, "2026-05-28T10:05:00")
+
+        def fake_urlopen(request, timeout=30):  # noqa: ANN001
+            if request.method == "GET":
+                return FakeResponse(json.dumps(JOB_CODES))
+            body = json.loads(request.data.decode("utf-8"))
+            self.assertEqual(body["job_code"], "Email")
+            self.assertEqual(body["account"], "Accounting Services:Hourly")
+            return FakeResponse(json.dumps([{"id": "sb-row-case"}]), 201)
+
+        with patch("timeassist.supabase_ref.urlopen", side_effect=fake_urlopen):
+            posted = submit_entry(self.db, 1, environ=ENV, at="2026-05-28T10:06:00")
+        self.assertEqual(posted["payload_preview"]["job_code"], "Email")
+
     def test_unassigned_seed_and_submit_payload(self) -> None:
         install_live_clients(self, "Acme Co")
         prev = os.environ.pop("TIMEASSIST_ALLOW_LOCAL_ROSTER", None)
