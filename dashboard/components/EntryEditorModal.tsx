@@ -5,6 +5,7 @@ import { Combobox } from "@/components/Combobox";
 import {
   displayHm,
   durationHoursFromTimes,
+  exactMinuteHours,
   formatHoursHM,
   parseHoursInput,
   parseTimeInput,
@@ -218,7 +219,7 @@ export function EntryEditorModal({
         office,
         start_time: start,
         end_time: end,
-        hours: Math.round(hours * 100) / 100,
+        hours: exactMinuteHours(hours),
         billable: true,
       };
       await onSave(payload);

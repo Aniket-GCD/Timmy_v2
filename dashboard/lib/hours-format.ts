@@ -67,6 +67,11 @@ export function durationHoursFromTimes(start: string | null, end: string | null)
   return mins / 60;
 }
 
+/** Nearest whole minute as decimal hours. Hundredths of an hour are not minutes. */
+export function exactMinuteHours(hours: number): number {
+  return Math.round(hours * 60) / 60;
+}
+
 /** Minutes since midnight from HH:MM:SS (or HH:MM). */
 export function timeToMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number);

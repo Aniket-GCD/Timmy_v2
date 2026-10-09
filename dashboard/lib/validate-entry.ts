@@ -1,4 +1,4 @@
-import { durationHoursFromTimes, parseTimeInput } from "./hours-format";
+import { durationHoursFromTimes, exactMinuteHours, parseTimeInput } from "./hours-format";
 import { isWithinEditWindow } from "./pay-period";
 import type { ClientOption, JobCodeOption } from "./types/reference-data";
 import type { EntryWritePayload } from "./types/time-entry";
@@ -88,7 +88,7 @@ export function validateEntryWrite(
       job_code: job.job_code,
       start_time: start,
       end_time: end,
-      hours: Math.round(hours * 100) / 100,
+      hours: exactMinuteHours(hours),
       billable,
     },
   };

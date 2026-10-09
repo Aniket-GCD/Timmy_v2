@@ -7,6 +7,7 @@ import { formatDisplayDate } from "@/lib/dates";
 import {
   displayHm,
   durationHoursFromTimes,
+  exactMinuteHours,
   formatHoursHM,
   formatTime12,
   hoursToMinutes,
@@ -361,7 +362,7 @@ function EntryRow({
       ...draft,
       start_time: start,
       end_time: end,
-      hours: Math.round(hours * 100) / 100,
+      hours: exactMinuteHours(hours),
     };
   }
 

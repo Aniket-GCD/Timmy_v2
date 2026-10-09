@@ -97,7 +97,21 @@ describe("validate-entry", () => {
       { skipPayPeriodWindow: true },
     );
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.payload.hours).toBeCloseTo(5 / 60, 2);
+    if (r.ok) expect(r.payload.hours).toBe(5 / 60);
+  });
+
+  it("keeps 8:25 as exact minutes instead of hundredths of an hour", () => {
+    const r = validateEntryWrite(
+      { ...base, start_time: null, end_time: null, hours: 8 + 25 / 60 },
+      { clients, jobCodes },
+      "Alex Daley",
+      { skipPayPeriodWindow: true },
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.payload.hours).toBe(8 + 25 / 60);
+      expect(r.payload.hours).not.toBe(8.42);
+    }
   });
 });
 
