@@ -12,7 +12,8 @@ export function humanizeApiError(raw: string): string {
       message = parsed.error.trim();
     }
   } catch {
-    // plain text body
+    // Next's 404 HTML includes `"forbidden":"$undefined"`. That is not an edit denial.
+    if (/<!doctype|<html/i.test(text)) return ENTRY_ERRORS.saveFailed;
   }
 
   const lower = message.toLowerCase();

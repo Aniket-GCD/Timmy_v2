@@ -10,10 +10,10 @@ export async function GET() {
 
     const table = employeesTable();
     const rows = await supabaseFetch<Array<Record<string, unknown>>>(
-      `${table}?select=id,first_name,last_name,staff_name,office,active,email,is_admin&active=eq.true&order=staff_name`,
+      `${table}?select=id,first_name,last_name,staff_name,office,active,email,is_admin,can_view_time_by_job&active=eq.true&order=staff_name`,
     );
     let employees: Employee[] = rows.map(mapEmployeeRow);
-    if (!auth.user.is_admin) {
+    if (!auth.user.is_admin && !auth.user.can_view_time_by_job) {
       employees = employees.filter((e) => e.staff_name === auth.user.staff_name);
     }
     return NextResponse.json(employees);

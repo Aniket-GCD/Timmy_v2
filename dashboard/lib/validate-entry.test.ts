@@ -120,6 +120,11 @@ describe("humanizeApiError", () => {
     expect(humanizeApiError(JSON.stringify({ error: "Forbidden" }))).toBe(ENTRY_ERRORS.ownOnly);
   });
 
+  it("does not treat a Next 404 page as an edit denial", () => {
+    const html = '<!DOCTYPE html><html><body>"forbidden":"$undefined"</body></html>';
+    expect(humanizeApiError(html)).toBe(ENTRY_ERRORS.saveFailed);
+  });
+
   it("maps locked date phrases", () => {
     expect(humanizeApiError(JSON.stringify({ error: ENTRY_ERRORS.lockedDate }))).toBe(
       ENTRY_ERRORS.lockedDate,

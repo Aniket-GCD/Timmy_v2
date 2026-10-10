@@ -455,8 +455,13 @@ export function Dashboard() {
   return (
     <div className="page">
       <header className="topbar">
-        <div className="brand">
+        <div className="brand" style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
           <img src="/timmy-lockup-green.svg" alt="Timmy" className="brand-logo" height={44} />
+          {me?.can_view_time_by_job ? (
+            <a className="chip" href="/time-by-job">
+              Time by Job
+            </a>
+          ) : null}
         </div>
         <div className="staff-meta">
           <strong>{headerName || "…"}</strong>

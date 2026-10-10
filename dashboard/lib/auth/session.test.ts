@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findEmployeeByEmail } from "./session";
+import { findEmployeeByEmail, mapEmployeeRow } from "./session";
 import { applyChartFilters } from "../chart-filters";
 import type { Employee } from "../types/employee";
 
@@ -14,6 +14,7 @@ describe("findEmployeeByEmail", () => {
       active: true,
       email: "Hannah@Firm.com",
       is_admin: true,
+      can_view_time_by_job: true,
     },
     {
       id: "2",
@@ -24,6 +25,7 @@ describe("findEmployeeByEmail", () => {
       active: false,
       email: "alex@firm.com",
       is_admin: false,
+      can_view_time_by_job: false,
     },
   ];
 
@@ -37,6 +39,15 @@ describe("findEmployeeByEmail", () => {
 
   it("returns null for unknown", () => {
     expect(findEmployeeByEmail(roster, "nobody@firm.com")).toBeNull();
+  });
+});
+
+describe("mapEmployeeRow", () => {
+  it("keeps can_view_time_by_job only when the column is true", () => {
+    expect(mapEmployeeRow({ can_view_time_by_job: true }).can_view_time_by_job).toBe(true);
+    expect(mapEmployeeRow({ can_view_time_by_job: "true" }).can_view_time_by_job).toBe(false);
+    expect(mapEmployeeRow({ can_view_time_by_job: 1 }).can_view_time_by_job).toBe(false);
+    expect(mapEmployeeRow({}).can_view_time_by_job).toBe(false);
   });
 });
 

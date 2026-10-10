@@ -7,6 +7,7 @@ export type Employee = {
   active: boolean;
   email: string | null;
   is_admin: boolean;
+  can_view_time_by_job: boolean;
 };
 
 export type DashboardUser = {
@@ -15,4 +16,5 @@ export type DashboardUser = {
   office: string;
   is_admin: boolean;
   employee_id: string;
+  can_view_time_by_job: boolean;
 };

@@ -26,15 +26,26 @@ export async function GET(req: NextRequest) {
     if (scope.error) return NextResponse.json({ error: scope.error }, { status: 403 });
 
     const table = entriesTable();
-    const filters = [`entry_date=gte.${from}`, `entry_date=lte.${to}`, "order=entry_date,start_time"];
+    const filters = [`entry_date=gte.${from}`, `entry_date=lte.${to}`, "order=entry_date,start_time,id"];
     if (scope.staffFilter) {
       filters.unshift(`staff_name=eq.${encodeURIComponent(scope.staffFilter)}`);
     }
     if (officeParam === "GCD" || officeParam === "MH") {
       filters.unshift(`office=eq.${officeParam}`);
     }
-    const rows = await supabaseFetch<Array<Record<string, unknown>>>(`${table}?${filters.join("&")}`);
-    return NextResponse.json(rows.map(normalizeSupabaseRow));
+    const pageSize = 1000;
+    const all: Array<Record<string, unknown>> = [];
+    let offset = 0;
+    for (;;) {
+      const rows = await supabaseFetch<Array<Record<string, unknown>>>(
+        `${table}?${filters.join("&")}&limit=${pageSize}&offset=${offset}`,
+      );
+      if (!Array.isArray(rows) || rows.length === 0) break;
+      all.push(...rows);
+      if (rows.length < pageSize) break;
+      offset += pageSize;
+    }
+    return NextResponse.json(all.map(normalizeSupabaseRow));
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }

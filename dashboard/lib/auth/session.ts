@@ -12,6 +12,7 @@ export const MOCK_DASHBOARD_USER: DashboardUser = {
   office: "GCD",
   is_admin: true,
   employee_id: "e-aniket",
+  can_view_time_by_job: true,
 };
 
 export function mapEmployeeRow(r: Record<string, unknown>): Employee {
@@ -24,6 +25,7 @@ export function mapEmployeeRow(r: Record<string, unknown>): Employee {
     active: r.active !== false,
     email: r.email == null || r.email === "" ? null : String(r.email),
     is_admin: r.is_admin === true,
+    can_view_time_by_job: r.can_view_time_by_job === true,
   };
 }
 
@@ -44,7 +46,7 @@ export function findEmployeeByEmail(
 export async function lookupEmployeeByEmail(email: string): Promise<Employee | null> {
   const table = employeesTable();
   const rows = await supabaseFetch<Array<Record<string, unknown>>>(
-    `${table}?select=id,first_name,last_name,staff_name,office,active,email,is_admin&active=eq.true`,
+    `${table}?select=id,first_name,last_name,staff_name,office,active,email,is_admin,can_view_time_by_job&active=eq.true`,
   );
   return findEmployeeByEmail(rows.map(mapEmployeeRow), email);
 }
@@ -80,6 +82,7 @@ export async function requireDashboardUser(): Promise<AuthResult> {
         office: employee.office,
         is_admin: employee.is_admin,
         employee_id: employee.id,
+        can_view_time_by_job: employee.can_view_time_by_job,
       },
     };
   } catch (e) {

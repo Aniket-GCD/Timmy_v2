@@ -149,6 +149,28 @@ export function filterEntriesByRange<T extends { entry_date: string }>(
   );
 }
 
+function monthBounds(year: number, month: number): { dateFrom: string; dateTo: string } {
+  const last = new Date(year, month, 0).getDate();
+  const mm = String(month).padStart(2, "0");
+  return {
+    dateFrom: `${year}-${mm}-01`,
+    dateTo: `${year}-${mm}-${String(last).padStart(2, "0")}`,
+  };
+}
+
+/** First and last day of the Chicago month containing `anchorISO`. */
+export function thisMonthRange(anchorISO?: string): { dateFrom: string; dateTo: string } {
+  const [y, m] = (anchorISO ?? todayISO()).split("-").map(Number);
+  return monthBounds(y, m);
+}
+
+/** First and last day of the month before `anchorISO`. */
+export function lastMonthRange(anchorISO?: string): { dateFrom: string; dateTo: string } {
+  const [y, m] = (anchorISO ?? todayISO()).split("-").map(Number);
+  const prev = new Date(y, m - 2, 1);
+  return monthBounds(prev.getFullYear(), prev.getMonth() + 1);
+}
+
 export function entriesForDay<T extends { entry_date: string }>(
   dayISO: string,
   entries: T[],

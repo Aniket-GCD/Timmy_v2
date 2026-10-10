@@ -9,11 +9,11 @@ export const MOCK_STAFF = {
 } as const;
 
 export const MOCK_EMPLOYEES: Employee[] = [
-  { id: "e-aniket", first_name: "Aniket", last_name: "", staff_name: "Aniket", office: "GCD", active: true, email: "mock-admin@gcd.local", is_admin: true },
-  { id: "e-andrea", first_name: "Andrea", last_name: "Rottman", staff_name: "Andrea Rottman", office: "GCD", active: true, email: "andrea@gcd.local", is_admin: false },
-  { id: "e-hannah", first_name: "Hannah", last_name: "Curtis", staff_name: "Hannah Curtis", office: "GCD", active: true, email: "hannah@gcd.local", is_admin: true },
-  { id: "e-ken", first_name: "Ken", last_name: "Green", staff_name: "Ken Green", office: "GCD", active: true, email: "ken@gcd.local", is_admin: false },
-  { id: "e-weston", first_name: "Weston", last_name: "Brockbank", staff_name: "Weston Brockbank", office: "GCD", active: true, email: "weston@gcd.local", is_admin: false },
+  { id: "e-aniket", first_name: "Aniket", last_name: "", staff_name: "Aniket", office: "GCD", active: true, email: "mock-admin@gcd.local", is_admin: true, can_view_time_by_job: true },
+  { id: "e-andrea", first_name: "Andrea", last_name: "Rottman", staff_name: "Andrea Rottman", office: "GCD", active: true, email: "andrea@gcd.local", is_admin: false, can_view_time_by_job: false },
+  { id: "e-hannah", first_name: "Hannah", last_name: "Curtis", staff_name: "Hannah Curtis", office: "GCD", active: true, email: "hannah@gcd.local", is_admin: true, can_view_time_by_job: false },
+  { id: "e-ken", first_name: "Ken", last_name: "Green", staff_name: "Ken Green", office: "GCD", active: true, email: "ken@gcd.local", is_admin: false, can_view_time_by_job: false },
+  { id: "e-weston", first_name: "Weston", last_name: "Brockbank", staff_name: "Weston Brockbank", office: "GCD", active: true, email: "weston@gcd.local", is_admin: false, can_view_time_by_job: false },
 ];
 
 function seedEntries(anchorISO: string): TimeEntry[] {
