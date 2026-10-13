@@ -83,17 +83,23 @@ export function groupByClient(entries: TimeEntry[]): ClientGroup[] {
 
 const MISSING_START = "99:99:99";
 
-/** Latest first: date, then start time. Untimed rows stay last that day. */
-export function sortEntriesByTime(entries: TimeEntry[]): TimeEntry[] {
+export type TimeSortDirection = "asc" | "desc";
+
+/** Date, then start time. Untimed rows stay last that day. Default is earliest first. */
+export function sortEntriesByTime(
+  entries: TimeEntry[],
+  direction: TimeSortDirection = "asc",
+): TimeEntry[] {
+  const sign = direction === "asc" ? 1 : -1;
   return [...entries].sort((a, b) => {
-    const byDate = b.entry_date.localeCompare(a.entry_date);
-    if (byDate !== 0) return byDate;
+    const byDate = a.entry_date.localeCompare(b.entry_date);
+    if (byDate !== 0) return byDate * sign;
     const aMissing = !a.start_time;
     const bMissing = !b.start_time;
     if (aMissing !== bMissing) return aMissing ? 1 : -1;
-    const byStart = (b.start_time || MISSING_START).localeCompare(a.start_time || MISSING_START);
-    if (byStart !== 0) return byStart;
-    return b.id - a.id;
+    const byStart = (a.start_time || MISSING_START).localeCompare(b.start_time || MISSING_START);
+    if (byStart !== 0) return byStart * sign;
+    return (a.id - b.id) * sign;
   });
 }
 

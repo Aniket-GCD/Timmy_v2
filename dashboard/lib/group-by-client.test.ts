@@ -29,13 +29,18 @@ describe("groupByClient", () => {
 });
 
 describe("sortEntriesByTime", () => {
-  it("orders latest date and start time first, with a missing start last that day", () => {
-    const sorted = sortEntriesByTime([
-      row({ id: 1, client: "Acme", hours: 1, entry_date: "2026-09-05", start_time: "08:00:00" }),
-      row({ id: 2, client: "Beta", hours: 1, entry_date: "2026-09-04", start_time: "11:00:00" }),
-      row({ id: 3, client: "Acme", hours: 1, entry_date: "2026-09-04", start_time: "09:00:00" }),
-      row({ id: 4, client: "Acme", hours: 1, entry_date: "2026-09-04", start_time: null }),
-    ]);
-    expect(sorted.map((e) => e.id)).toEqual([1, 2, 3, 4]);
+  const sample = [
+    row({ id: 1, client: "Acme", hours: 1, entry_date: "2026-09-05", start_time: "08:00:00" }),
+    row({ id: 2, client: "Beta", hours: 1, entry_date: "2026-09-04", start_time: "11:00:00" }),
+    row({ id: 3, client: "Acme", hours: 1, entry_date: "2026-09-04", start_time: "09:00:00" }),
+    row({ id: 4, client: "Acme", hours: 1, entry_date: "2026-09-04", start_time: null }),
+  ];
+
+  it("defaults to earliest date and start time first, with a missing start last that day", () => {
+    expect(sortEntriesByTime(sample).map((e) => e.id)).toEqual([3, 2, 4, 1]);
+  });
+
+  it("orders latest date and start time first when descending", () => {
+    expect(sortEntriesByTime(sample, "desc").map((e) => e.id)).toEqual([1, 2, 3, 4]);
   });
 });

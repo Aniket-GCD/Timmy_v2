@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Combobox } from "@/components/Combobox";
-import { groupByClient, sortEntriesByTime } from "@/lib/aggregations";
+import { groupByClient, sortEntriesByTime, type TimeSortDirection } from "@/lib/aggregations";
 import { formatDisplayDate } from "@/lib/dates";
 import {
   displayHm,
@@ -65,15 +65,16 @@ export function DayEntriesTable({
 }: Props) {
   const [showDetail, setShowDetail] = useState(true);
   const [sortMode, setSortMode] = useState<"client" | "time">("client");
+  const [timeOrder, setTimeOrder] = useState<TimeSortDirection>("asc");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const groups = useMemo(() => groupByClient(entries), [entries]);
-  const timeOrdered = useMemo(() => sortEntriesByTime(entries), [entries]);
+  const timeOrdered = useMemo(() => sortEntriesByTime(entries, timeOrder), [entries, timeOrder]);
   const dailyTotal = useMemo(
     () => formatHoursHM(entries.reduce((s, e) => s + hoursToMinutes(e.hours), 0) / 60),
     [entries],
   );
 
-  const showDate = multiDay;
+  const showDate = multiDay || sortMode === "time";
   const colCount =
     (showDate ? 1 : 0) +
     4 +
@@ -116,7 +117,10 @@ export function DayEntriesTable({
             type="button"
             className={sortMode === "time" ? styles.toggleOn : styles.toggle}
             aria-pressed={sortMode === "time"}
-            onClick={() => setSortMode("time")}
+            onClick={() => {
+              setTimeOrder("asc");
+              setSortMode("time");
+            }}
           >
             By time
           </button>
@@ -139,7 +143,20 @@ export function DayEntriesTable({
                 <th>Office</th>
                 <th>Job Code</th>
                 <th>Notes</th>
-                {showDate && <th>Date</th>}
+                {showDate && sortMode === "time" ? (
+                  <th>
+                    <button
+                      type="button"
+                      className={styles.dateSort}
+                      aria-label={timeOrder === "asc" ? "Date, earliest first. Click for latest first." : "Date, latest first. Click for earliest first."}
+                      onClick={() => setTimeOrder((order) => (order === "asc" ? "desc" : "asc"))}
+                    >
+                      Date
+                      <span aria-hidden="true">{timeOrder === "asc" ? "↑" : "↓"}</span>
+                    </button>
+                  </th>
+                ) : null}
+                {showDate && sortMode !== "time" ? <th>Date</th> : null}
                 {showDetail && (
                   <>
                     <th className={styles.num}>Start</th>
