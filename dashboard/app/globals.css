@@ -53,7 +53,7 @@ h3 {
 
 .topbar {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1.25rem;
@@ -86,9 +86,17 @@ h3 {
 }
 
 .staff-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
   text-align: right;
   font-size: 0.95rem;
   color: var(--dark-grey);
+}
+
+.staff-meta a.chip {
+  margin-top: 0.45rem;
 }
 
 .staff-meta strong {
@@ -110,7 +118,7 @@ h3 {
 .section-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 0.75rem;
   margin-bottom: 0.75rem;
   flex-wrap: wrap;
@@ -121,6 +129,13 @@ h3 {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
+}
+
+.staff-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
 }
 
 .staff-filter {
@@ -157,7 +172,12 @@ h3 {
   }
 
   .staff-meta {
+    align-items: flex-start;
     text-align: left;
+  }
+
+  .staff-filters {
+    margin-left: 0;
   }
 }
 

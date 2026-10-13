@@ -457,10 +457,10 @@ export function Dashboard() {
       <header className="topbar">
         <div className="brand" style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
           <img src="/timmy-lockup-green.svg" alt="Timmy" className="brand-logo" height={44} />
-          {me?.can_view_time_by_job ? (
-            <a className="chip" href="/time-by-job">
-              Time by Job
-            </a>
+          {me?.is_admin ? (
+            <button type="button" className="chip" onClick={() => setRemapOpen(true)}>
+              Resolve Unassigned
+            </button>
           ) : null}
         </div>
         <div className="staff-meta">
@@ -477,15 +477,21 @@ export function Dashboard() {
               {liveSession.started_at ? elapsedLabel(liveSession.started_at) : ""}
             </div>
           ) : null}
+          {me?.can_view_time_by_job ? (
+            <div>
+              <a className="chip" href="/time-by-job">
+                Go to Timmy Billing
+              </a>
+            </div>
+          ) : null}
         </div>
       </header>
 
       <div className="section-head">
         <RangeToggle value={range} onChange={setRange} />
         {me?.is_admin ? (
-          <>
+          <div className="staff-filters">
             <label className="staff-filter">
-              <span className="muted">Client Office</span>
               <select
                 value={officeFilter}
                 onChange={(e) => setOfficeFilter(e.target.value)}
@@ -497,7 +503,6 @@ export function Dashboard() {
               </select>
             </label>
             <label className="staff-filter">
-              <span className="muted">Employee</span>
               <select
                 value={staffFilter}
                 onChange={(e) => setStaffFilter(e.target.value)}
@@ -511,10 +516,7 @@ export function Dashboard() {
                 ))}
               </select>
             </label>
-            <button type="button" className="chip" onClick={() => setRemapOpen(true)}>
-              Resolve Unassigned
-            </button>
-          </>
+          </div>
         ) : null}
       </div>
 
