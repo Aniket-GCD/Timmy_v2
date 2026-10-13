@@ -9,6 +9,7 @@ const OPTIONS: { key: RangeKey; label: string }[] = [
   { key: "today", label: "Today" },
   { key: "yesterday", label: "Yesterday" },
   { key: "week", label: "This week" },
+  { key: "lastWeek", label: "Last week" },
   { key: "thisPayPeriod", label: "This pay period" },
   { key: "lastPayPeriod", label: "Last pay period" },
 ];

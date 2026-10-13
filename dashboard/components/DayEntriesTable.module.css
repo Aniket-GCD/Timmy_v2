@@ -67,6 +67,16 @@
   color: var(--mysterious-mixture);
 }
 
+.toggleOn {
+  border: 1px solid var(--mysterious-mixture);
+  background: var(--mysterious-mixture);
+  color: var(--white);
+  border-radius: 999px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
 .rowActions {
   display: flex;
   flex-direction: column;

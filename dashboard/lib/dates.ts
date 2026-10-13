@@ -59,7 +59,7 @@ export function weekdayShort(iso: string): string {
   return parseISODate(iso).toLocaleDateString(DISPLAY_LOCALE, { weekday: "short" });
 }
 
-export type RangeKey = "today" | "yesterday" | "week" | "thisPayPeriod" | "lastPayPeriod";
+export type RangeKey = "today" | "yesterday" | "week" | "lastWeek" | "thisPayPeriod" | "lastPayPeriod";
 
 export type ResolvedRange = {
   key: RangeKey;
@@ -98,6 +98,16 @@ export function resolveRange(key: RangeKey, anchorISO?: string): ResolvedRange {
         dateTo: days[6],
         chartDays: days,
         label: "This week",
+      };
+    }
+    case "lastWeek": {
+      const days = weekDateISOs(addDaysISO(anchor, -7));
+      return {
+        key,
+        dateFrom: days[0],
+        dateTo: days[6],
+        chartDays: days,
+        label: "Last week",
       };
     }
     case "thisPayPeriod": {

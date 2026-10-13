@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupByClient } from "./aggregations";
+import { groupByClient, sortEntriesByTime } from "./aggregations";
 import type { TimeEntry } from "./types/time-entry";
 
 const row = (partial: Partial<TimeEntry> & Pick<TimeEntry, "id" | "client" | "hours">): TimeEntry => ({
@@ -25,5 +25,17 @@ describe("groupByClient", () => {
     expect(groups[0].client).toBe("Acme");
     expect(groups[0].subtotal).toBe(3);
     expect(groups[1].client).toBe("Beta");
+  });
+});
+
+describe("sortEntriesByTime", () => {
+  it("orders latest date and start time first, with a missing start last that day", () => {
+    const sorted = sortEntriesByTime([
+      row({ id: 1, client: "Acme", hours: 1, entry_date: "2026-09-05", start_time: "08:00:00" }),
+      row({ id: 2, client: "Beta", hours: 1, entry_date: "2026-09-04", start_time: "11:00:00" }),
+      row({ id: 3, client: "Acme", hours: 1, entry_date: "2026-09-04", start_time: "09:00:00" }),
+      row({ id: 4, client: "Acme", hours: 1, entry_date: "2026-09-04", start_time: null }),
+    ]);
+    expect(sorted.map((e) => e.id)).toEqual([1, 2, 3, 4]);
   });
 });

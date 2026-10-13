@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Combobox } from "@/components/Combobox";
-import { groupByClient } from "@/lib/aggregations";
+import { groupByClient, sortEntriesByTime } from "@/lib/aggregations";
 import { formatDisplayDate } from "@/lib/dates";
 import {
   displayHm,
@@ -64,8 +64,10 @@ export function DayEntriesTable({
   onDelete,
 }: Props) {
   const [showDetail, setShowDetail] = useState(true);
+  const [sortMode, setSortMode] = useState<"client" | "time">("client");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const groups = useMemo(() => groupByClient(entries), [entries]);
+  const timeOrdered = useMemo(() => sortEntriesByTime(entries), [entries]);
   const dailyTotal = useMemo(
     () => formatHoursHM(entries.reduce((s, e) => s + hoursToMinutes(e.hours), 0) / 60),
     [entries],
@@ -81,6 +83,7 @@ export function DayEntriesTable({
   const toggleDetail = () => {
     setShowDetail((v) => {
       const next = !v;
+      if (sortMode === "time") return next;
       if (!next) {
         const allCollapsed: Record<string, boolean> = {};
         for (const g of groups) allCollapsed[g.client] = true;
@@ -101,6 +104,22 @@ export function DayEntriesTable({
           </p>
         </div>
         <div className={styles.actions}>
+          <button
+            type="button"
+            className={sortMode === "client" ? styles.toggleOn : styles.toggle}
+            aria-pressed={sortMode === "client"}
+            onClick={() => setSortMode("client")}
+          >
+            By client
+          </button>
+          <button
+            type="button"
+            className={sortMode === "time" ? styles.toggleOn : styles.toggle}
+            aria-pressed={sortMode === "time"}
+            onClick={() => setSortMode("time")}
+          >
+            By time
+          </button>
           {entries.length > 0 && (
             <button type="button" className={styles.toggle} onClick={toggleDetail} aria-pressed={showDetail}>
               {showDetail ? "Hide detail" : "Show detail"}
@@ -133,7 +152,24 @@ export function DayEntriesTable({
               </tr>
             </thead>
             <tbody>
-              {groups.map((group) => {
+              {sortMode === "time"
+                ? timeOrdered.map((entry) => (
+                    <EntryRow
+                      key={entry.id}
+                      entry={entry}
+                      showDetail={showDetail}
+                      showDate={showDate}
+                      viewerStaffName={viewerStaffName}
+                      viewerIsAdmin={viewerIsAdmin}
+                      clients={clients}
+                      jobCodes={jobCodes}
+                      onSave={onSave}
+                      onDelete={onDelete}
+                    />
+                  ))
+                : null}
+              {sortMode === "client" &&
+                groups.map((group) => {
                 const isCollapsed = Boolean(collapsed[group.client]);
                 return (
                   <ClientGroupBlock

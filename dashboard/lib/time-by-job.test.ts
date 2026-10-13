@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lastMonthRange, thisMonthRange } from "./dates";
+import { lastMonthRange, resolveRange, thisMonthRange } from "./dates";
 import {
   formatDecimalHours,
   formatReportDate,
@@ -115,5 +115,14 @@ describe("report labels", () => {
     expect(thisMonthRange("2026-08-09")).toEqual({ dateFrom: "2026-08-01", dateTo: "2026-08-31" });
     expect(lastMonthRange("2026-08-09")).toEqual({ dateFrom: "2026-07-01", dateTo: "2026-07-31" });
     expect(lastMonthRange("2026-01-15")).toEqual({ dateFrom: "2025-12-01", dateTo: "2025-12-31" });
+  });
+
+  it("resolves last week as the previous Sunday through Saturday", () => {
+    const week = resolveRange("week", "2026-10-13");
+    const last = resolveRange("lastWeek", "2026-10-13");
+    expect(week.dateFrom).toBe("2026-10-11");
+    expect(week.dateTo).toBe("2026-10-17");
+    expect(last.dateFrom).toBe("2026-10-04");
+    expect(last.dateTo).toBe("2026-10-10");
   });
 });

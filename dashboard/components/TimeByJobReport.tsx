@@ -34,6 +34,7 @@ const PRESETS: { id: Preset; label: string }[] = [
   { id: "today", label: "Today" },
   { id: "yesterday", label: "Yesterday" },
   { id: "week", label: "This Week" },
+  { id: "lastWeek", label: "Last Week" },
   { id: "thisPayPeriod", label: "This Pay Period" },
   { id: "lastPayPeriod", label: "Last Pay Period" },
   { id: "custom", label: "Custom" },
