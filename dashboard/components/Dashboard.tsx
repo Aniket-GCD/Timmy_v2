@@ -455,7 +455,7 @@ export function Dashboard() {
   return (
     <div className="page">
       <header className="topbar">
-        <div className="brand" style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+        <div className="brand" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "0.6rem" }}>
           <img src="/timmy-lockup-green.svg" alt="Timmy" className="brand-logo" height={44} />
           {me?.is_admin ? (
             <button type="button" className="chip" onClick={() => setRemapOpen(true)}>
