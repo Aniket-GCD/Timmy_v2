@@ -303,8 +303,14 @@ export function TimeByJobReport() {
     <div className={styles.wrap}>
       <header className={`topbar ${styles.pageHead}`}>
         <div className={styles.brand}>
-          <img src="/timmy-lockup-green.svg" alt="Timmy" className="brand-logo" height={44} />
-          <span className={styles.brandTitle}>Billing</span>
+          <div className={styles.brandMain}>
+            <img src="/gcd-logo.png" alt="GCD" className={styles.gcdMark} />
+            <span className={styles.brandTitle}>Billing</span>
+          </div>
+          <div className={styles.powered}>
+            Powered by
+            <img src="/timmy-lockup-green.svg" alt="Timmy" className={styles.timmyMark} />
+          </div>
         </div>
         <div className="staff-meta">
           <strong>{me?.staff_name || "…"}</strong>
@@ -568,10 +574,10 @@ function ActivityBlock({
         </tr>
       ))}
       <tr className={styles.subtotal}>
-        <td colSpan={2} className={styles.line}>Total {activity.name}</td>
+        <td colSpan={2}>Total {activity.name}</td>
         <td className={`${styles.colDur} ${styles.line}`}>{formatMinutes(activity.totalMinutes)}</td>
         <td className={`${styles.colDur} ${styles.line}`}>{formatDecimalHours(activity.totalHours)}</td>
-        <td className={styles.line} />
+        <td />
       </tr>
     </>
   );

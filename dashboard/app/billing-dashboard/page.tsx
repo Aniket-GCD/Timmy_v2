@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import { TimeByJobReport } from "@/components/TimeByJobReport";
 
 export const metadata: Metadata = {
-  title: "Timmy Billing",
+  title: { absolute: "Billing Dashboard" },
 };
 
-export default function TimeByJobPage() {
+export default function BillingDashboardPage() {
   return <TimeByJobReport />;
 }

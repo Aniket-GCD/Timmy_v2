@@ -479,8 +479,8 @@ export function Dashboard() {
           ) : null}
           {me?.can_view_time_by_job ? (
             <div>
-              <a className="chip" href="/time-by-job">
-                Go to Timmy Billing
+              <a className="chip" href="/billing-dashboard">
+                Go to Billing Dashboard
               </a>
             </div>
           ) : null}

@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  async redirects() {
+    return [
+      { source: "/time-by-job", destination: "/billing-dashboard", permanent: false },
+    ];
+  },
 };
 
 export default nextConfig;
