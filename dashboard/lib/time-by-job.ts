@@ -182,7 +182,7 @@ function csvLine(cells: string[]): string {
   return cells.map(csvCell).join(",");
 }
 
-/** Flat CSV of the grouped report, including activity, client, and grand totals. */
+/** Flat CSV of the grouped report: header plus one row per time entry. */
 export function toCsv(grouped: TimeByJobGrouped): string {
   const lines = [csvLine(["client", "activity", "date", "name", "duration", "hours", "notes"])];
   for (const client of grouped.clients) {
@@ -200,40 +200,7 @@ export function toCsv(grouped: TimeByJobGrouped): string {
           ]),
         );
       }
-      lines.push(
-        csvLine([
-          client.name,
-          `Total ${activity.name}`,
-          "",
-          "",
-          formatMinutes(activity.totalMinutes),
-          formatDecimalHours(activity.totalHours),
-          "",
-        ]),
-      );
     }
-    lines.push(
-      csvLine([
-        client.name,
-        `Total ${client.name}`,
-        "",
-        "",
-        formatMinutes(client.totalMinutes),
-        formatDecimalHours(client.totalHours),
-        "",
-      ]),
-    );
   }
-  lines.push(
-    csvLine([
-      "TOTAL",
-      "",
-      "",
-      "",
-      formatMinutes(grouped.totalMinutes),
-      formatDecimalHours(grouped.totalHours),
-      "",
-    ]),
-  );
   return `${lines.join("\n")}\n`;
 }

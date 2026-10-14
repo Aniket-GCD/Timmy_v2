@@ -63,9 +63,15 @@ describe("groupTimeByJob", () => {
       "2026-08-24",
     ]);
     const csv = toCsv(grouped);
-    expect(csv.split("\n")[0]).toBe("client,activity,date,name,duration,hours,notes");
-    expect(csv).toContain("Total Administrative,,,0:15,0.25,");
-    expect(csv).toContain("TOTAL,,,,2:35,2.58,");
+    const lines = csv.trimEnd().split("\n");
+    expect(lines[0]).toBe("client,activity,date,name,duration,hours,notes");
+    expect(lines).toHaveLength(1 + screenshot.length);
+    expect(csv).toContain(
+      'Cathys Barber Studio LLC,Administrative,"August 18, 2026",Ashley Klugman,0:15,0.25,research how DBA name should appear in QBO',
+    );
+    expect(csv).not.toContain("Total Administrative");
+    expect(csv).not.toContain("Total Cathys Barber Studio LLC");
+    expect(csv).not.toContain("TOTAL");
   });
 
   it("search drops other groups and recomputes the client total", () => {

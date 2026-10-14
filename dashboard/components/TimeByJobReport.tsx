@@ -22,7 +22,6 @@ import type { DashboardUser, Employee } from "@/lib/types/employee";
 import type { ClientOption, JobCodeOption } from "@/lib/types/reference-data";
 import type { TimeEntry } from "@/lib/types/time-entry";
 
-const FIRM = "GREEN CURTIS DALEY CPAS PLLC";
 const NO_ACCESS = "You don't have access to Time by Job.";
 const OFFICES = ["GCD", "MH"];
 
@@ -146,7 +145,7 @@ function sortedNames(names: Set<string>): string[] {
 
 export function TimeByJobReport() {
   const provider = useMemo(() => getEntriesProvider(), []);
-  const initial = useMemo(() => thisMonthRange(), []);
+  const initial = useMemo(() => lastMonthRange(), []);
   const [me, setMe] = useState<DashboardUser | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [clients, setClients] = useState<ClientOption[]>([]);
@@ -155,7 +154,7 @@ export function TimeByJobReport() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
-  const [preset, setPreset] = useState<Preset>("thisMonth");
+  const [preset, setPreset] = useState<Preset>("lastMonth");
   const [dateFrom, setDateFrom] = useState(initial.dateFrom);
   const [dateTo, setDateTo] = useState(initial.dateTo);
   const [staffFilter, setStaffFilter] = useState<string[]>([]);
@@ -165,8 +164,6 @@ export function TimeByJobReport() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [showFilters, setShowFilters] = useState(false);
-  const [hideHeader, setHideHeader] = useState(false);
-  const [zoom, setZoom] = useState(100);
   const [detailSort, setDetailSort] = useState<DetailSort>("date");
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -283,6 +280,16 @@ export function TimeByJobReport() {
     setSearch(searchInput.trim());
   }
 
+  function resetFilters() {
+    setStaffFilter([]);
+    setOfficeFilter([]);
+    setClientFilter([]);
+    setJobCodeFilter([]);
+    setSearchInput("");
+    setSearch("");
+    applyPreset("lastMonth");
+  }
+
   const stamp = updatedAt ? chicagoStamp(updatedAt) : null;
 
   if (!me && loading) {
@@ -303,33 +310,23 @@ export function TimeByJobReport() {
 
   return (
     <div className={styles.wrap}>
-      <div className={styles.chrome}>
-        <div className={styles.toolRow}>
-          <Link className={styles.homeLink} href="/">
-            Hours dashboard
-          </Link>
-          <button type="button" className={styles.btn} onClick={() => setReloadKey((n) => n + 1)}>
-            Refresh
-          </button>
-          <button type="button" className={styles.btn} onClick={() => window.print()}>
-            Print
-          </button>
-          <button type="button" className={styles.btn} onClick={() => downloadCsv(toCsv(grouped))}>
-            Excel
-          </button>
-          <button type="button" className={styles.btn} onClick={() => setHideHeader((v) => !v)}>
-            {hideHeader ? "Show Header" : "Hide Header"}
-          </button>
-          <label className={styles.field}>
-            Zoom
-            <select value={zoom} onChange={(e) => setZoom(Number(e.target.value))} aria-label="Zoom">
-              <option value={75}>75%</option>
-              <option value={100}>100%</option>
-              <option value={150}>150%</option>
-            </select>
-          </label>
+      <header className={`topbar ${styles.pageHead}`}>
+        <div className={styles.brand}>
+          <img src="/timmy-lockup-green.svg" alt="Timmy" className="brand-logo" height={44} />
+          <span className={styles.brandTitle}>Billing</span>
         </div>
-
+        <div className="staff-meta">
+          <strong>{me?.staff_name || "…"}</strong>
+          <div>
+            <Link className="chip" href="/">
+              Go to Timmy Dashboard
+            </Link>
+          </div>
+        </div>
+      </header>
+      <div className={styles.chrome}>
+        <div className={styles.controls}>
+        <div className={styles.filters}>
         <div className={styles.filterRow}>
           <label className={styles.field}>
             Dates
@@ -368,28 +365,8 @@ export function TimeByJobReport() {
               }}
             />
           </label>
-          <label className={styles.field}>
-            Employee
-            <MultiCombobox
-              className={styles.combo}
-              values={staffFilter}
-              options={staffOptions}
-              onChange={setStaffFilter}
-              placeholder="All"
-              ariaLabel="Filter by employee"
-            />
-          </label>
-          <label className={styles.field}>
-            Client Office
-            <MultiCombobox
-              className={styles.combo}
-              values={officeFilter}
-              options={OFFICES}
-              onChange={setOfficeFilter}
-              placeholder="All"
-              ariaLabel="Filter by client office"
-            />
-          </label>
+        </div>
+        <div className={styles.filterRow}>
           <label className={styles.field}>
             Client
             <MultiCombobox
@@ -412,28 +389,33 @@ export function TimeByJobReport() {
               ariaLabel="Filter by job code"
             />
           </label>
-          <button
-            type="button"
-            className={styles.btn}
-            onClick={() => setDetailSort("date")}
-            aria-pressed={detailSort === "date"}
-          >
-            Sort date
-          </button>
-          <button
-            type="button"
-            className={styles.btn}
-            onClick={() => setDetailSort("duration")}
-            aria-pressed={detailSort === "duration"}
-          >
-            Sort duration
-          </button>
+        </div>
+        <div className={styles.filterRow}>
+          <label className={styles.field}>
+            Employee
+            <MultiCombobox
+              className={styles.combo}
+              values={staffFilter}
+              options={staffOptions}
+              onChange={setStaffFilter}
+              placeholder="All"
+              ariaLabel="Filter by employee"
+            />
+          </label>
+          <label className={styles.field}>
+            Office
+            <MultiCombobox
+              className={styles.combo}
+              values={officeFilter}
+              options={OFFICES}
+              onChange={setOfficeFilter}
+              placeholder="All"
+              ariaLabel="Filter by office"
+            />
+          </label>
         </div>
 
         <form className={styles.searchRow} onSubmit={onSearch}>
-          <button type="button" className={styles.showFilters} onClick={() => setShowFilters((v) => !v)}>
-            {showFilters ? "Hide Filters" : "Show Filters"}
-          </button>
           <label className={styles.field}>
             Look for
             <input
@@ -449,24 +431,55 @@ export function TimeByJobReport() {
           <button type="submit" className={styles.btn}>
             Search
           </button>
+        </form>
+        </div>
+
+        <div className={styles.actions}>
+          <button type="button" className={styles.btn} onClick={() => setReloadKey((n) => n + 1)}>
+            Refresh
+          </button>
+          <button type="button" className={styles.btn} onClick={() => window.print()}>
+            Print
+          </button>
+          <button type="button" className={styles.btn} onClick={() => downloadCsv(toCsv(grouped))}>
+            Excel
+          </button>
           <button
             type="button"
             className={styles.btn}
-            onClick={() => {
-              setSearchInput("");
-              setSearch("");
-            }}
+            onClick={() => setShowFilters((v) => !v)}
+            aria-pressed={showFilters}
           >
-            Reset
+            {showFilters ? "Hide Filters" : "Show Filters"}
           </button>
-        </form>
+          <button type="button" className={styles.btn} onClick={resetFilters}>
+            Reset Filters
+          </button>
+          <button
+            type="button"
+            className={styles.btn}
+            onClick={() => setDetailSort("date")}
+            aria-pressed={detailSort === "date"}
+          >
+            Sort Date
+          </button>
+          <button
+            type="button"
+            className={styles.btn}
+            onClick={() => setDetailSort("duration")}
+            aria-pressed={detailSort === "duration"}
+          >
+            Sort Duration
+          </button>
+        </div>
+        </div>
         {showFilters ? (
           <div className={styles.filterList}>
             <div>
               Dates: {formatReportDate(dateFrom)} – {formatReportDate(dateTo)}
             </div>
             <div>Employee: {selectionLabel(staffFilter, "All employees")}</div>
-            <div>Client Office: {selectionLabel(officeFilter, "All client offices")}</div>
+            <div>Office: {selectionLabel(officeFilter, "All offices")}</div>
             <div>Client: {selectionLabel(clientFilter, "All clients")}</div>
             <div>Job Code: {selectionLabel(jobCodeFilter, "All job codes")}</div>
           </div>
@@ -474,21 +487,17 @@ export function TimeByJobReport() {
         {loadError ? <p className={styles.banner}>{loadError}</p> : null}
       </div>
 
-      <div className={styles.sheet} style={{ fontSize: `${zoom}%` }}>
+      <div className={styles.sheet}>
         {stamp ? (
           <div className={styles.stamp}>
             <div>{stamp.time}</div>
             <div>{stamp.date}</div>
           </div>
         ) : null}
-        {hideHeader ? null : (
-          <header className={styles.reportHead}>
-            <h1>{FIRM}</h1>
-            {officeFilter.length === 1 && officeFilter[0] === "MH" ? <p>MH</p> : null}
-            <h2>Time by Job Detail</h2>
-            <p>{monthSubtitle(dateFrom, dateTo)}</p>
-          </header>
-        )}
+        <header className={styles.reportHead}>
+          <h2>Billing Detail</h2>
+          <p>{monthSubtitle(dateFrom, dateTo)}</p>
+        </header>
         {loading && entries.length === 0 ? <p>Loading…</p> : null}
         <table className={styles.table}>
           <thead>
@@ -552,7 +561,7 @@ function ActivityBlock({
       </tr>
       {activity.entries.map((entry) => (
         <tr key={entry.id}>
-          <td>{formatReportDate(entry.entry_date)}</td>
+          <td className={styles.entryDate}>{formatReportDate(entry.entry_date)}</td>
           <td className={styles.clip} title={entry.staff_name}>
             {entry.staff_name}
           </td>

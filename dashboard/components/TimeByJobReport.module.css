@@ -1,38 +1,65 @@
 .wrap {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 1rem 1.25rem 2.5rem;
-  color: #222;
+  padding: 1.25rem 1.5rem 3rem;
+  color: var(--dark-grey);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.brandTitle {
+  font-family: var(--font-display);
+  /* Logo is 44px; the word "timmy" is 400/537.6 of that. */
+  font-size: 33px;
+  line-height: 1;
+  font-weight: 400;
+  color: var(--mysterious-mixture);
+}
+
+.chrome,
+.sheet {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
 }
 
 .chrome {
-  background: #f3f3f3;
-  border: 1px solid #c8c8c8;
-  border-bottom: none;
-  padding: 0.55rem 0.65rem 0.7rem;
+  padding: 0.85rem 0.9rem 1rem;
 }
 
-.toolRow,
+.controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem 1.75rem;
+  align-items: start;
+}
+
+.filters {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
 .filterRow,
 .searchRow {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem;
+  justify-content: flex-start;
+  gap: 0.55rem 1.25rem;
 }
 
-.toolRow {
-  margin-bottom: 0.45rem;
-}
-
-.filterRow {
-  margin-bottom: 0.45rem;
-}
-
-.homeLink {
-  margin-right: auto;
-  color: #1a4f8b;
-  font-size: 0.9rem;
+.actions {
+  display: grid;
+  grid-template-columns: repeat(3, max-content);
+  gap: 0.45rem;
+  align-content: start;
 }
 
 .btn,
@@ -40,32 +67,36 @@
 .field input,
 .field select,
 .searchRow input {
-  font-family: "Segoe UI", Arial, sans-serif;
+  font-family: inherit;
   font-size: 0.82rem;
-  border: 1px solid #b5b5b5;
-  background: #fff;
-  color: #222;
-  border-radius: 2px;
-  padding: 0.28rem 0.55rem;
+  border: 1px solid var(--border);
+  background: var(--white);
+  color: var(--dark-grey);
+  border-radius: 999px;
+  padding: 0.28rem 0.7rem;
 }
 
 .btn {
+  background: var(--chip-bg);
+  color: var(--mysterious-mixture);
   cursor: pointer;
 }
 
 .btn:hover {
-  background: #f7f7f7;
+  background: color-mix(in srgb, var(--chip-bg) 72%, var(--hippie-green));
 }
 
 .btn[aria-pressed="true"] {
-  background: #e4e4e4;
+  background: var(--hippie-green);
+  border-color: var(--hippie-green);
+  color: var(--white);
   font-weight: 700;
 }
 
-.preset {
-  background: #3d8c40;
-  color: #fff;
-  border-color: #2f6d32;
+.field select.preset {
+  background: var(--hippie-green);
+  color: var(--white);
+  border-color: var(--hippie-green);
   font-weight: 600;
   min-width: 8.5rem;
 }
@@ -77,44 +108,29 @@
   font-size: 0.82rem;
 }
 
-.searchRow {
-  justify-content: flex-end;
-}
-
 .searchRow input {
-  width: 11rem;
-}
-
-.showFilters {
-  margin-right: auto;
-  background: none;
-  border: none;
-  color: #1a4f8b;
-  cursor: pointer;
-  font-size: 0.82rem;
-  padding: 0;
+  width: 16rem;
 }
 
 .filterList {
-  margin: 0.45rem 0 0;
+  margin: 0.55rem 0 0;
   padding: 0.35rem 0.5rem;
-  background: #fff;
-  border: 1px solid #d0d0d0;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   font-size: 0.8rem;
   line-height: 1.45;
 }
 
 .sheet {
-  background: #fff;
-  border: 1px solid #c8c8c8;
+  margin-top: 0.85rem;
   padding: 0.75rem 0.85rem 1.25rem;
-  font-family: "Segoe UI", Arial, sans-serif;
 }
 
 .stamp {
   float: left;
   font-size: 0.75rem;
-  color: #444;
+  color: var(--muted);
   line-height: 1.3;
 }
 
@@ -123,23 +139,13 @@
   margin: 0 4.5rem 0.85rem;
 }
 
-.reportHead h1 {
-  font-family: "Times New Roman", Times, serif;
-  font-size: 1.15rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+.reportHead h2 {
+  font-size: 1.35rem;
   margin: 0;
 }
 
-.reportHead h2 {
-  font-family: "Times New Roman", Times, serif;
-  font-size: 1.05rem;
-  font-weight: 700;
-  margin: 0.15rem 0 0;
-}
-
 .reportHead p {
-  margin: 0.1rem 0 0;
+  margin: 0.2rem 0 0;
   font-size: 0.95rem;
 }
 
@@ -152,11 +158,11 @@
 }
 
 .table th {
-  background: #d9d9d9;
+  background: var(--chip-bg);
   font-weight: 600;
   text-align: left;
   padding: 0.28rem 0.4rem;
-  border-bottom: 1px solid #bfbfbf;
+  border-bottom: 1px solid var(--border);
 }
 
 .table td {
@@ -168,7 +174,7 @@
   width: 12rem;
 }
 
-.colDate { width: 9.75rem; }
+.colDate { width: 11rem; }
 .colName { width: 8.5rem; }
 .colDur { width: 4.75rem; text-align: left; }
 .colNotes { width: auto; }
@@ -213,40 +219,50 @@
   white-space: nowrap;
 }
 
-.clientBar td,
-.activityBar td {
-  background: #e4e4e4;
+.clientBar td {
+  background: color-mix(in srgb, var(--chip-bg) 78%, var(--hippie-green));
   font-weight: 700;
   padding-top: 0.35rem;
   padding-bottom: 0.35rem;
 }
 
 .activityBar td {
-  background: #ededed;
+  background: var(--chip-bg);
   font-weight: 600;
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
   padding-left: 0.85rem;
 }
 
-.subtotal td {
-  background: #f4f8fc;
+.clientTotal + .clientBar td {
+  padding-top: 1.2rem;
 }
 
-.clientTotal td {
-  background: #f7f7f7;
-  font-weight: 700;
+.table td.entryDate {
+  padding-left: 1.7rem;
 }
 
+.subtotal td,
+.clientTotal td,
 .grand td {
-  background: #f4f8fc;
+  background: color-mix(in srgb, var(--white) 40%, var(--chip-bg));
+}
+
+.subtotal td:first-child {
+  padding-left: 0.85rem;
+}
+
+.clientTotal td,
+.grand td {
   font-weight: 700;
 }
 
 .line {
-  border-top: 1px solid #222;
+  border-top: 1px solid var(--dark-grey);
 }
 
 .double {
-  border-top: 3px double #222;
+  border-top: 3px double var(--dark-grey);
 }
 
 .banner {
@@ -255,7 +271,14 @@
   font-size: 0.85rem;
 }
 
+@media (max-width: 860px) {
+  .controls {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media print {
+  .pageHead,
   .chrome {
     display: none !important;
   }
@@ -267,6 +290,7 @@
 
   .sheet {
     border: none;
+    box-shadow: none;
     font-size: 11pt !important;
   }
 }
