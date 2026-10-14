@@ -191,7 +191,7 @@ function csvLine(cells: string[]): string {
 
 /** Flat CSV of the grouped report: header plus one row per time entry. */
 export function toCsv(grouped: TimeByJobGrouped): string {
-  const lines = [csvLine(["client", "activity", "date", "name", "duration", "hours", "notes"])];
+  const lines = [csvLine(["client", "job code", "date", "name", "duration", "hours", "notes"])];
   for (const client of grouped.clients) {
     for (const activity of client.activities) {
       for (const entry of activity.entries) {

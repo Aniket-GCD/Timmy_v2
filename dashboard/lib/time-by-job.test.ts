@@ -64,7 +64,7 @@ describe("groupTimeByJob", () => {
     ]);
     const csv = toCsv(grouped);
     const lines = csv.trimEnd().split("\n");
-    expect(lines[0]).toBe("client,activity,date,name,duration,hours,notes");
+    expect(lines[0]).toBe("client,job code,date,name,duration,hours,notes");
     expect(lines).toHaveLength(1 + screenshot.length);
     expect(csv).toContain(
       'Cathys Barber Studio LLC,Administrative,"August 18, 2026",Ashley Klugman,0:15,0.25,research how DBA name should appear in QBO',
