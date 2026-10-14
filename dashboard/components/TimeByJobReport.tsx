@@ -10,6 +10,7 @@ import {
   formatDecimalHours,
   formatMinutes,
   formatReportDate,
+  formatSlashDate,
   formatUsDate,
   groupTimeByJob,
   parseUsDate,
@@ -45,22 +46,6 @@ function rangeForPreset(preset: Preset): { dateFrom: string; dateTo: string } | 
   if (preset === "lastMonth") return lastMonthRange();
   const resolved = resolveRange(preset);
   return { dateFrom: resolved.dateFrom, dateTo: resolved.dateTo };
-}
-
-function chicagoStamp(when: Date): { date: string; time: string } {
-  const date = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Chicago",
-    month: "2-digit",
-    day: "2-digit",
-    year: "2-digit",
-  }).format(when);
-  const time = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Chicago",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(when);
-  return { date, time };
 }
 
 function readLoadError(text: string): string {
@@ -290,7 +275,13 @@ export function TimeByJobReport() {
     applyPreset("lastMonth");
   }
 
-  const stamp = updatedAt ? chicagoStamp(updatedAt) : null;
+  const updatedLabel = updatedAt
+    ? `Updated ${updatedAt.toLocaleDateString("en-US", {
+        month: "numeric",
+        day: "numeric",
+        year: "numeric",
+      })} ${updatedAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
+    : "";
 
   if (!me && loading) {
     return (
@@ -317,6 +308,7 @@ export function TimeByJobReport() {
         </div>
         <div className="staff-meta">
           <strong>{me?.staff_name || "…"}</strong>
+          {updatedLabel ? <div className="muted">{updatedLabel}</div> : null}
           <div>
             <Link className="chip" href="/">
               Go to Timmy Dashboard
@@ -328,8 +320,8 @@ export function TimeByJobReport() {
         <div className={styles.controls}>
         <div className={styles.filters}>
         <div className={styles.filterRow}>
-          <label className={styles.field}>
-            Dates
+          <label className={`${styles.field} ${styles.lead}`}>
+            <span>Date</span>
             <select
               className={styles.preset}
               value={preset}
@@ -367,8 +359,8 @@ export function TimeByJobReport() {
           </label>
         </div>
         <div className={styles.filterRow}>
-          <label className={styles.field}>
-            Client
+          <label className={`${styles.field} ${styles.lead}`}>
+            <span>Client</span>
             <MultiCombobox
               className={styles.combo}
               values={clientFilter}
@@ -378,8 +370,8 @@ export function TimeByJobReport() {
               ariaLabel="Filter by client"
             />
           </label>
-          <label className={styles.field}>
-            Job Code
+          <label className={`${styles.field} ${styles.pair}`}>
+            <span>Job Code</span>
             <MultiCombobox
               className={styles.combo}
               values={jobCodeFilter}
@@ -391,19 +383,19 @@ export function TimeByJobReport() {
           </label>
         </div>
         <div className={styles.filterRow}>
-          <label className={styles.field}>
-            Employee
+          <label className={`${styles.field} ${styles.lead}`}>
+            <span>Staff</span>
             <MultiCombobox
               className={styles.combo}
               values={staffFilter}
               options={staffOptions}
               onChange={setStaffFilter}
               placeholder="All"
-              ariaLabel="Filter by employee"
+              ariaLabel="Filter by staff"
             />
           </label>
-          <label className={styles.field}>
-            Office
+          <label className={`${styles.field} ${styles.pair}`}>
+            <span>Office</span>
             <MultiCombobox
               className={styles.combo}
               values={officeFilter}
@@ -416,8 +408,8 @@ export function TimeByJobReport() {
         </div>
 
         <form className={styles.searchRow} onSubmit={onSearch}>
-          <label className={styles.field}>
-            Look for
+          <label className={`${styles.field} ${styles.lead}`}>
+            <span>Look for</span>
             <input
               value={searchInput}
               onChange={(e) => {
@@ -435,50 +427,56 @@ export function TimeByJobReport() {
         </div>
 
         <div className={styles.actions}>
-          <button type="button" className={styles.btn} onClick={() => setReloadKey((n) => n + 1)}>
-            Refresh
-          </button>
-          <button type="button" className={styles.btn} onClick={() => window.print()}>
-            Print
-          </button>
-          <button type="button" className={styles.btn} onClick={() => downloadCsv(toCsv(grouped))}>
-            Excel
-          </button>
-          <button
-            type="button"
-            className={styles.btn}
-            onClick={() => setShowFilters((v) => !v)}
-            aria-pressed={showFilters}
-          >
-            {showFilters ? "Hide Filters" : "Show Filters"}
-          </button>
-          <button type="button" className={styles.btn} onClick={resetFilters}>
-            Reset Filters
-          </button>
-          <button
-            type="button"
-            className={styles.btn}
-            onClick={() => setDetailSort("date")}
-            aria-pressed={detailSort === "date"}
-          >
-            Sort Date
-          </button>
-          <button
-            type="button"
-            className={styles.btn}
-            onClick={() => setDetailSort("duration")}
-            aria-pressed={detailSort === "duration"}
-          >
-            Sort Duration
-          </button>
+          <div className={styles.actionRow}>
+            <button type="button" className={styles.btn} onClick={() => setReloadKey((n) => n + 1)}>
+              Refresh
+            </button>
+            <button type="button" className={styles.btn} onClick={() => window.print()}>
+              Print
+            </button>
+            <button type="button" className={styles.btn} onClick={() => downloadCsv(toCsv(grouped))}>
+              Excel
+            </button>
+          </div>
+          <div className={styles.actionRow}>
+            <button
+              type="button"
+              className={styles.btn}
+              onClick={() => setShowFilters((v) => !v)}
+              aria-pressed={showFilters}
+            >
+              {showFilters ? "Hide Filters" : "Show Filters"}
+            </button>
+            <button type="button" className={styles.btn} onClick={resetFilters}>
+              Reset Filters
+            </button>
+          </div>
+          <div className={styles.actionRow}>
+            <button
+              type="button"
+              className={styles.btn}
+              onClick={() => setDetailSort("date")}
+              aria-pressed={detailSort === "date"}
+            >
+              Sort Date
+            </button>
+            <button
+              type="button"
+              className={styles.btn}
+              onClick={() => setDetailSort("duration")}
+              aria-pressed={detailSort === "duration"}
+            >
+              Sort Duration
+            </button>
+          </div>
         </div>
         </div>
         {showFilters ? (
           <div className={styles.filterList}>
             <div>
-              Dates: {formatReportDate(dateFrom)} – {formatReportDate(dateTo)}
+              Date: {formatReportDate(dateFrom)} – {formatReportDate(dateTo)}
             </div>
-            <div>Employee: {selectionLabel(staffFilter, "All employees")}</div>
+            <div>Staff: {selectionLabel(staffFilter, "All staff")}</div>
             <div>Office: {selectionLabel(officeFilter, "All offices")}</div>
             <div>Client: {selectionLabel(clientFilter, "All clients")}</div>
             <div>Job Code: {selectionLabel(jobCodeFilter, "All job codes")}</div>
@@ -488,14 +486,8 @@ export function TimeByJobReport() {
       </div>
 
       <div className={styles.sheet}>
-        {stamp ? (
-          <div className={styles.stamp}>
-            <div>{stamp.time}</div>
-            <div>{stamp.date}</div>
-          </div>
-        ) : null}
         <header className={styles.reportHead}>
-          <h2>Billing Detail</h2>
+          <h2>Time Entry Detail</h2>
           <p>{monthSubtitle(dateFrom, dateTo)}</p>
         </header>
         {loading && entries.length === 0 ? <p>Loading…</p> : null}
@@ -503,7 +495,7 @@ export function TimeByJobReport() {
           <thead>
             <tr>
               <th className={styles.colDate}>Date</th>
-              <th className={styles.colName}>Name</th>
+              <th className={styles.colName}>Staff</th>
               <th className={styles.colDur}>Duration</th>
               <th className={styles.colDur}>Hours</th>
               <th className={styles.colNotes}>Notes</th>
@@ -541,9 +533,12 @@ function ClientBlock({
       ))}
       <tr className={styles.clientTotal}>
         <td colSpan={2}>Total {client.name}</td>
-        <td className={`${styles.colDur} ${styles.line}`}>{formatMinutes(client.totalMinutes)}</td>
-        <td className={`${styles.colDur} ${styles.line}`}>{formatDecimalHours(client.totalHours)}</td>
+        <td className={`${styles.colDur} ${styles.double}`}>{formatMinutes(client.totalMinutes)}</td>
+        <td className={`${styles.colDur} ${styles.double}`}>{formatDecimalHours(client.totalHours)}</td>
         <td />
+      </tr>
+      <tr className={styles.gap}>
+        <td colSpan={5} />
       </tr>
     </>
   );
@@ -561,7 +556,7 @@ function ActivityBlock({
       </tr>
       {activity.entries.map((entry) => (
         <tr key={entry.id}>
-          <td className={styles.entryDate}>{formatReportDate(entry.entry_date)}</td>
+          <td className={styles.entryDate}>{formatSlashDate(entry.entry_date)}</td>
           <td className={styles.clip} title={entry.staff_name}>
             {entry.staff_name}
           </td>
@@ -573,10 +568,10 @@ function ActivityBlock({
         </tr>
       ))}
       <tr className={styles.subtotal}>
-        <td colSpan={2}>Total {activity.name}</td>
-        <td className={styles.colDur}>{formatMinutes(activity.totalMinutes)}</td>
-        <td className={styles.colDur}>{formatDecimalHours(activity.totalHours)}</td>
-        <td />
+        <td colSpan={2} className={styles.line}>Total {activity.name}</td>
+        <td className={`${styles.colDur} ${styles.line}`}>{formatMinutes(activity.totalMinutes)}</td>
+        <td className={`${styles.colDur} ${styles.line}`}>{formatDecimalHours(activity.totalHours)}</td>
+        <td className={styles.line} />
       </tr>
     </>
   );

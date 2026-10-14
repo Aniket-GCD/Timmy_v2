@@ -56,10 +56,16 @@
 }
 
 .actions {
-  display: grid;
-  grid-template-columns: repeat(3, max-content);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 0.45rem;
-  align-content: start;
+}
+
+.actionRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
 }
 
 .btn,
@@ -108,6 +114,19 @@
   font-size: 0.82rem;
 }
 
+.lead > span,
+.pair > span {
+  flex: 0 0 auto;
+}
+
+.lead > span {
+  width: 4.75rem;
+}
+
+.pair > span {
+  width: 4.5rem;
+}
+
 .searchRow input {
   width: 16rem;
 }
@@ -127,16 +146,9 @@
   padding: 0.75rem 0.85rem 1.25rem;
 }
 
-.stamp {
-  float: left;
-  font-size: 0.75rem;
-  color: var(--muted);
-  line-height: 1.3;
-}
-
 .reportHead {
   text-align: center;
-  margin: 0 4.5rem 0.85rem;
+  margin: 0 0 0.85rem;
 }
 
 .reportHead h2 {
@@ -234,12 +246,15 @@
   padding-left: 0.85rem;
 }
 
-.clientTotal + .clientBar td {
-  padding-top: 1.2rem;
-}
-
 .table td.entryDate {
   padding-left: 1.7rem;
+}
+
+.gap td {
+  height: 0.7rem;
+  padding: 0;
+  background: var(--white);
+  border: none;
 }
 
 .subtotal td,
@@ -252,6 +267,7 @@
   padding-left: 0.85rem;
 }
 
+.subtotal td,
 .clientTotal td,
 .grand td {
   font-weight: 700;

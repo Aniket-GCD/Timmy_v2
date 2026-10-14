@@ -47,6 +47,13 @@ const MONTHS = [
   "December",
 ];
 
+/** YYYY-MM-DD → MM/DD/YYYY. Body rows only; the subtitle and CSV stay long-form. */
+export function formatSlashDate(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  if (!y || !m || !d || y.length !== 4) return iso;
+  return `${m}/${d}/${y}`;
+}
+
 /** YYYY-MM-DD → MM-DD-YYYY. */
 export function formatUsDate(iso: string): string {
   const [y, m, d] = iso.slice(0, 10).split("-");
