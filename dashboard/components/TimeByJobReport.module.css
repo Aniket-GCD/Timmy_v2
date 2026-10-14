@@ -144,7 +144,7 @@
 }
 
 .lead > span {
-  width: 3.55rem;
+  width: 2.9rem;
 }
 
 .pair > span {
@@ -153,6 +153,29 @@
 
 .searchRow input {
   width: 16rem;
+}
+
+.searchBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--chip-bg);
+  cursor: pointer;
+}
+
+.searchBtn img {
+  width: 1rem;
+  height: 1rem;
+  display: block;
+}
+
+.searchBtn:hover {
+  background: color-mix(in srgb, var(--chip-bg) 72%, var(--hippie-green));
 }
 
 .filterList {

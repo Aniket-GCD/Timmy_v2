@@ -415,7 +415,7 @@ export function TimeByJobReport() {
 
         <form className={styles.searchRow} onSubmit={onSearch}>
           <label className={`${styles.field} ${styles.lead}`}>
-            <span>Look for</span>
+            <span>Search</span>
             <input
               value={searchInput}
               onChange={(e) => {
@@ -423,11 +423,11 @@ export function TimeByJobReport() {
                 setSearchInput(value);
                 if (!value.trim()) setSearch("");
               }}
-              aria-label="Look for"
+              aria-label="Search"
             />
           </label>
-          <button type="submit" className={styles.btn}>
-            Search
+          <button type="submit" className={styles.searchBtn} aria-label="Search">
+            <img src="/search-icon.png" alt="" />
           </button>
         </form>
         </div>
