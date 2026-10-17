@@ -62,9 +62,8 @@ export function durationHoursFromTimes(start: string | null, end: string | null)
   if (!start || !end) return null;
   const [sh, sm] = start.split(":").map(Number);
   const [eh, em] = end.split(":").map(Number);
-  let mins = eh * 60 + em - (sh * 60 + sm);
-  if (mins < 0) mins += 24 * 60;
-  return mins / 60;
+  // Same calendar day. A negative result means the end is before the start.
+  return (eh * 60 + em - (sh * 60 + sm)) / 60;
 }
 
 /** Nearest whole minute as decimal hours. Hundredths of an hour are not minutes. */

@@ -78,6 +78,17 @@ describe("validate-entry", () => {
     if (!r.ok) expect(r.error).toBe(ENTRY_ERRORS.badTime);
   });
 
+  it("rejects an end time before the start time", () => {
+    const r = validateEntryWrite(
+      { ...base, start_time: "09:00", end_time: "08:00" },
+      { clients, jobCodes },
+      "Alex Daley",
+      { skipPayPeriodWindow: true },
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe(ENTRY_ERRORS.endBeforeStart);
+  });
+
   it("rejects equal start and end", () => {
     const r = validateEntryWrite(
       { ...base, start_time: "09:00", end_time: "09:00" },

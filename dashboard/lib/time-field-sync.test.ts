@@ -60,15 +60,16 @@ describe("reconcileTimeFields", () => {
     expect(r.hoursHm).toBe("0:05");
   });
 
-  it("handles overnight start/end for duration", () => {
+  it("does not treat an earlier end as an overnight duration", () => {
     const r = reconcileTimeFields({
       startHm: "23:00",
       endHm: "01:00",
       hoursHm: "0:00",
       touched: "end",
     });
-    expect(r.hoursHm).toBe("2:00");
-    expect(r.hours).toBe(2);
+    expect(r.hoursHm).toBe("0:00");
+    expect(r.hours).toBe(0);
+    expect(r.endHm).toBe("1:00 AM");
   });
 
   it("sets end from start + duration when end empty", () => {
